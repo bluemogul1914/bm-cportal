@@ -1,13 +1,8 @@
 <div class="w-64 bg-secondary text-white flex-shrink-0 flex flex-col">
-    <div class="p-6 border-b border-gray-700">
+    <div class="p-5 border-b border-gray-700">
         <div class="flex items-center space-x-3">
-            <div class="bg-blue-600 rounded-lg p-2">
-                <i class="fas fa-cloud text-white text-xl"></i>
-            </div>
-            <div>
-                <h2 class="font-bold text-lg">Blue Mogul</h2>
-                <p class="text-xs text-gray-400">Client Portal</p>
-            </div>
+            <img src="/assets/img/bluemogul-logo.png" alt="Blue Mogul" class="h-9 w-auto">
+            <p class="text-xs text-gray-400">Client Portal</p>
         </div>
     </div>
 
