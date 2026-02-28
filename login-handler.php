@@ -30,7 +30,7 @@ try {
     $db = getDB();
     
     $stmt = $db->prepare("
-        SELECT id, email, password, name, is_admin, created_at
+        SELECT id, email, password, name, is_admin, role, status, created_at
         FROM users
         WHERE email = :email
         LIMIT 1
@@ -59,14 +59,25 @@ try {
         exit;
     }
     
+    if (($user['status'] ?? 'active') === 'inactive') {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Your account has been deactivated. Please contact support.'
+        ]);
+        exit;
+    }
+    
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_regenerate_id(true);
     }
+    
+    $userRole = $user['role'] ?? 'user';
     
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['user_email'] = $user['email'];
     $_SESSION['user_name'] = $user['name'];
     $_SESSION['is_admin'] = (bool)$user['is_admin'];
+    $_SESSION['user_role'] = $userRole;
     $_SESSION['logged_in_at'] = time();
     $_SESSION['last_activity'] = time();
     
@@ -116,7 +127,8 @@ try {
             'id' => $user['id'],
             'name' => $user['name'],
             'email' => $user['email'],
-            'is_admin' => (bool)$user['is_admin']
+            'is_admin' => (bool)$user['is_admin'],
+            'role' => $userRole
         ]
     ]);
     

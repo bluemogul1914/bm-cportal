@@ -51,6 +51,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-nextcloud.php` - Nextcloud file sharing integration (document sync)
 - `admin-stripe.php` - Stripe payment integration (billing overview, recent payments)
 - `admin-audit.php` - Activity audit trail (filterable log of all user actions)
+- `admin-roles.php` - Roles & Access Control (RBAC: super-admin, admin, sales, IT support, billing, user)
 
 ### Shared Components
 - `includes/client-sidebar.php` - Client portal sidebar (dark navy #0d1b3e)

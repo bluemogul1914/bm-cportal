@@ -151,7 +151,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php"];
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -164,6 +164,7 @@ if ($_sessionData) {
     $_SESSION['user_email'] = $_sessionData['user_email'];
     $_SESSION['user_name'] = $_sessionData['user_name'];
     $_SESSION['is_admin'] = $_sessionData['is_admin'];
+    $_SESSION['user_role'] = $_sessionData['user_role'] ?? 'user';
     $_SESSION['logged_in_at'] = $_sessionData['logged_in_at'];
     $_SESSION['last_login'] = $_sessionData['last_login'];
     $_SESSION['last_activity'] = $_sessionData['last_activity'];
@@ -322,6 +323,7 @@ require '${filePath.replace(/'/g, "\\'")}';
               user_email: json.user.email,
               user_name: json.user.name,
               is_admin: json.user.is_admin,
+              user_role: json.user.role || "user",
               logged_in_at: Math.floor(Date.now() / 1000),
               last_login: new Date().toISOString(),
               last_activity: Math.floor(Date.now() / 1000),
