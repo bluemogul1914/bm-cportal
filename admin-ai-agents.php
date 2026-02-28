@@ -282,6 +282,225 @@ foreach ($agent_blueprints as $bp) {
     $total_hours_saved += $bp['hours_saved'];
 }
 
+$tool_integrations = [
+    'ITarian' => [
+        'icon' => 'fa-desktop',
+        'color' => 'blue',
+        'type' => 'RMM & Endpoint Management',
+        'endpoint' => ITARIAN_API_URL,
+        'api_key_env' => 'ITARIAN_API_KEY',
+        'api_key_set' => !empty(ITARIAN_API_KEY),
+        'description' => 'Remote monitoring & management for all client devices. Provides patching, AV, and endpoint security.',
+        'capabilities' => ['Device monitoring', 'Patch management', 'Antivirus', 'Remote access', 'Script execution'],
+        'webhook_url' => N8N_WEBHOOK_URL ? N8N_WEBHOOK_URL . '/webhook/itarian-alert' : '',
+        'docs_url' => 'https://www.itarian.com/api-documentation.php',
+    ],
+    'Uptime-Kuma' => [
+        'icon' => 'fa-heartbeat',
+        'color' => 'green',
+        'type' => 'Uptime Monitoring',
+        'endpoint' => 'https://uptime.bluemogul.us',
+        'api_key_env' => null,
+        'api_key_set' => true,
+        'description' => 'Website & service uptime monitoring every 60 seconds. Self-hosted on Coolify.',
+        'capabilities' => ['HTTP/HTTPS monitoring', 'TCP/Ping checks', 'DNS monitoring', 'Push notifications', 'Status pages'],
+        'webhook_url' => N8N_WEBHOOK_URL ? N8N_WEBHOOK_URL . '/webhook/uptime-alert' : '',
+        'docs_url' => 'https://github.com/louislam/uptime-kuma',
+    ],
+    'N8N' => [
+        'icon' => 'fa-project-diagram',
+        'color' => 'orange',
+        'type' => 'Workflow Automation Engine',
+        'endpoint' => N8N_WEBHOOK_URL ?: 'https://n8n.bluemogul.us',
+        'api_key_env' => 'N8N_WEBHOOK_URL',
+        'api_key_set' => !empty(N8N_WEBHOOK_URL),
+        'description' => 'The backbone of all agent workflows. Handles triggers, logic, API calls, and data transformation.',
+        'capabilities' => ['Webhook triggers', 'Cron scheduling', 'API integrations', 'Data transformation', 'Error handling'],
+        'webhook_url' => N8N_WEBHOOK_URL ?: '',
+        'docs_url' => 'https://docs.n8n.io/',
+    ],
+    'AnythingLLM' => [
+        'icon' => 'fa-brain',
+        'color' => 'purple',
+        'type' => 'AI Knowledge Base',
+        'endpoint' => ANYTHINGLLM_URL ?: 'https://anythingllm.bluemogul.us',
+        'api_key_env' => 'ANYTHINGLLM_URL',
+        'api_key_set' => !empty(ANYTHINGLLM_URL),
+        'description' => 'AI knowledge base for ticket triage, content generation, and intelligent decision-making. Self-hosted, zero API cost.',
+        'capabilities' => ['Document ingestion', 'RAG queries', 'Ticket classification', 'Content generation', 'Knowledge retrieval'],
+        'webhook_url' => '',
+        'docs_url' => 'https://docs.anythingllm.com/',
+    ],
+    'Flowise' => [
+        'icon' => 'fa-robot',
+        'color' => 'cyan',
+        'type' => 'AI Agent Builder',
+        'endpoint' => FLOWISE_URL ?: 'https://flowise.bluemogul.us',
+        'api_key_env' => 'FLOWISE_URL',
+        'api_key_set' => !empty(FLOWISE_URL),
+        'description' => 'Visual AI agent builder for chatbots, lead qualification, and automated client support conversations.',
+        'capabilities' => ['Chatflow builder', 'Chatbot deployment', 'Lead qualification', 'API chains', 'Custom tools'],
+        'webhook_url' => '',
+        'docs_url' => 'https://docs.flowiseai.com/',
+    ],
+    'Ollama' => [
+        'icon' => 'fa-microchip',
+        'color' => 'emerald',
+        'type' => 'Local LLM Inference',
+        'endpoint' => OLLAMA_URL,
+        'api_key_env' => null,
+        'api_key_set' => true,
+        'description' => 'Local LLM inference engine — zero API costs. Runs Llama, Mistral, and other models on your own hardware.',
+        'capabilities' => ['Text generation', 'Code generation', 'Summarization', 'Classification', 'Embedding generation'],
+        'webhook_url' => '',
+        'docs_url' => 'https://github.com/ollama/ollama',
+    ],
+    'Grafana' => [
+        'icon' => 'fa-chart-line',
+        'color' => 'yellow',
+        'type' => 'Metrics & Dashboards',
+        'endpoint' => 'https://grafana.bluemogul.us',
+        'api_key_env' => null,
+        'api_key_set' => true,
+        'description' => 'Real-time dashboards for system health, client metrics, and agent performance visualization.',
+        'capabilities' => ['Custom dashboards', 'Alert rules', 'Data sources', 'Annotations', 'Reporting'],
+        'webhook_url' => '',
+        'docs_url' => 'https://grafana.com/docs/',
+    ],
+    'HubSpot CRM' => [
+        'icon' => 'fa-handshake',
+        'color' => 'red',
+        'type' => 'Sales & CRM',
+        'endpoint' => HUBSPOT_API_URL,
+        'api_key_env' => 'HUBSPOT_TOKEN',
+        'api_key_set' => !empty(HUBSPOT_TOKEN),
+        'description' => 'Sales pipeline, lead management, contact tracking, and deal automation. Free tier — zero cost.',
+        'capabilities' => ['Contact management', 'Deal pipeline', 'Email tracking', 'Meeting scheduling', 'Reporting'],
+        'webhook_url' => N8N_WEBHOOK_URL ? N8N_WEBHOOK_URL . '/webhook/hubspot-deal' : '',
+        'docs_url' => 'https://developers.hubspot.com/docs/api/overview',
+    ],
+    'HubSpot' => [
+        'icon' => 'fa-handshake',
+        'color' => 'red',
+        'type' => 'Sales & CRM',
+        'endpoint' => HUBSPOT_API_URL,
+        'api_key_env' => 'HUBSPOT_TOKEN',
+        'api_key_set' => !empty(HUBSPOT_TOKEN),
+        'description' => 'Sales pipeline, lead management, contact tracking, and deal automation. Free tier — zero cost.',
+        'capabilities' => ['Contact management', 'Deal pipeline', 'Email tracking', 'Meeting scheduling', 'Reporting'],
+        'webhook_url' => N8N_WEBHOOK_URL ? N8N_WEBHOOK_URL . '/webhook/hubspot-deal' : '',
+        'docs_url' => 'https://developers.hubspot.com/docs/api/overview',
+    ],
+    'ITFlow' => [
+        'icon' => 'fa-ticket-alt',
+        'color' => 'indigo',
+        'type' => 'PSA & Ticketing',
+        'endpoint' => ITFLOW_URL,
+        'api_key_env' => 'ITFLOW_API_KEY',
+        'api_key_set' => !empty(ITFLOW_API_KEY),
+        'description' => 'Professional services automation — ticketing, client management, documentation, and invoicing.',
+        'capabilities' => ['Ticket management', 'Client records', 'Asset tracking', 'Documentation', 'Invoicing'],
+        'webhook_url' => N8N_WEBHOOK_URL ? N8N_WEBHOOK_URL . '/webhook/itflow-ticket' : '',
+        'docs_url' => 'https://docs.itflow.org/',
+    ],
+    'VoIP.ms' => [
+        'icon' => 'fa-phone-volume',
+        'color' => 'green',
+        'type' => 'VoIP Communications',
+        'endpoint' => VOIP_API_URL,
+        'api_key_env' => 'VOIP_TOKEN',
+        'api_key_set' => !empty(VOIP_API_TOKEN),
+        'description' => 'Voice over IP services — phone lines, IVR, call routing, voicemail, and SMS for client communications.',
+        'capabilities' => ['Inbound/outbound calls', 'IVR menus', 'Call recording', 'SMS messaging', 'Voicemail to email'],
+        'webhook_url' => '',
+        'docs_url' => 'https://wiki.voip.ms/article/API',
+    ],
+    'Matrix' => [
+        'icon' => 'fa-comments',
+        'color' => 'pink',
+        'type' => 'Team Messaging',
+        'endpoint' => MATRIX_SERVER,
+        'api_key_env' => 'MATRIX_PASSWORD',
+        'api_key_set' => !empty(MATRIX_PASSWORD),
+        'description' => 'Encrypted team messaging and agent notification channel. Self-hosted Synapse server on Coolify.',
+        'capabilities' => ['Encrypted messaging', 'Bot accounts', 'Webhooks', 'Room management', 'File sharing'],
+        'webhook_url' => '',
+        'docs_url' => 'https://matrix.org/docs/guides/',
+    ],
+    'Nextcloud' => [
+        'icon' => 'fa-cloud',
+        'color' => 'blue',
+        'type' => 'Private Cloud Platform',
+        'endpoint' => 'https://cloud.bluemogul.us',
+        'api_key_env' => null,
+        'api_key_set' => true,
+        'description' => 'Nextcloud AIO private cloud — file storage, office suite, video calls, calendar, and collaboration.',
+        'capabilities' => ['File sync & share', 'Nextcloud Office', 'Talk (video)', 'Deck (projects)', 'Calendar & contacts'],
+        'webhook_url' => '',
+        'docs_url' => 'https://docs.nextcloud.com/',
+    ],
+    'Nextcloud Deck' => [
+        'icon' => 'fa-columns',
+        'color' => 'blue',
+        'type' => 'Project Management',
+        'endpoint' => 'https://cloud.bluemogul.us/apps/deck',
+        'api_key_env' => null,
+        'api_key_set' => true,
+        'description' => 'Kanban-style project boards built into Nextcloud. Tracks projects, onboardings, and service orders.',
+        'capabilities' => ['Kanban boards', 'Task assignments', 'Due dates', 'Labels & filters', 'Activity stream'],
+        'webhook_url' => '',
+        'docs_url' => 'https://docs.nextcloud.com/server/latest/user_manual/en/groupware/deck.html',
+    ],
+    'Vultr' => [
+        'icon' => 'fa-server',
+        'color' => 'blue',
+        'type' => 'Cloud Infrastructure',
+        'endpoint' => 'https://api.vultr.com/v2',
+        'api_key_env' => null,
+        'api_key_set' => true,
+        'description' => 'Cloud VPS hosting for Nextcloud instances, Coolify apps, and client infrastructure.',
+        'capabilities' => ['VPS provisioning', 'Object storage', 'DNS management', 'Snapshots', 'Load balancing'],
+        'webhook_url' => '',
+        'docs_url' => 'https://www.vultr.com/api/',
+    ],
+    'Canva API' => [
+        'icon' => 'fa-paint-brush',
+        'color' => 'purple',
+        'type' => 'Design Automation',
+        'endpoint' => 'https://api.canva.com/rest/v1',
+        'api_key_env' => null,
+        'api_key_set' => false,
+        'description' => 'Automated design generation for social media posts, proposals, and marketing collateral.',
+        'capabilities' => ['Template rendering', 'Brand kit access', 'Batch generation', 'Export formats', 'Design automation'],
+        'webhook_url' => '',
+        'docs_url' => 'https://www.canva.dev/docs/connect/',
+    ],
+    'Relay Financial' => [
+        'icon' => 'fa-university',
+        'color' => 'emerald',
+        'type' => 'Business Banking',
+        'endpoint' => 'https://api.relayfi.com',
+        'api_key_env' => null,
+        'api_key_set' => false,
+        'description' => 'Business banking platform with API access for transaction monitoring and financial automation.',
+        'capabilities' => ['Transaction feeds', 'Account balances', 'Transfer initiation', 'Categorization', 'Reporting'],
+        'webhook_url' => '',
+        'docs_url' => 'https://relayfi.com/',
+    ],
+    'QuickBooks' => [
+        'icon' => 'fa-calculator',
+        'color' => 'green',
+        'type' => 'Accounting',
+        'endpoint' => 'https://quickbooks.api.intuit.com/v3',
+        'api_key_env' => null,
+        'api_key_set' => false,
+        'description' => 'Accounting platform for invoicing, expense tracking, payroll, and financial reporting.',
+        'capabilities' => ['Invoice management', 'Expense tracking', 'P&L reports', 'Bank reconciliation', 'Tax preparation'],
+        'webhook_url' => '',
+        'docs_url' => 'https://developer.intuit.com/app/developer/qbo/docs/develop',
+    ],
+];
+
 $success_msg = $_GET['success'] ?? '';
 $view_agent = $_GET['agent'] ?? '';
 $view_detail = null;
@@ -378,16 +597,7 @@ if ($view_agent) {
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                <div class="bg-white rounded-lg border border-gray-200 p-6">
-                    <h3 class="font-semibold text-gray-900 mb-3"><i class="fas fa-wrench text-gray-400 mr-2"></i>Tools & Integrations</h3>
-                    <div class="flex flex-wrap gap-2">
-                        <?php foreach ($bp['tools'] as $tool): ?>
-                            <span class="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-full text-xs font-medium"><?php echo htmlspecialchars($tool); ?></span>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 <div class="bg-white rounded-lg border border-gray-200 p-6">
                     <h3 class="font-semibold text-gray-900 mb-3"><i class="fas fa-clock text-gray-400 mr-2"></i>Schedule</h3>
                     <form method="POST" class="flex items-center gap-2">
@@ -417,6 +627,103 @@ if ($view_agent) {
                             </button>
                         </form>
                     </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg border border-gray-200 mb-6">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-plug text-green-500 mr-2"></i>Integrations & Connections</h2>
+                        <p class="text-xs text-gray-500 mt-0.5"><?php echo count($bp['tools']); ?> tools powering this agent</p>
+                    </div>
+                    <?php
+                        $connected_count = 0;
+                        foreach ($bp['tools'] as $tool) {
+                            $ti = $tool_integrations[$tool] ?? null;
+                            if ($ti && $ti['api_key_set']) $connected_count++;
+                        }
+                    ?>
+                    <span class="px-3 py-1 rounded-full text-xs font-medium <?php echo $connected_count === count($bp['tools']) ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'; ?>">
+                        <?php echo $connected_count; ?>/<?php echo count($bp['tools']); ?> Connected
+                    </span>
+                </div>
+                <div class="divide-y divide-gray-100">
+                    <?php foreach ($bp['tools'] as $tool): ?>
+                        <?php
+                            $ti = $tool_integrations[$tool] ?? null;
+                            if (!$ti) {
+                                $ti = [
+                                    'icon' => 'fa-cog', 'color' => 'gray', 'type' => 'External Service',
+                                    'endpoint' => '', 'api_key_env' => null, 'api_key_set' => false,
+                                    'description' => $tool . ' integration', 'capabilities' => [],
+                                    'webhook_url' => '', 'docs_url' => '',
+                                ];
+                            }
+                            $is_connected = $ti['api_key_set'];
+                        ?>
+                        <div class="px-6 py-5" data-testid="integration-<?php echo strtolower(str_replace([' ', '.'], '-', $tool)); ?>">
+                            <div class="flex items-start gap-4">
+                                <div class="w-11 h-11 rounded-lg bg-<?php echo $ti['color']; ?>-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fas <?php echo $ti['icon']; ?> text-<?php echo $ti['color']; ?>-600 text-lg"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-3 mb-1">
+                                        <h3 class="font-semibold text-gray-900"><?php echo htmlspecialchars($tool); ?></h3>
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-500"><?php echo $ti['type']; ?></span>
+                                        <span class="flex items-center gap-1 text-xs font-medium <?php echo $is_connected ? 'text-green-600' : 'text-gray-400'; ?>">
+                                            <span class="w-2 h-2 rounded-full <?php echo $is_connected ? 'bg-green-500' : 'bg-gray-300'; ?>"></span>
+                                            <?php echo $is_connected ? 'Connected' : 'Not configured'; ?>
+                                        </span>
+                                    </div>
+                                    <p class="text-sm text-gray-600 mb-3"><?php echo $ti['description']; ?></p>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                        <div class="bg-gray-50 rounded-lg p-3">
+                                            <p class="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">API Endpoint</p>
+                                            <code class="text-xs font-mono text-gray-700 break-all"><?php echo htmlspecialchars($ti['endpoint'] ?: 'Not configured'); ?></code>
+                                        </div>
+                                        <div class="bg-gray-50 rounded-lg p-3">
+                                            <p class="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Authentication</p>
+                                            <?php if ($ti['api_key_env']): ?>
+                                                <div class="flex items-center gap-2">
+                                                    <i class="fas <?php echo $is_connected ? 'fa-lock text-green-500' : 'fa-lock-open text-red-400'; ?> text-xs"></i>
+                                                    <code class="text-xs font-mono text-gray-700"><?php echo $ti['api_key_env']; ?></code>
+                                                    <span class="text-[10px] <?php echo $is_connected ? 'text-green-600' : 'text-red-500'; ?>"><?php echo $is_connected ? '(set)' : '(missing)'; ?></span>
+                                                </div>
+                                            <?php else: ?>
+                                                <span class="text-xs text-gray-500">Self-hosted — no key required</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+
+                                    <?php if ($ti['webhook_url']): ?>
+                                        <div class="bg-blue-50 rounded-lg p-3 mb-3">
+                                            <p class="text-[10px] font-semibold text-blue-600 uppercase tracking-wide mb-1">N8N Webhook URL</p>
+                                            <code class="text-xs font-mono text-blue-800 break-all"><?php echo htmlspecialchars($ti['webhook_url']); ?></code>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php if (!empty($ti['capabilities'])): ?>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            <?php foreach ($ti['capabilities'] as $cap): ?>
+                                                <span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] font-medium"><?php echo htmlspecialchars($cap); ?></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="flex flex-col gap-2 flex-shrink-0">
+                                    <?php if ($ti['docs_url']): ?>
+                                        <a href="<?php echo $ti['docs_url']; ?>" target="_blank" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs font-medium transition text-center" title="API Documentation">
+                                            <i class="fas fa-external-link-alt mr-1"></i>Docs
+                                        </a>
+                                    <?php endif; ?>
+                                    <button onclick="testConnection('<?php echo htmlspecialchars(addslashes($tool)); ?>', <?php echo $is_connected ? 'true' : 'false'; ?>)" class="px-3 py-1.5 <?php echo $is_connected ? 'bg-green-100 hover:bg-green-200 text-green-700' : 'bg-gray-100 hover:bg-gray-200 text-gray-500'; ?> rounded text-xs font-medium transition text-center" data-testid="button-test-<?php echo strtolower(str_replace([' ', '.'], '-', $tool)); ?>">
+                                        <i class="fas fa-plug mr-1"></i>Test
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
                 </div>
             </div>
 
