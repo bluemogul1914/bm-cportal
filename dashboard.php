@@ -63,12 +63,12 @@ try {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Blue Mogul Client Portal</title>
-    
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/dashboard.css">
-    
+
     <script>
         tailwind.config = {
             theme: {
@@ -87,11 +87,11 @@ try {
     </script>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen font-sans">
-    
+
     <?php include 'includes/header.php'; ?>
-    
+
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
+
         <div class="mb-8 animate-fade-in">
             <h1 class="text-3xl font-bold text-gray-900 mb-2">
                 Welcome back, <?php echo htmlspecialchars($user_name); ?>! 👋
@@ -100,9 +100,9 @@ try {
                 <i class="far fa-clock mr-2"></i>Last login: <?php echo $last_login_formatted; ?>
             </p>
         </div>
-        
+
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            
+
             <div class="bg-white rounded-xl shadow-lg p-6 transform hover:scale-105 transition duration-300 animate-slide-up" style="animation-delay: 0.1s;">
                 <div class="flex items-center justify-between mb-4">
                     <div class="bg-blue-100 rounded-lg p-3">
@@ -118,7 +118,7 @@ try {
                     View All <i class="fas fa-arrow-right ml-1"></i>
                 </a>
             </div>
-            
+
             <div class="bg-white rounded-xl shadow-lg p-6 transform hover:scale-105 transition duration-300 animate-slide-up" style="animation-delay: 0.2s;">
                 <div class="flex items-center justify-between mb-4">
                     <div class="bg-yellow-100 rounded-lg p-3">
@@ -134,7 +134,7 @@ try {
                     View All <i class="fas fa-arrow-right ml-1"></i>
                 </a>
             </div>
-            
+
             <div class="bg-white rounded-xl shadow-lg p-6 transform hover:scale-105 transition duration-300 animate-slide-up" style="animation-delay: 0.3s;">
                 <div class="flex items-center justify-between mb-4">
                     <div class="bg-green-100 rounded-lg p-3">
@@ -151,9 +151,9 @@ try {
                 </a>
             </div>
         </div>
-        
+
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
+
             <div class="bg-white rounded-xl shadow-lg p-6 animate-slide-up" style="animation-delay: 0.4s;">
                 <div class="flex items-center justify-between mb-6">
                     <h2 class="text-xl font-bold text-gray-900">
@@ -163,7 +163,7 @@ try {
                         View All <i class="fas fa-arrow-right ml-1"></i>
                     </a>
                 </div>
-                
+
                 <?php if (empty($recent_tickets)): ?>
                     <div class="text-center py-8 text-gray-500">
                         <i class="fas fa-check-circle text-5xl mb-3 text-green-500"></i>
@@ -208,7 +208,7 @@ try {
                     </div>
                 <?php endif; ?>
             </div>
-            
+
             <div class="bg-white rounded-xl shadow-lg p-6 animate-slide-up" style="animation-delay: 0.5s;">
                 <div class="flex items-center justify-between mb-6">
                     <h2 class="text-xl font-bold text-gray-900">
@@ -218,7 +218,7 @@ try {
                         View All <i class="fas fa-arrow-right ml-1"></i>
                     </a>
                 </div>
-                
+
                 <?php if (empty($unpaid_invoices)): ?>
                     <div class="text-center py-8 text-gray-500">
                         <i class="fas fa-check-circle text-5xl mb-3 text-green-500"></i>
@@ -253,9 +253,9 @@ try {
                     </div>
                 <?php endif; ?>
             </div>
-            
+
         </div>
-        
+
         <div class="mt-6 bg-white rounded-xl shadow-lg p-6 animate-slide-up" style="animation-delay: 0.6s;">
             <div class="flex items-center justify-between mb-6">
                 <h2 class="text-xl font-bold text-gray-900">
@@ -265,7 +265,7 @@ try {
                     View All <i class="fas fa-arrow-right ml-1"></i>
                 </a>
             </div>
-            
+
             <?php if (empty($active_services)): ?>
                 <div class="text-center py-8 text-gray-500">
                     <i class="fas fa-shopping-cart text-5xl mb-3"></i>
@@ -300,7 +300,7 @@ try {
                 </div>
             <?php endif; ?>
         </div>
-        
+
         <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 animate-slide-up" style="animation-delay: 0.7s;">
             <a href="tickets.php?action=new" class="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition duration-300 text-center group">
                 <div class="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-blue-600 transition duration-300">
@@ -309,7 +309,7 @@ try {
                 <h3 class="font-bold text-gray-900 mb-2">Open New Ticket</h3>
                 <p class="text-sm text-gray-600">Need help? Submit a support ticket</p>
             </a>
-            
+
             <a href="products.php" class="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition duration-300 text-center group">
                 <div class="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-green-600 transition duration-300">
                     <i class="fas fa-shopping-cart text-green-600 text-2xl group-hover:text-white transition duration-300"></i>
@@ -317,7 +317,7 @@ try {
                 <h3 class="font-bold text-gray-900 mb-2">Browse Services</h3>
                 <p class="text-sm text-gray-600">Explore our product catalog</p>
             </a>
-            
+
             <a href="profile.php" class="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition duration-300 text-center group">
                 <div class="bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-purple-600 transition duration-300">
                     <i class="fas fa-user-cog text-purple-600 text-2xl group-hover:text-white transition duration-300"></i>
@@ -326,10 +326,10 @@ try {
                 <p class="text-sm text-gray-600">Update your profile and preferences</p>
             </a>
         </div>
-        
+
     </div>
-    
+
     <script src="assets/js/dashboard.js"></script>
-    
+
 </body>
 </html>
