@@ -11,6 +11,7 @@ import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { randomUUID } from "crypto";
+import session from "express-session";
 
 const app = express();
 const httpServer = createServer(app);
@@ -95,6 +96,18 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "bluemogul-portal-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 24 * 60 * 60 * 1000,
+      httpOnly: true,
+    },
+  })
+);
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -137,29 +150,57 @@ app.use("/assets", express.static(join(projectRoot, "assets")));
 
 const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php"];
 
-function executePhpFile(filePath: string, res: Response) {
-  execFile(
-    "php",
-    [filePath],
-    {
-      timeout: 15000,
-      maxBuffer: 2 * 1024 * 1024,
-      cwd: projectRoot,
-      env: { ...process.env },
-    },
-    (error, stdout, stderr) => {
-      if (error) {
-        console.error(`PHP execution error:`, stderr || error.message);
-        return res.status(500).send("Server error");
-      }
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.send(stdout);
-    }
-  );
+function buildSessionPhpCode(req: Request): string {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess) return "";
+  const escaped = JSON.stringify(sess).replace(/'/g, "\\'");
+  return `
+$_sessionData = json_decode('${escaped}', true);
+if ($_sessionData) {
+    $_SESSION['user_id'] = $_sessionData['user_id'];
+    $_SESSION['user_email'] = $_sessionData['user_email'];
+    $_SESSION['user_name'] = $_sessionData['user_name'];
+    $_SESSION['is_admin'] = $_sessionData['is_admin'];
+    $_SESSION['logged_in_at'] = $_sessionData['logged_in_at'];
+    $_SESSION['last_login'] = $_sessionData['last_login'];
+    $_SESSION['last_activity'] = $_sessionData['last_activity'];
+}
+`;
 }
 
-app.get("/portal", (_req, res) => {
-  executePhpFile(join(projectRoot, "index.php"), res);
+function executePhpFile(filePath: string, req: Request, res: Response) {
+  const sessionCode = buildSessionPhpCode(req);
+  const phpCode = `<?php
+session_start();
+${sessionCode}
+require '${filePath.replace(/'/g, "\\'")}';
+`;
+  const tmpFile = join(tmpdir(), `portal_${randomUUID()}.php`);
+  writeFile(tmpFile, phpCode).then(() => {
+    execFile(
+      "php",
+      [tmpFile],
+      {
+        timeout: 15000,
+        maxBuffer: 2 * 1024 * 1024,
+        cwd: projectRoot,
+        env: { ...process.env },
+      },
+      (error, stdout, stderr) => {
+        unlink(tmpFile).catch(() => {});
+        if (error) {
+          console.error(`PHP execution error:`, stderr || error.message);
+          return res.status(500).send("Server error");
+        }
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.send(stdout);
+      }
+    );
+  });
+}
+
+app.get("/portal", (req, res) => {
+  executePhpFile(join(projectRoot, "index.php"), req, res);
 });
 
 app.get("/portal/:file", (req, res) => {
@@ -170,7 +211,7 @@ app.get("/portal/:file", (req, res) => {
     return res.status(404).send("Not found");
   }
 
-  executePhpFile(join(projectRoot, phpFile), res);
+  executePhpFile(join(projectRoot, phpFile), req, res);
 });
 
 app.post("/portal/login-handler.php", (req, res) => {
@@ -183,6 +224,7 @@ app.post("/portal/login-handler.php", (req, res) => {
   const postData = formParts.join("&");
 
   const phpCode = `<?php
+session_start();
 $_SERVER['REQUEST_METHOD'] = 'POST';
 parse_str('${postData.replace(/'/g, "\\'")}', $_POST);
 $_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
@@ -208,13 +250,34 @@ require '${filePath.replace(/'/g, "\\'")}';
         }
         try {
           const json = JSON.parse(stdout);
-          res.json(json);
+          if (json.success && json.user) {
+            (req.session as any).portalUser = {
+              user_id: json.user.id,
+              user_email: json.user.email,
+              user_name: json.user.name,
+              is_admin: json.user.is_admin,
+              logged_in_at: Math.floor(Date.now() / 1000),
+              last_login: new Date().toISOString(),
+              last_activity: Math.floor(Date.now() / 1000),
+            };
+            req.session.save(() => {
+              res.json(json);
+            });
+          } else {
+            res.json(json);
+          }
         } catch {
           res.setHeader("Content-Type", "text/html; charset=utf-8");
           res.send(stdout);
         }
       }
     );
+  });
+});
+
+app.get("/portal/logout.php", (req, res) => {
+  req.session.destroy(() => {
+    res.redirect("/portal");
   });
 });
 
