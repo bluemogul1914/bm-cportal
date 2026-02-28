@@ -59,7 +59,7 @@
             </div>
 
             <!-- Login Form -->
-            <form id="login-form" method="POST" action="login-handler.php">
+            <form id="login-form" method="POST" action="/portal/login-handler.php">
                 
                 <!-- Email Field -->
                 <div class="mb-6">

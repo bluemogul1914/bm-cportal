@@ -11,7 +11,7 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { Code2, BookOpen, Terminal } from "lucide-react";
+import { Code2, BookOpen, Terminal, LayoutDashboard } from "lucide-react";
 
 const navItems = [
   { title: "Playground", url: "/", icon: Terminal },
@@ -61,7 +61,15 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="p-4">
-        <p className="text-xs text-muted-foreground text-center">
+        <a
+          href="/portal"
+          className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium hover:bg-accent transition-colors"
+          data-testid="link-portal"
+        >
+          <LayoutDashboard className="w-4 h-4" />
+          <span>Client Portal</span>
+        </a>
+        <p className="text-xs text-muted-foreground text-center mt-2">
           PHP {">"}= 8.2 supported
         </p>
       </SidebarFooter>

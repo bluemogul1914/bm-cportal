@@ -5,11 +5,12 @@ import { insertSnippetSchema } from "@shared/schema";
 import { execFile } from "child_process";
 import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, resolve } from "path";
 import { randomUUID } from "crypto";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import express from "express";
 
 const DISABLED_FUNCTIONS = [
   "exec", "shell_exec", "system", "passthru", "popen", "proc_open",
@@ -201,6 +202,108 @@ export async function registerRoutes(
     } catch (error: any) {
       res.status(500).json({ error: "Failed to create checkout session" });
     }
+  });
+
+  const projectRoot = resolve(process.cwd());
+  app.use("/assets", express.static(join(projectRoot, "assets")));
+
+  const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php"];
+
+  app.get("/portal", (req, res) => {
+    const filePath = join(projectRoot, "index.php");
+    execFile(
+      "php",
+      [filePath],
+      {
+        timeout: 15000,
+        maxBuffer: 2 * 1024 * 1024,
+        cwd: projectRoot,
+        env: { ...process.env },
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          console.error("PHP execution error (index.php):", stderr || error.message);
+          return res.status(500).send("Server error");
+        }
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.send(stdout);
+      }
+    );
+  });
+
+  app.get("/portal/:file", (req, res) => {
+    const file = req.params.file;
+    const phpFile = file.endsWith(".php") ? file : `${file}.php`;
+
+    if (!ALLOWED_PHP_FILES.includes(phpFile)) {
+      return res.status(404).send("Not found");
+    }
+
+    const filePath = join(projectRoot, phpFile);
+
+    execFile(
+      "php",
+      [filePath],
+      {
+        timeout: 15000,
+        maxBuffer: 2 * 1024 * 1024,
+        cwd: projectRoot,
+        env: { ...process.env },
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          console.error(`PHP execution error (${phpFile}):`, stderr || error.message);
+          return res.status(500).send("Server error");
+        }
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.send(stdout);
+      }
+    );
+  });
+
+  app.post("/portal/login-handler.php", (req, res) => {
+    const filePath = join(projectRoot, "login-handler.php");
+
+    const formParts: string[] = [];
+    for (const [key, value] of Object.entries(req.body || {})) {
+      formParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+    }
+    const postData = formParts.join("&");
+
+    const phpCode = `<?php
+$_SERVER['REQUEST_METHOD'] = 'POST';
+parse_str('${postData.replace(/'/g, "\\'")}', $_POST);
+$_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
+require '${filePath.replace(/'/g, "\\'")}';
+`;
+
+    const tmpFile = join(tmpdir(), `portal_${randomUUID()}.php`);
+    writeFile(tmpFile, phpCode).then(() => {
+      execFile(
+        "php",
+        [tmpFile],
+        {
+          timeout: 15000,
+          maxBuffer: 2 * 1024 * 1024,
+          cwd: projectRoot,
+          env: { ...process.env },
+        },
+        (error, stdout, stderr) => {
+          unlink(tmpFile).catch(() => {});
+          if (error) {
+            console.error("PHP login handler error:", stderr || error.message);
+            return res.status(500).json({ success: false, message: "Server error" });
+          }
+          try {
+            const json = JSON.parse(stdout);
+            res.json(json);
+          } catch {
+            res.setHeader("Content-Type", "text/html; charset=utf-8");
+            res.send(stdout);
+          }
+        }
+      );
+    });
   });
 
   return httpServer;

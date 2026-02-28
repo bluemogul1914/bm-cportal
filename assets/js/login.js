@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 formData.append('password', password);
                 formData.append('remember', remember ? '1' : '0');
                 
-                const response = await fetch('login-handler.php', {
+                const response = await fetch('/portal/login-handler.php', {
                     method: 'POST',
                     body: formData
                 });
