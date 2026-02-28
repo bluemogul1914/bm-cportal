@@ -1,0 +1,320 @@
+<?php
+/**
+ * Blue Mogul Portal - Database Setup
+ * Run this once to create all tables and insert sample data
+ * 
+ * Usage: Open in browser: https://your-repl.replit.dev/setup.php
+ */
+
+require_once 'config.php';
+
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Setup - Blue Mogul Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-8">
+            <div class="text-center mb-8">
+                <img src="<?= BRAND_LOGO_URL ?>" alt="Blue Mogul" class="mx-auto mb-4" style="max-width: 200px;">
+                <h1 class="text-3xl font-bold text-gray-800">Database Setup</h1>
+                <p class="text-gray-600 mt-2">Initialize your Blue Mogul Portal database</p>
+            </div>
+
+<?php
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['setup'])) {
+    echo '<div class="space-y-4">';
+    
+    try {
+        $db = getDB();
+        
+        // Step 1: Create tables
+        echo '<div class="bg-blue-50 border-l-4 border-blue-500 p-4">';
+        echo '<p class="font-semibold">Step 1: Creating database tables...</p>';
+        echo '</div>';
+        
+        $schema = getSchema();
+        foreach ($schema as $table => $sql) {
+            try {
+                $db->exec($sql);
+                echo '<div class="bg-green-50 border-l-4 border-green-500 p-4">';
+                echo '<p>✅ Created table: <code class="font-mono">' . $table . '</code></p>';
+                echo '</div>';
+            } catch (PDOException $e) {
+                echo '<div class="bg-yellow-50 border-l-4 border-yellow-500 p-4">';
+                echo '<p>⚠️ Table <code class="font-mono">' . $table . '</code> already exists or error: ' . $e->getMessage() . '</p>';
+                echo '</div>';
+            }
+        }
+        
+        // Step 2: Insert sample products
+        echo '<div class="bg-blue-50 border-l-4 border-blue-500 p-4 mt-4">';
+        echo '<p class="font-semibold">Step 2: Inserting sample products...</p>';
+        echo '</div>';
+        
+        $products = getSampleProducts();
+        $stmt = $db->prepare("
+            INSERT INTO products (name, category, tier, price, billing_period, description, features, active)
+            VALUES (:name, :category, :tier, :price, :billing_period, :description, :features, :active)
+            ON CONFLICT (name) DO NOTHING
+        ");
+        
+        $inserted = 0;
+        foreach ($products as $product) {
+            try {
+                $stmt->execute($product);
+                $inserted += $stmt->rowCount();
+            } catch (PDOException $e) {
+                // Ignore duplicates
+            }
+        }
+        
+        echo '<div class="bg-green-50 border-l-4 border-green-500 p-4">';
+        echo '<p>✅ Inserted ' . $inserted . ' products</p>';
+        echo '</div>';
+        
+        // Step 3: Create admin user
+        echo '<div class="bg-blue-50 border-l-4 border-blue-500 p-4 mt-4">';
+        echo '<p class="font-semibold">Step 3: Creating admin user...</p>';
+        echo '</div>';
+        
+        $adminPassword = password_hash('admin123', PASSWORD_DEFAULT);
+        $stmt = $db->prepare("
+            INSERT INTO users (email, password, is_admin, name)
+            VALUES (:email, :password, :is_admin, :name)
+            ON CONFLICT (email) DO UPDATE SET password = :password
+        ");
+        
+        $stmt->execute([
+            'email' => 'admin@bluemogul.biz',
+            'password' => $adminPassword,
+            'is_admin' => true,
+            'name' => 'Administrator'
+        ]);
+        
+        echo '<div class="bg-green-50 border-l-4 border-green-500 p-4">';
+        echo '<p>✅ Admin user created</p>';
+        echo '<p class="mt-2 text-sm">Email: <code class="font-mono">admin@bluemogul.biz</code></p>';
+        echo '<p class="text-sm">Password: <code class="font-mono">admin123</code></p>';
+        echo '<p class="text-red-600 text-sm mt-2">⚠️ Change this password immediately!</p>';
+        echo '</div>';
+        
+        // Step 4: Statistics
+        echo '<div class="bg-blue-50 border-l-4 border-blue-500 p-4 mt-4">';
+        echo '<p class="font-semibold">Step 4: Database statistics...</p>';
+        echo '</div>';
+        
+        $tables = $db->query("
+            SELECT tablename FROM pg_tables 
+            WHERE schemaname = 'public'
+        ")->fetchAll(PDO::FETCH_COLUMN);
+        
+        $productCount = $db->query("SELECT COUNT(*) FROM products")->fetchColumn();
+        
+        echo '<div class="bg-green-50 border-l-4 border-green-500 p-4">';
+        echo '<p>✅ Total tables: ' . count($tables) . '</p>';
+        echo '<p>✅ Total products: ' . $productCount . '</p>';
+        echo '</div>';
+        
+        // Success message
+        echo '<div class="bg-green-100 border-2 border-green-500 p-6 mt-6 rounded-lg text-center">';
+        echo '<h2 class="text-2xl font-bold text-green-800 mb-4">🎉 Setup Complete!</h2>';
+        echo '<p class="text-green-700 mb-4">Your Blue Mogul Portal database is ready.</p>';
+        echo '<a href="index.php" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition">';
+        echo 'Go to Login Page →';
+        echo '</a>';
+        echo '</div>';
+        
+    } catch (Exception $e) {
+        echo '<div class="bg-red-100 border-2 border-red-500 p-6 rounded-lg">';
+        echo '<h2 class="text-xl font-bold text-red-800 mb-2">❌ Setup Failed</h2>';
+        echo '<p class="text-red-700">' . $e->getMessage() . '</p>';
+        echo '</div>';
+    }
+    
+    echo '</div>';
+    
+} else {
+    // Show setup form
+    ?>
+    <div class="bg-blue-50 border-l-4 border-blue-500 p-6 mb-6">
+        <h2 class="font-bold text-lg mb-2">What This Will Do:</h2>
+        <ul class="list-disc list-inside space-y-2 text-gray-700">
+            <li>Create all database tables (clients, products, subscriptions, etc.)</li>
+            <li>Insert 37 sample products from your pricing catalog</li>
+            <li>Create an admin user account</li>
+            <li>Set up database indexes for performance</li>
+        </ul>
+    </div>
+    
+    <div class="bg-yellow-50 border-l-4 border-yellow-500 p-6 mb-6">
+        <h2 class="font-bold text-lg mb-2">⚠️ Important Notes:</h2>
+        <ul class="list-disc list-inside space-y-2 text-gray-700">
+            <li>This is safe to run multiple times (won't duplicate data)</li>
+            <li>Existing data will not be deleted</li>
+            <li>Takes about 30 seconds to complete</li>
+            <li>Delete this file after setup for security</li>
+        </ul>
+    </div>
+    
+    <form method="POST" class="text-center">
+        <button type="submit" name="setup" value="1" 
+                class="bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition shadow-lg">
+            🚀 Start Database Setup
+        </button>
+    </form>
+    <?php
+}
+
+/**
+ * Get database schema
+ */
+function getSchema() {
+    $tables = [];
+    
+    // Users table
+    $tables['users'] = "
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        name VARCHAR(255),
+        is_admin BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    
+    // Clients table
+    $tables['clients'] = "
+    CREATE TABLE IF NOT EXISTS clients (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        phone VARCHAR(50),
+        company VARCHAR(255),
+        address TEXT,
+        city VARCHAR(100),
+        state VARCHAR(50),
+        zip VARCHAR(20),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    
+    // Products table
+    $tables['products'] = "
+    CREATE TABLE IF NOT EXISTS products (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) UNIQUE NOT NULL,
+        category VARCHAR(100) NOT NULL,
+        tier VARCHAR(50),
+        price DECIMAL(10,2) NOT NULL,
+        billing_period VARCHAR(20) DEFAULT 'monthly',
+        description TEXT,
+        features JSONB,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    
+    // Subscriptions table
+    $tables['subscriptions'] = "
+    CREATE TABLE IF NOT EXISTS subscriptions (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER REFERENCES clients(id),
+        product_id INTEGER REFERENCES products(id),
+        status VARCHAR(50) DEFAULT 'active',
+        stripe_subscription_id VARCHAR(255),
+        stripe_customer_id VARCHAR(255),
+        start_date DATE NOT NULL,
+        end_date DATE,
+        mrr DECIMAL(10,2) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    
+    // Invoices table
+    $tables['invoices'] = "
+    CREATE TABLE IF NOT EXISTS invoices (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER REFERENCES clients(id),
+        subscription_id INTEGER REFERENCES subscriptions(id),
+        invoice_number VARCHAR(50) UNIQUE NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        status VARCHAR(50) DEFAULT 'unpaid',
+        due_date DATE,
+        paid_date DATE,
+        stripe_invoice_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    
+    // Tickets table
+    $tables['tickets'] = "
+    CREATE TABLE IF NOT EXISTS tickets (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER REFERENCES clients(id),
+        subject VARCHAR(255) NOT NULL,
+        description TEXT,
+        status VARCHAR(50) DEFAULT 'open',
+        priority VARCHAR(20) DEFAULT 'medium',
+        assigned_to VARCHAR(100),
+        source VARCHAR(50) DEFAULT 'portal',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    
+    // AI Agent Logs table
+    $tables['agent_logs'] = "
+    CREATE TABLE IF NOT EXISTS agent_logs (
+        id SERIAL PRIMARY KEY,
+        agent_name VARCHAR(100) NOT NULL,
+        action VARCHAR(255) NOT NULL,
+        status VARCHAR(50) NOT NULL,
+        details JSONB,
+        execution_time INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    
+    return $tables;
+}
+
+/**
+ * Get sample products
+ */
+function getSampleProducts() {
+    return [
+        // Managed IT Services
+        ['name' => 'Basic IT Support', 'category' => 'Managed IT', 'tier' => 'Tier 1', 'price' => 149.00, 'billing_period' => 'monthly', 'description' => '8/5 support, basic monitoring, email support', 'features' => json_encode(['8/5 Support', 'Basic Monitoring', 'Email Support']), 'active' => true],
+        ['name' => 'Business IT Support', 'category' => 'Managed IT', 'tier' => 'Tier 2', 'price' => 249.00, 'billing_period' => 'monthly', 'description' => '24/7 support, full monitoring, phone support', 'features' => json_encode(['24/7 Support', 'Full Monitoring', 'Phone Support', 'Remote Access']), 'active' => true],
+        ['name' => 'Enterprise IT Support', 'category' => 'Managed IT', 'tier' => 'Tier 3', 'price' => 449.00, 'billing_period' => 'monthly', 'description' => 'White glove service, dedicated engineer, priority support', 'features' => json_encode(['Dedicated Engineer', 'White Glove Service', 'Priority Support', '2hr Response Time']), 'active' => true],
+        ['name' => 'MSP Complete', 'category' => 'Managed IT', 'tier' => 'Tier 4', 'price' => 749.00, 'billing_period' => 'monthly', 'description' => 'Full MSP services, unlimited support, on-site visits', 'features' => json_encode(['Unlimited Support', 'On-site Visits', 'Strategic Planning', 'vCIO Services']), 'active' => true],
+        
+        // VoIP Services
+        ['name' => 'VoIP Starter', 'category' => 'VoIP', 'tier' => 'Tier 1', 'price' => 49.00, 'billing_period' => 'monthly', 'description' => '5 extensions, basic features, voicemail', 'features' => json_encode(['5 Extensions', 'Voicemail', 'Call Forwarding', 'Basic IVR']), 'active' => true],
+        ['name' => 'VoIP Business', 'category' => 'VoIP', 'tier' => 'Tier 2', 'price' => 89.00, 'billing_period' => 'monthly', 'description' => '15 extensions, advanced features, call recording', 'features' => json_encode(['15 Extensions', 'Call Recording', 'Advanced IVR', 'Conference Bridge']), 'active' => true],
+        ['name' => 'VoIP Professional', 'category' => 'VoIP', 'tier' => 'Tier 3', 'price' => 149.00, 'billing_period' => 'monthly', 'description' => '50 extensions, call analytics, CRM integration', 'features' => json_encode(['50 Extensions', 'Call Analytics', 'CRM Integration', 'Dedicated Support']), 'active' => true],
+        ['name' => 'VoIP Enterprise', 'category' => 'VoIP', 'tier' => 'Tier 4', 'price' => 299.00, 'billing_period' => 'monthly', 'description' => 'Unlimited extensions, premium support, SLA guarantee', 'features' => json_encode(['Unlimited Extensions', '99.99% SLA', 'Premium Support', 'Custom Integrations']), 'active' => true],
+        
+        // Nextcloud Hosting
+        ['name' => 'Nextcloud Basic', 'category' => 'Cloud Storage', 'tier' => 'Tier 1', 'price' => 29.00, 'billing_period' => 'monthly', 'description' => '50GB storage, 5 users, basic features', 'features' => json_encode(['50GB Storage', '5 Users', 'File Sync', 'Mobile Apps']), 'active' => true],
+        ['name' => 'Nextcloud Plus', 'category' => 'Cloud Storage', 'tier' => 'Tier 2', 'price' => 69.00, 'billing_period' => 'monthly', 'description' => '250GB storage, 25 users, collaboration tools', 'features' => json_encode(['250GB Storage', '25 Users', 'Collaboration', 'Video Chat']), 'active' => true],
+        ['name' => 'Nextcloud Pro', 'category' => 'Cloud Storage', 'tier' => 'Tier 3', 'price' => 149.00, 'billing_period' => 'monthly', 'description' => '1TB storage, unlimited users, enterprise features', 'features' => json_encode(['1TB Storage', 'Unlimited Users', 'Advanced Security', 'HIPAA Compliant']), 'active' => true],
+        
+        // Fiber Internet
+        ['name' => 'Fiber 100/100', 'category' => 'Internet', 'tier' => 'Tier 1', 'price' => 79.00, 'billing_period' => 'monthly', 'description' => '100 Mbps symmetrical fiber internet', 'features' => json_encode(['100 Mbps Up/Down', 'Static IP', 'No Data Caps', '24/7 Support']), 'active' => true],
+        ['name' => 'Fiber 500/500', 'category' => 'Internet', 'tier' => 'Tier 2', 'price' => 149.00, 'billing_period' => 'monthly', 'description' => '500 Mbps symmetrical fiber internet', 'features' => json_encode(['500 Mbps Up/Down', '5 Static IPs', 'No Data Caps', 'Priority Support']), 'active' => true],
+        ['name' => 'Fiber 1000/1000', 'category' => 'Internet', 'tier' => 'Tier 3', 'price' => 299.00, 'billing_period' => 'monthly', 'description' => '1 Gbps symmetrical fiber internet', 'features' => json_encode(['1 Gbps Up/Down', '13 Static IPs', 'No Data Caps', 'White Glove Support']), 'active' => true],
+        ['name' => 'Fiber Enterprise', 'category' => 'Internet', 'tier' => 'Tier 4', 'price' => 599.00, 'billing_period' => 'monthly', 'description' => '10 Gbps symmetrical fiber internet', 'features' => json_encode(['10 Gbps Up/Down', 'Custom IPs', '99.99% SLA', 'Dedicated Engineer']), 'active' => true],
+    ];
+}
+
+?>
+
+        </div>
+    </div>
+</body>
+</html>
