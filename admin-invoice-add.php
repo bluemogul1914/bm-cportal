@@ -32,6 +32,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
 
             $stmt = $pdo->prepare("INSERT INTO invoices (client_id, invoice_number, amount, status, due_date, created_at) VALUES (?, ?, ?, 'unpaid', ?, NOW())");
             $stmt->execute([$client_id, $invoice_number, $amount, !empty($due_date) ? $due_date : null]);
+            $new_invoice_id = $pdo->lastInsertId();
+            $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'invoice_created', 'invoice', $new_invoice_id, 'Created invoice ' . $invoice_number, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             $success_msg = "Invoice $invoice_number created successfully!";
         } catch (PDOException $e) {
             error_log("Invoice creation error: " . $e->getMessage());

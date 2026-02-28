@@ -39,6 +39,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
                 $_SESSION['user_name'] = $name;
                 $user_name = $name;
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'profile_updated', 'user', $user_id, 'Updated profile', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
                 $success_msg = 'Profile updated successfully!';
             } catch (PDOException $e) {
                 error_log("Profile update error: " . $e->getMessage());

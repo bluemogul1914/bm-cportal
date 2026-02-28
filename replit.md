@@ -24,6 +24,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `products.php` - Product catalog browsing with category filters and "Request Service" flow
 - `documents.php` - Document management with categories, upload, delete
 - `profile.php` - Profile editing and password change
+- `settings.php` - Account settings (notification prefs, 2FA, theme, communication prefs)
 - `help.php` - Client-facing Help Center / Knowledge Base with search, categories, article view
 
 ### Admin Portal Pages
@@ -44,6 +45,12 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-automation.php` - 30-day deployment roadmap, integration status, getting started guide
 - `admin-reports.php` - Revenue trends, charts, analytics
 - `admin-settings.php` - Company info, API keys, SMTP, system info
+- `admin-itflow.php` - ITFlow PSA integration dashboard (connection status, sync capabilities)
+- `admin-uisp.php` - UISP network management integration (devices, service plans)
+- `admin-voip.php` - VoIP.ms phone integration (CDR lookup, DID management)
+- `admin-nextcloud.php` - Nextcloud file sharing integration (document sync)
+- `admin-stripe.php` - Stripe payment integration (billing overview, recent payments)
+- `admin-audit.php` - Activity audit trail (filterable log of all user actions)
 
 ### Shared Components
 - `includes/client-sidebar.php` - Client portal sidebar (dark navy #0d1b3e)

@@ -37,6 +37,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
         try {
             $stmt = $pdo->prepare("UPDATE clients SET name = ?, email = ?, phone = ?, company = ?, address = ?, city = ?, state = ?, zip = ?, updated_at = NOW() WHERE id = ?");
             $stmt->execute([$name, $email, $phone, $company, $address, $city, $state, $zip, $client_id]);
+            $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'client_updated', 'client', $client_id, 'Updated client: ' . $name, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             $success_msg = 'Client updated successfully!';
         } catch (PDOException $e) {
             error_log("Client update error: " . $e->getMessage());

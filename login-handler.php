@@ -104,6 +104,8 @@ try {
         'is_admin' => $user['is_admin']
     ]);
     
+    $db->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$_SESSION['user_id'], 'login', 'user', $_SESSION['user_id'], 'User logged in', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+    
     $redirect = 'dashboard.php';
     
     echo json_encode([

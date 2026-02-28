@@ -35,6 +35,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                 $stmt = $pdo->prepare("INSERT INTO payments (invoice_id, client_id, amount, method, status, created_at) VALUES (?, ?, ?, 'manual', 'completed', NOW())");
                 $stmt->execute([$invoice_id, $inv['client_id'], $inv['amount']]);
             }
+            $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'invoice_updated', 'invoice', $invoice_id, 'Marked invoice #' . $invoice_id . ' as paid', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             $success_msg = 'Invoice marked as paid.';
         } catch (PDOException $e) {
             error_log("Mark paid error: " . $e->getMessage());
@@ -44,6 +45,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
         try {
             $stmt = $pdo->prepare("UPDATE invoices SET status = 'unpaid', paid_date = NULL WHERE id = ?");
             $stmt->execute([$invoice_id]);
+            $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'invoice_updated', 'invoice', $invoice_id, 'Marked invoice #' . $invoice_id . ' as unpaid', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             $success_msg = 'Invoice marked as unpaid.';
         } catch (PDOException $e) {
             $error_msg = 'Failed to update invoice.';

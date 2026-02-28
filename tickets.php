@@ -33,6 +33,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
 
             $stmt = $pdo->prepare("INSERT INTO tickets (client_id, subject, description, status, priority, source, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, 'portal', NOW(), NOW())");
             $stmt->execute([$client_id, $subject, $description, $priority]);
+            $new_ticket_id = $pdo->lastInsertId();
+            $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'ticket_created', 'ticket', $new_ticket_id, 'Created ticket: ' . $subject, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             $success_msg = 'Ticket created successfully!';
         } catch (PDOException $e) {
             error_log("Ticket creation error: " . $e->getMessage());

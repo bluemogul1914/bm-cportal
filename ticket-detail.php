@@ -37,6 +37,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                 $stmt = $pdo->prepare("UPDATE tickets SET updated_at = NOW() WHERE id = ? AND client_id = ?");
                 $stmt->execute([$ticket_id, $client_id]);
 
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'comment_added', 'ticket', $ticket_id, 'Added reply to ticket #' . $ticket_id, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
                 $success_msg = 'Reply added successfully.';
             } catch (PDOException $e) {
                 error_log("Comment error: " . $e->getMessage());

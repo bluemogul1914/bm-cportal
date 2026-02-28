@@ -37,6 +37,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             try {
                 $stmt = $pdo->prepare("INSERT INTO documents (client_id, uploaded_by, name, filename, filepath, filesize, mimetype, category, description, is_public, created_at) VALUES (?, ?, ?, ?, ?, 0, 'text/plain', ?, ?, false, NOW())");
                 $stmt->execute([$client_id, $user_id, $doc_name, $filename, $filepath, $category, $description]);
+                $new_doc_id = $pdo->lastInsertId();
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'document_uploaded', 'document', $new_doc_id, 'Uploaded: ' . $doc_name, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
                 $success_msg = 'Document record created successfully!';
             } catch (PDOException $e) {
                 error_log("Document upload error: " . $e->getMessage());
@@ -48,6 +50,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         try {
             $stmt = $pdo->prepare("DELETE FROM documents WHERE id = ? AND client_id = ?");
             $stmt->execute([$doc_id, $client_id]);
+            $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'document_deleted', 'document', $doc_id, 'Deleted document #' . $doc_id, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             $success_msg = 'Document deleted successfully.';
         } catch (PDOException $e) {
             error_log("Document delete error: " . $e->getMessage());

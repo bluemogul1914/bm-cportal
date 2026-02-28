@@ -100,6 +100,11 @@
         <div class="mt-8">
             <p class="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">System</p>
             <div class="space-y-1">
+                <a href="admin-audit.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-audit.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-audit-trail">
+                    <i class="fas fa-clipboard-list w-5"></i>
+                    <span>Audit Trail</span>
+                </a>
+
                 <a href="admin-settings.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-settings.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                     <i class="fas fa-cog w-5"></i>
                     <span>Settings</span>

@@ -46,6 +46,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
         try {
             $stmt = $pdo->prepare("UPDATE tickets SET status = ?, priority = ?, assigned_to = ?, updated_at = NOW() WHERE id = ?");
             $stmt->execute([$status, $priority, $assigned_to, $ticket_id]);
+            $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'ticket_updated', 'ticket', $ticket_id, 'Updated ticket #' . $ticket_id, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             $success_msg = 'Ticket updated successfully.';
         } catch (PDOException $e) {
             error_log("Ticket update error: " . $e->getMessage());
