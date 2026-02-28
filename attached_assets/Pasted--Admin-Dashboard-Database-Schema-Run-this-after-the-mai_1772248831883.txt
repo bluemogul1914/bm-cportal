@@ -1,0 +1,133 @@
+-- Admin Dashboard Database Schema
+-- Run this after the main setup.php to add admin features
+
+-- Add role column to users table if it doesn't exist
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'client';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
+
+-- Update first user to admin (change email as needed)
+UPDATE users SET role = 'admin' WHERE id = 1 OR email = 'admin@bluemogul.biz';
+
+-- Agent logs table for AI Agent Army
+CREATE TABLE IF NOT EXISTS agent_logs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    agent_name VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    message TEXT,
+    details TEXT,
+    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_agent_name (agent_name),
+    INDEX idx_executed_at (executed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Add status column to clients if missing
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS company VARCHAR(255);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+
+-- Sample agent log entries (for demo/testing)
+INSERT INTO agent_logs (agent_name, status, message, details) VALUES
+('network_monitor', 'success', 'Completed network scan - All systems operational', 'Checked 15 devices, 0 issues found'),
+('lead_generator', 'success', 'Generated 5 new qualified leads', 'Added to HubSpot pipeline'),
+('ticket_triage', 'success', 'Classified 3 new tickets', 'Priority: 2 medium, 1 low'),
+('sales_agent', 'success', 'Sent 8 follow-up emails', '2 responses received'),
+('social_media', 'success', 'Posted content to 3 platforms', 'Engagement: 47 interactions'),
+('master_orchestrator', 'success', 'Coordinated daily agent execution', 'All agents completed successfully');
+
+-- Create sessions table for better session management
+CREATE TABLE IF NOT EXISTS sessions (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    session_token VARCHAR(255) NOT NULL,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_session_token (session_token),
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Activity log table for audit trail
+CREATE TABLE IF NOT EXISTS activity_log (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT,
+    action VARCHAR(100) NOT NULL,
+    entity_type VARCHAR(50),
+    entity_id INT,
+    details TEXT,
+    ip_address VARCHAR(45),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_user_id (user_id),
+    INDEX idx_entity (entity_type, entity_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- System settings table
+CREATE TABLE IF NOT EXISTS system_settings (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    setting_key VARCHAR(100) UNIQUE NOT NULL,
+    setting_value TEXT,
+    setting_type VARCHAR(20) DEFAULT 'text',
+    description TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Insert default system settings
+INSERT INTO system_settings (setting_key, setting_value, setting_type, description) VALUES
+('company_name', 'Blue Mogul', 'text', 'Company name'),
+('company_email', 'support@bluemogul.biz', 'email', 'Primary support email'),
+('company_phone', '(555) 123-4567', 'text', 'Support phone number'),
+('mrr_goal', '50000', 'number', 'Monthly recurring revenue goal'),
+('ai_agents_enabled', '1', 'boolean', 'Enable AI Agent Army'),
+('maintenance_mode', '0', 'boolean', 'Maintenance mode status')
+ON DUPLICATE KEY UPDATE setting_value=setting_value;
+
+-- Notifications table
+CREATE TABLE IF NOT EXISTS notifications (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT,
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    message TEXT,
+    link VARCHAR(255),
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_read (user_id, is_read)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Sample notifications
+INSERT INTO notifications (user_id, type, title, message, link) VALUES
+(1, 'ticket', 'New ticket response', 'Your ticket #1234 has been updated', '/ticket-detail.php?id=1234'),
+(1, 'invoice', 'Invoice due soon', 'Invoice #001 is due in 3 days', '/billing.php'),
+(1, 'service', 'Service activated', 'VoIP Business is now active', '/services.php');
+
+-- AI Agent configuration table
+CREATE TABLE IF NOT EXISTS agent_config (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    agent_name VARCHAR(50) UNIQUE NOT NULL,
+    enabled BOOLEAN DEFAULT TRUE,
+    schedule VARCHAR(50) DEFAULT '*/5 * * * *',
+    config JSON,
+    last_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Default agent configurations
+INSERT INTO agent_config (agent_name, enabled, schedule, config) VALUES
+('network_monitor', TRUE, '*/5 * * * *', '{"interval": 300, "alert_threshold": 3}'),
+('lead_generator', TRUE, '0 */4 * * *', '{"sources": ["yellowpages", "yelp"], "min_score": 7}'),
+('ticket_triage', TRUE, '*/2 * * * *', '{"model": "ollama", "confidence_threshold": 0.8}'),
+('sales_agent', TRUE, '0 9 * * *', '{"max_emails": 50, "template": "followup_v2"}'),
+('social_media', TRUE, '0 10,14,18 * * *', '{"platforms": ["twitter", "linkedin", "facebook"]}'),
+('branding', TRUE, '0 11 * * 1', '{"content_types": ["blog", "email", "social"]}'),
+('project_manager', TRUE, '0 8 * * *', '{"sync_source": "asana", "notify_on_overdue": true}'),
+('bookkeeping', TRUE, '0 0 * * *', '{"categories": ["income", "expenses"], "currency": "USD"}'),
+('nextcloud_sales', TRUE, '0 */6 * * *', '{"min_storage": "50GB", "trial_period": 14}'),
+('master_orchestrator', TRUE, '*/10 * * * *', '{"max_concurrent": 3, "retry_on_failure": true}')
+ON DUPLICATE KEY UPDATE enabled=enabled;
+
+-- Success message
+SELECT 'Admin dashboard database schema created successfully!' AS Status;
+SELECT COUNT(*) AS 'Agent Configs Created' FROM agent_config;
+SELECT COUNT(*) AS 'Sample Logs Added' FROM agent_logs;
