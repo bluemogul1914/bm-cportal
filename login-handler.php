@@ -104,7 +104,7 @@ try {
         'is_admin' => $user['is_admin']
     ]);
     
-    $redirect = $user['is_admin'] ? 'admin.php' : 'dashboard.php';
+    $redirect = 'dashboard.php';
     
     echo json_encode([
         'success' => true,
