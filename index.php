@@ -43,7 +43,7 @@
         
         <!-- Logo & Header -->
         <div class="text-center mb-8 animate-fadeIn">
-            <img src="https://www.genspark.ai/api/files/s/ooZqusbl" alt="Blue Mogul" class="mx-auto mb-6 h-16 drop-shadow-lg">
+            <img src="/assets/img/logo.png" alt="Blue Mogul" class="mx-auto mb-6 h-16 drop-shadow-lg">
             <h1 class="text-4xl font-bold text-white mb-2">Client Portal</h1>
             <p class="text-blue-100 text-lg">Unified MSP & Fiber Services</p>
         </div>

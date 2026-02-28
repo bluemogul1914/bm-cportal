@@ -33,17 +33,19 @@ define('DB_PORT', '3306');
 // APPLICATION SETTINGS
 // ============================================
 define('SITE_NAME', 'Blue Mogul Client Portal');
-define('SITE_URL', 'https://' . $_SERVER['HTTP_HOST']);
+define('SITE_URL', 'https://' . (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : 'localhost'));
 define('ADMIN_EMAIL', 'contact@bluemogul.biz');
 define('SUPPORT_PHONE', '346-309-5514');
 
 // Session settings
 define('SESSION_LIFETIME', 3600 * 24); // 24 hours
-session_start([
-    'cookie_lifetime' => SESSION_LIFETIME,
-    'cookie_httponly' => true,
-    'cookie_secure' => isset($_SERVER['HTTPS']),
-]);
+if (php_sapi_name() !== 'cli' && session_status() === PHP_SESSION_NONE) {
+    session_start([
+        'cookie_lifetime' => SESSION_LIFETIME,
+        'cookie_httponly' => true,
+        'cookie_secure' => isset($_SERVER['HTTPS']),
+    ]);
+}
 
 // Timezone
 date_default_timezone_set('America/Chicago');
@@ -115,7 +117,7 @@ define('ANYTHINGLLM_URL', getenv('ANYTHINGLLM_URL') ?: '');
 define('BRAND_PRIMARY_COLOR', '#1a56db');
 define('BRAND_SECONDARY_COLOR', '#0d1b3e');
 define('BRAND_ACCENT_COLOR', '#3b82f6');
-define('BRAND_LOGO_URL', 'https://www.genspark.ai/api/files/s/ooZqusbl');
+define('BRAND_LOGO_URL', '/assets/img/logo.png');
 
 // ============================================
 // HELPER FUNCTIONS
@@ -129,12 +131,28 @@ function getDB() {
     
     if ($pdo === null) {
         try {
-            $dsn = DB_TYPE . ':host=' . DB_HOST . ';port=' . DB_PORT . ';dbname=' . DB_NAME;
-            $pdo = new PDO($dsn, DB_USER, DB_PASS, [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false,
-            ]);
+            $databaseUrl = getenv('DATABASE_URL');
+            if ($databaseUrl) {
+                $parts = parse_url($databaseUrl);
+                $host = $parts['host'] ?? 'localhost';
+                $port = $parts['port'] ?? 5432;
+                $dbname = ltrim($parts['path'] ?? '', '/');
+                $user = $parts['user'] ?? '';
+                $pass = $parts['pass'] ?? '';
+                $dsn = "pgsql:host={$host};port={$port};dbname={$dbname}";
+                $pdo = new PDO($dsn, $user, $pass, [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                ]);
+            } else {
+                $dsn = DB_TYPE . ':host=' . DB_HOST . ';port=' . DB_PORT . ';dbname=' . DB_NAME;
+                $pdo = new PDO($dsn, DB_USER, DB_PASS, [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                ]);
+            }
         } catch (PDOException $e) {
             die('Database connection failed: ' . $e->getMessage());
         }
@@ -169,13 +187,10 @@ function redirect($url) {
  * Log message
  */
 function logMessage($level, $message, $context = []) {
-    $logFile = __DIR__ . '/logs/' . date('Y-m-d') . '.log';
     $timestamp = date('Y-m-d H:i:s');
     $contextStr = !empty($context) ? ' | ' . json_encode($context) : '';
-    $logEntry = "[{$timestamp}] [{$level}] {$message}{$contextStr}\n";
-    
-    @mkdir(__DIR__ . '/logs', 0755, true);
-    file_put_contents($logFile, $logEntry, FILE_APPEND);
+    $logEntry = "[{$timestamp}] [{$level}] {$message}{$contextStr}";
+    error_log($logEntry);
 }
 
 /**
