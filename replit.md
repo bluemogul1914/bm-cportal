@@ -6,7 +6,7 @@ An online PHP code editor and execution environment built with React + Express, 
 
 - **Frontend**: React with Tailwind CSS, shadcn/ui components, wouter routing
 - **Backend**: Express.js with PHP code execution via child_process
-- **Database**: PostgreSQL with Drizzle ORM for snippet storage + Stripe schema via stripe-replit-sync
+- **Database**: PostgreSQL with Drizzle ORM for snippets, users, clients, products, subscriptions, invoices, tickets, agent_logs + Stripe schema via stripe-replit-sync
 - **Runtime**: PHP 8.2 installed via Nix for server-side code execution
 - **Payments**: Stripe integration via Replit connector (OAuth-managed)
 
@@ -35,6 +35,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `server/webhookHandlers.ts` - Stripe webhook processing
 - `shared/schema.ts` - Drizzle schema and types
 - `config.php` - Blue Mogul Portal PHP configuration (env-based secrets)
+- `setup.php` - Database setup script (creates tables, seeds products, creates admin user)
 
 ## API Endpoints
 
