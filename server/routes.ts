@@ -7,6 +7,9 @@ import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
+import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 
 const DISABLED_FUNCTIONS = [
   "exec", "shell_exec", "system", "passthru", "popen", "proc_open",
@@ -127,6 +130,77 @@ export async function registerRoutes(
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
     await storage.deleteSnippet(id);
     res.status(204).send();
+  });
+
+  app.get("/api/stripe/publishable-key", async (_req, res) => {
+    try {
+      const key = await getStripePublishableKey();
+      res.json({ publishableKey: key });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to get Stripe publishable key" });
+    }
+  });
+
+  app.get("/api/stripe/products", async (_req, res) => {
+    try {
+      const result = await db.execute(
+        sql`SELECT p.id, p.name, p.description, p.metadata, p.active,
+            pr.id as price_id, pr.unit_amount, pr.currency, pr.recurring, pr.active as price_active
+            FROM stripe.products p
+            LEFT JOIN stripe.prices pr ON pr.product = p.id AND pr.active = true
+            WHERE p.active = true
+            ORDER BY p.id, pr.unit_amount`
+      );
+
+      const productsMap = new Map();
+      for (const row of result.rows) {
+        if (!productsMap.has(row.id)) {
+          productsMap.set(row.id, {
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            metadata: row.metadata,
+            active: row.active,
+            prices: [],
+          });
+        }
+        if (row.price_id) {
+          productsMap.get(row.id).prices.push({
+            id: row.price_id,
+            unit_amount: row.unit_amount,
+            currency: row.currency,
+            recurring: row.recurring,
+            active: row.price_active,
+          });
+        }
+      }
+
+      res.json({ data: Array.from(productsMap.values()) });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch products" });
+    }
+  });
+
+  app.post("/api/stripe/checkout", async (req, res) => {
+    try {
+      const { priceId } = req.body;
+      if (!priceId) {
+        return res.status(400).json({ error: "priceId is required" });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [{ price: priceId, quantity: 1 }],
+        mode: "subscription",
+        success_url: `${req.protocol}://${req.get("host")}/checkout/success`,
+        cancel_url: `${req.protocol}://${req.get("host")}/checkout/cancel`,
+      });
+
+      res.json({ url: session.url });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to create checkout session" });
+    }
   });
 
   return httpServer;
