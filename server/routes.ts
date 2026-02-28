@@ -203,5 +203,54 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/create-checkout-session", async (req, res) => {
+    try {
+      const { invoice_id } = req.body;
+      if (!invoice_id) {
+        return res.status(400).json({ error: "invoice_id is required" });
+      }
+
+      const invoiceResult = await db.execute(
+        sql`SELECT id, amount, invoice_number, status, client_id FROM invoices WHERE id = ${Number(invoice_id)} AND status = 'unpaid'`
+      );
+      if (!invoiceResult.rows.length) {
+        return res.status(404).json({ error: "Invoice not found or already paid" });
+      }
+      const invoice = invoiceResult.rows[0] as any;
+      const serverAmount = parseFloat(invoice.amount);
+      const invoiceNumber = invoice.invoice_number;
+
+      try {
+        const stripe = await getUncachableStripeClient();
+        const session = await stripe.checkout.sessions.create({
+          payment_method_types: ["card"],
+          line_items: [{
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: `Invoice ${invoiceNumber}`,
+                description: `Payment for invoice ${invoiceNumber}`,
+              },
+              unit_amount: Math.round(serverAmount * 100),
+            },
+            quantity: 1,
+          }],
+          mode: "payment",
+          metadata: { invoice_id: String(invoice_id) },
+          success_url: `${req.protocol}://${req.get("host")}/portal/payment-success.php?id=${invoice_id}&paid=1`,
+          cancel_url: `${req.protocol}://${req.get("host")}/portal/billing.php`,
+        });
+
+        res.json({ url: session.url });
+      } catch (stripeError: any) {
+        console.log("Stripe not configured, using demo mode:", stripeError.message);
+        res.json({ demo: true, message: "Demo payment - Stripe not fully configured" });
+      }
+    } catch (error: any) {
+      console.error("Checkout session error:", error);
+      res.status(500).json({ error: "Failed to create checkout session" });
+    }
+  });
+
   return httpServer;
 }

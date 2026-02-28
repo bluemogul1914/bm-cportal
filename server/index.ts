@@ -148,7 +148,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-tickets.php", "admin-products.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php"];
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-tickets.php", "admin-products.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "profile.php", "documents.php", "admin-ticket-detail.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -170,9 +170,11 @@ if ($_sessionData) {
 
 function executePhpFile(filePath: string, req: Request, res: Response) {
   const sessionCode = buildSessionPhpCode(req);
+  const queryParams = Object.entries(req.query || {}).map(([k, v]) => `$_GET['${k.replace(/'/g, "\\'")}'] = '${String(v).replace(/'/g, "\\'")}';`).join("\n");
   const phpCode = `<?php
 session_start();
 ${sessionCode}
+${queryParams}
 require '${filePath.replace(/'/g, "\\'")}';
 `;
   const tmpFile = join(tmpdir(), `portal_${randomUUID()}.php`);
@@ -214,7 +216,68 @@ app.get("/portal/:file", (req, res) => {
   executePhpFile(join(projectRoot, phpFile), req, res);
 });
 
-app.post("/portal/login-handler.php", (req, res) => {
+app.post("/portal/:file", (req, res) => {
+  const file = req.params.file;
+  const phpFile = file.endsWith(".php") ? file : `${file}.php`;
+
+  if (phpFile === "login-handler.php") {
+    return handleLogin(req, res);
+  }
+
+  if (!ALLOWED_PHP_FILES.includes(phpFile)) {
+    return res.status(404).send("Not found");
+  }
+
+  const filePath = join(projectRoot, phpFile);
+  const sessionCode = buildSessionPhpCode(req);
+
+  const formParts: string[] = [];
+  for (const [key, value] of Object.entries(req.body || {})) {
+    formParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+  }
+  const postData = formParts.join("&");
+
+  const phpCode = `<?php
+session_start();
+${sessionCode}
+$_SERVER['REQUEST_METHOD'] = 'POST';
+parse_str('${postData.replace(/'/g, "\\'")}', $_POST);
+$_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
+$_GET = [];
+${Object.entries(req.query || {}).map(([k, v]) => `$_GET['${k}'] = '${String(v).replace(/'/g, "\\'")}';`).join("\n")}
+require '${filePath.replace(/'/g, "\\'")}';
+`;
+
+  const tmpFile = join(tmpdir(), `portal_${randomUUID()}.php`);
+  writeFile(tmpFile, phpCode).then(() => {
+    execFile(
+      "php",
+      [tmpFile],
+      {
+        timeout: 15000,
+        maxBuffer: 2 * 1024 * 1024,
+        cwd: projectRoot,
+        env: { ...process.env },
+      },
+      (error, stdout, stderr) => {
+        unlink(tmpFile).catch(() => {});
+        if (error) {
+          console.error(`PHP POST error (${phpFile}):`, stderr || error.message);
+          return res.status(500).send("Server error");
+        }
+        try {
+          const json = JSON.parse(stdout);
+          res.json(json);
+        } catch {
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.send(stdout);
+        }
+      }
+    );
+  });
+});
+
+function handleLogin(req: Request, res: Response) {
   const filePath = join(projectRoot, "login-handler.php");
 
   const formParts: string[] = [];
@@ -273,7 +336,9 @@ require '${filePath.replace(/'/g, "\\'")}';
       }
     );
   });
-});
+}
+
+app.use("/uploads", express.static(join(projectRoot, "uploads")));
 
 app.get("/portal/logout.php", (req, res) => {
   req.session.destroy(() => {

@@ -147,6 +147,83 @@ export const insertTicketSchema = createInsertSchema(tickets).omit({
 export type InsertTicket = z.infer<typeof insertTicketSchema>;
 export type Ticket = typeof tickets.$inferSelect;
 
+export const ticketComments = pgTable("ticket_comments", {
+  id: serial("id").primaryKey(),
+  ticketId: integer("ticket_id").references(() => tickets.id),
+  userId: integer("user_id").references(() => users.id),
+  comment: text("comment").notNull(),
+  isInternal: boolean("is_internal").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTicketCommentSchema = createInsertSchema(ticketComments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTicketComment = z.infer<typeof insertTicketCommentSchema>;
+export type TicketComment = typeof ticketComments.$inferSelect;
+
+export const documents = pgTable("documents", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id),
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  filename: varchar("filename", { length: 255 }).notNull(),
+  filepath: varchar("filepath", { length: 500 }).notNull(),
+  filesize: integer("filesize"),
+  mimetype: varchar("mimetype", { length: 100 }),
+  category: varchar("category", { length: 100 }).default("general"),
+  description: text("description"),
+  isPublic: boolean("is_public").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertDocumentSchema = createInsertSchema(documents).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDocument = z.infer<typeof insertDocumentSchema>;
+export type Document = typeof documents.$inferSelect;
+
+export const payments = pgTable("payments", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id),
+  clientId: integer("client_id").references(() => clients.id),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  method: varchar("method", { length: 50 }).default("stripe"),
+  stripePaymentId: varchar("stripe_payment_id", { length: 255 }),
+  status: varchar("status", { length: 50 }).default("completed"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPaymentSchema = createInsertSchema(payments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+export type Payment = typeof payments.$inferSelect;
+
+export const activityLog = pgTable("activity_log", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  action: varchar("action", { length: 255 }).notNull(),
+  entityType: varchar("entity_type", { length: 50 }),
+  entityId: integer("entity_id"),
+  details: jsonb("details"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertActivityLogSchema = createInsertSchema(activityLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type ActivityLog = typeof activityLog.$inferSelect;
+
 export const agentLogs = pgTable("agent_logs", {
   id: serial("id").primaryKey(),
   agentName: varchar("agent_name", { length: 100 }).notNull(),
