@@ -64,7 +64,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     showMessage(result.message || 'Login successful! Redirecting...', 'success');
                     
                     setTimeout(() => {
-                        window.location.href = result.redirect || 'dashboard.php';
+                        const redirect = result.redirect || 'dashboard.php';
+                        window.location.href = '/portal/' + redirect;
                     }, 1000);
                 } else {
                     showMessage(result.message || 'Login failed. Please try again.', 'error');
