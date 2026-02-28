@@ -6,6 +6,11 @@ import { seed } from "./seed";
 import { runMigrations } from "stripe-replit-sync";
 import { getStripeSync } from "./stripeClient";
 import { WebhookHandlers } from "./webhookHandlers";
+import { execFile } from "child_process";
+import { writeFile, unlink } from "fs/promises";
+import { tmpdir } from "os";
+import { join, resolve } from "path";
+import { randomUUID } from "crypto";
 
 const app = express();
 const httpServer = createServer(app);
@@ -125,6 +130,92 @@ app.use((req, res, next) => {
   });
 
   next();
+});
+
+const projectRoot = resolve(process.cwd());
+app.use("/assets", express.static(join(projectRoot, "assets")));
+
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php"];
+
+function executePhpFile(filePath: string, res: Response) {
+  execFile(
+    "php",
+    [filePath],
+    {
+      timeout: 15000,
+      maxBuffer: 2 * 1024 * 1024,
+      cwd: projectRoot,
+      env: { ...process.env },
+    },
+    (error, stdout, stderr) => {
+      if (error) {
+        console.error(`PHP execution error:`, stderr || error.message);
+        return res.status(500).send("Server error");
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(stdout);
+    }
+  );
+}
+
+app.get("/portal", (_req, res) => {
+  executePhpFile(join(projectRoot, "index.php"), res);
+});
+
+app.get("/portal/:file", (req, res) => {
+  const file = req.params.file;
+  const phpFile = file.endsWith(".php") ? file : `${file}.php`;
+
+  if (!ALLOWED_PHP_FILES.includes(phpFile)) {
+    return res.status(404).send("Not found");
+  }
+
+  executePhpFile(join(projectRoot, phpFile), res);
+});
+
+app.post("/portal/login-handler.php", (req, res) => {
+  const filePath = join(projectRoot, "login-handler.php");
+
+  const formParts: string[] = [];
+  for (const [key, value] of Object.entries(req.body || {})) {
+    formParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+  }
+  const postData = formParts.join("&");
+
+  const phpCode = `<?php
+$_SERVER['REQUEST_METHOD'] = 'POST';
+parse_str('${postData.replace(/'/g, "\\'")}', $_POST);
+$_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
+require '${filePath.replace(/'/g, "\\'")}';
+`;
+
+  const tmpFile = join(tmpdir(), `portal_${randomUUID()}.php`);
+  writeFile(tmpFile, phpCode).then(() => {
+    execFile(
+      "php",
+      [tmpFile],
+      {
+        timeout: 15000,
+        maxBuffer: 2 * 1024 * 1024,
+        cwd: projectRoot,
+        env: { ...process.env },
+      },
+      (error, stdout, stderr) => {
+        unlink(tmpFile).catch(() => {});
+        if (error) {
+          console.error("PHP login handler error:", stderr || error.message);
+          return res.status(500).json({ success: false, message: "Server error" });
+        }
+        try {
+          const json = JSON.parse(stdout);
+          res.json(json);
+        } catch {
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.send(stdout);
+        }
+      }
+    );
+  });
 });
 
 (async () => {
