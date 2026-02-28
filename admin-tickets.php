@@ -8,7 +8,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
 
 $user_name = $_SESSION['user_name'] ?? 'Admin';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'update_status') {
