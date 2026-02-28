@@ -7,14 +7,14 @@ An online PHP code editor and execution environment built with React + Express, 
 - **Frontend**: React with Tailwind CSS, shadcn/ui components, wouter routing
 - **Backend**: Express.js with PHP code execution via child_process
 - **Database**: PostgreSQL with Drizzle ORM
-- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, documents, payments, activity_log, agent_logs, snippets + Stripe schema
+- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, documents, payments, activity_log, agent_logs, agent_config, system_settings, network_devices, network_credentials, knowledge_articles, notifications, snippets + Stripe schema
 - **Runtime**: PHP 8.2 installed via Nix for server-side code execution
 - **Payments**: Stripe integration via Replit connector (OAuth-managed)
 
 ## Blue Mogul Portal
 
 ### Client Portal Pages
-- `dashboard.php` - Client dashboard with open tickets, invoices, services overview
+- `dashboard.php` - Client dashboard with open tickets, invoices, services overview, real notifications
 - `tickets.php` - Ticket list with create, filter, search
 - `ticket-detail.php` - Individual ticket view with conversation thread and replies
 - `billing.php` - Invoice list with filters, payment history, outstanding balance
@@ -24,6 +24,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `products.php` - Product catalog browsing with category filters and "Request Service" flow
 - `documents.php` - Document management with categories, upload, delete
 - `profile.php` - Profile editing and password change
+- `help.php` - Client-facing Help Center / Knowledge Base with search, categories, article view
 
 ### Admin Portal Pages
 - `admin-dashboard.php` - Business metrics, MRR, churn, activity
@@ -37,7 +38,9 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-invoice-detail.php` - Invoice detail with payment history, mark paid/unpaid
 - `admin-products.php` - Product catalog management (CRUD, toggle active/inactive)
 - `admin-services.php` - Subscription management (assign products to clients, suspend/cancel)
-- `admin-ai-agents.php` - AI Agent Army command center (10 agents with codenames, blueprints, workflows, ROI)
+- `admin-network.php` - Network Documentation: per-client device inventory, credentials vault
+- `admin-knowledge.php` - Knowledge Base admin: create/edit/publish/delete articles
+- `admin-ai-agents.php` - AI Agent Army command center (10 agents with codenames, blueprints, workflows, ROI, integration panels)
 - `admin-automation.php` - 30-day deployment roadmap, integration status, getting started guide
 - `admin-reports.php` - Revenue trends, charts, analytics
 - `admin-settings.php` - Company info, API keys, SMTP, system info
@@ -63,7 +66,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `client/src/pages/` - React frontend pages (playground, snippets)
 - `server/routes.ts` - API endpoints (execute PHP, CRUD snippets, Stripe, checkout)
 - `server/storage.ts` - Database storage layer
-- `server/index.ts` - Express server with PHP execution, session bridge, ALLOWED_PHP_FILES
+- `server/index.ts` - Express server with PHP execution, session bridge, ALLOWED_PHP_FILES, webhook API
 - `shared/schema.ts` - Drizzle schema and types for all tables
 - `assets/` - Static assets (CSS, images, logo)
 - `uploads/` - User-uploaded documents
@@ -79,6 +82,13 @@ An online PHP code editor and execution environment built with React + Express, 
 - `POST /api/stripe/webhook` - Stripe webhook handler
 - `GET /portal/:file` - Serve PHP portal pages (GET)
 - `POST /portal/:file` - Handle PHP form submissions (POST)
+
+### N8N Webhook API (for AI Agent integration)
+- `POST /api/webhook/agent-log` - Log agent execution (agent_name, action, status, message, execution_time)
+- `POST /api/webhook/create-ticket` - Create ticket from agent (client_id, subject, description, priority, source)
+- `POST /api/webhook/update-device` - Update/add network device (hostname, client_id, status, ip_address, etc.)
+- `POST /api/webhook/notify` - Send notification to user (user_id, title, message, type, entity_type, entity_id)
+- `GET /api/webhook/health` - Health check and endpoint listing
 
 ## Critical Notes
 
@@ -99,4 +109,4 @@ An online PHP code editor and execution environment built with React + Express, 
 ## Integrations
 
 - **Stripe**: Connected via Replit integration (OAuth). Schema managed by stripe-replit-sync
-- **config.php**: References env vars for Coolify, VoIP.ms, ITarian, HubSpot, Matrix, ITFlow, UISP
+- **config.php**: References env vars for Coolify, VoIP.ms, ITarian, HubSpot, Matrix, ITFlow, UISP, Ollama, N8N, Flowise, AnythingLLM

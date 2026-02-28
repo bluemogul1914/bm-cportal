@@ -50,6 +50,17 @@ try {
     $stmt->execute([$user_id]);
     $active_services = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    $stmt = $pdo->prepare("SELECT * FROM notifications WHERE user_id = ? AND is_read = false ORDER BY created_at DESC LIMIT 10");
+    $stmt->execute([$user_id]);
+    $notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $notif_count = count($notifications);
+
+    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'mark_notifications_read') {
+        $pdo->prepare("UPDATE notifications SET is_read = true WHERE user_id = ?")->execute([$user_id]);
+        header('Location: dashboard.php');
+        exit();
+    }
+
 } catch (PDOException $e) {
     error_log("Dashboard data fetch error: " . $e->getMessage());
     $tickets_count = 0;
@@ -59,6 +70,8 @@ try {
     $recent_tickets = [];
     $unpaid_invoices = [];
     $active_services = [];
+    $notifications = [];
+    $notif_count = 0;
 }
 ?>
 <!DOCTYPE html>
@@ -101,42 +114,58 @@ try {
                         </div>
                         <div class="flex items-center space-x-3">
                             <div class="relative">
-                                <button onclick="toggleNotifications()" class="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition">
+                                <button onclick="toggleNotifications()" class="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition" data-testid="button-notifications">
                                     <i class="fas fa-bell text-lg"></i>
-                                    <span class="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-semibold">3</span>
+                                    <?php if ($notif_count > 0): ?>
+                                        <span class="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-semibold"><?php echo $notif_count; ?></span>
+                                    <?php endif; ?>
                                 </button>
                                 <div id="notifications-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                                    <div class="p-3 border-b border-gray-200">
+                                    <div class="p-3 border-b border-gray-200 flex items-center justify-between">
                                         <h3 class="font-semibold text-gray-900 text-sm">Notifications</h3>
+                                        <?php if ($notif_count > 0): ?>
+                                            <form method="POST" class="inline">
+                                                <input type="hidden" name="action" value="mark_notifications_read">
+                                                <button type="submit" class="text-xs text-blue-600 hover:text-blue-800">Mark all read</button>
+                                            </form>
+                                        <?php endif; ?>
                                     </div>
                                     <div class="max-h-80 overflow-y-auto">
-                                        <div class="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
-                                            <div class="flex items-start space-x-3">
-                                                <div class="flex-shrink-0 bg-blue-100 rounded p-1.5">
-                                                    <i class="fas fa-ticket-alt text-blue-600 text-sm"></i>
-                                                </div>
-                                                <div class="flex-1 min-w-0">
-                                                    <p class="text-sm font-medium text-gray-900">New ticket response</p>
-                                                    <p class="text-xs text-gray-600 mt-0.5">Your ticket #1234 has been updated</p>
-                                                    <p class="text-xs text-gray-500 mt-1">2 hours ago</p>
-                                                </div>
+                                        <?php if (empty($notifications)): ?>
+                                            <div class="p-6 text-center text-gray-500 text-sm">
+                                                <i class="fas fa-bell-slash text-gray-300 text-xl mb-2 block"></i>
+                                                No new notifications
                                             </div>
-                                        </div>
-                                        <div class="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
-                                            <div class="flex items-start space-x-3">
-                                                <div class="flex-shrink-0 bg-yellow-100 rounded p-1.5">
-                                                    <i class="fas fa-file-invoice-dollar text-yellow-600 text-sm"></i>
-                                                </div>
-                                                <div class="flex-1 min-w-0">
-                                                    <p class="text-sm font-medium text-gray-900">Invoice due soon</p>
-                                                    <p class="text-xs text-gray-600 mt-0.5">Invoice #001 is due in 3 days</p>
-                                                    <p class="text-xs text-gray-500 mt-1">1 day ago</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="p-2 border-t border-gray-200">
-                                        <a href="#" class="block text-center text-blue-600 hover:text-blue-700 text-xs font-medium py-1">View all notifications</a>
+                                        <?php else: ?>
+                                            <?php foreach ($notifications as $notif): ?>
+                                                <?php
+                                                    $type_config = match($notif['type'] ?? 'info') {
+                                                        'success' => ['bg-green-100', 'fa-check-circle text-green-600'],
+                                                        'warning' => ['bg-yellow-100', 'fa-exclamation-triangle text-yellow-600'],
+                                                        'error' => ['bg-red-100', 'fa-times-circle text-red-600'],
+                                                        'ticket' => ['bg-blue-100', 'fa-ticket-alt text-blue-600'],
+                                                        'invoice' => ['bg-yellow-100', 'fa-file-invoice-dollar text-yellow-600'],
+                                                        'service' => ['bg-purple-100', 'fa-server text-purple-600'],
+                                                        default => ['bg-blue-100', 'fa-info-circle text-blue-600'],
+                                                    };
+                                                    $notif_link = '#';
+                                                    if ($notif['entity_type'] === 'ticket' && $notif['entity_id']) $notif_link = 'ticket-detail.php?id=' . $notif['entity_id'];
+                                                    elseif ($notif['entity_type'] === 'invoice' && $notif['entity_id']) $notif_link = 'billing.php';
+                                                ?>
+                                                <a href="<?php echo $notif_link; ?>" class="block p-3 hover:bg-gray-50 border-b border-gray-100 transition">
+                                                    <div class="flex items-start space-x-3">
+                                                        <div class="flex-shrink-0 <?php echo $type_config[0]; ?> rounded p-1.5">
+                                                            <i class="fas <?php echo $type_config[1]; ?> text-sm"></i>
+                                                        </div>
+                                                        <div class="flex-1 min-w-0">
+                                                            <p class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($notif['title']); ?></p>
+                                                            <p class="text-xs text-gray-600 mt-0.5"><?php echo htmlspecialchars($notif['message']); ?></p>
+                                                            <p class="text-xs text-gray-400 mt-1"><?php echo date('M d, g:i A', strtotime($notif['created_at'])); ?></p>
+                                                        </div>
+                                                    </div>
+                                                </a>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             </div>

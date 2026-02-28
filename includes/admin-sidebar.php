@@ -39,6 +39,16 @@
                 <i class="fas fa-box w-5"></i>
                 <span>Products</span>
             </a>
+
+            <a href="admin-network.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-network.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
+                <i class="fas fa-network-wired w-5"></i>
+                <span>Network Docs</span>
+            </a>
+
+            <a href="admin-knowledge.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-knowledge.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
+                <i class="fas fa-book w-5"></i>
+                <span>Knowledge Base</span>
+            </a>
         </div>
 
         <div class="mt-8">

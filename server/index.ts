@@ -12,6 +12,9 @@ import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { randomUUID } from "crypto";
 import session from "express-session";
+import pg from "pg";
+
+const webhookPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
 const app = express();
 const httpServer = createServer(app);
@@ -148,7 +151,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php"];
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -339,6 +342,114 @@ require '${filePath.replace(/'/g, "\\'")}';
 }
 
 app.use("/uploads", express.static(join(projectRoot, "uploads")));
+
+function validateWebhookAuth(req: Request, res: Response): boolean {
+  const token = req.headers["x-webhook-token"] || req.headers["authorization"]?.replace("Bearer ", "");
+  const expectedToken = process.env.SESSION_SECRET || "";
+  if (!token || token !== expectedToken) {
+    res.status(401).json({ error: "Unauthorized: invalid or missing webhook token" });
+    return false;
+  }
+  return true;
+}
+
+app.post("/api/webhook/agent-log", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { agent_name, action, status, message, details, execution_time } = req.body;
+    if (!agent_name || !action || !status) {
+      return res.status(400).json({ error: "agent_name, action, and status are required" });
+    }
+    await webhookPool.query(
+      "INSERT INTO agent_logs (agent_name, action, status, message, details, execution_time, executed_at) VALUES ($1, $2, $3, $4, $5, $6, NOW())",
+      [agent_name, action, status, message || null, details ? JSON.stringify(details) : null, execution_time || null]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("Webhook agent-log error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/webhook/create-ticket", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { client_id, subject, description, priority, source } = req.body;
+    if (!subject) {
+      return res.status(400).json({ error: "subject is required" });
+    }
+    const result = await webhookPool.query(
+      "INSERT INTO tickets (client_id, subject, description, priority, source, status) VALUES ($1, $2, $3, $4, $5, 'open') RETURNING id",
+      [client_id || null, subject, description || null, priority || 'medium', source || 'agent']
+    );
+    res.json({ success: true, ticket_id: result.rows[0].id });
+  } catch (err: any) {
+    console.error("Webhook create-ticket error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/webhook/update-device", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { hostname, client_id, status, ip_address, os_name, os_version, cpu, ram_gb, disk_gb, itarian_agent_id } = req.body;
+    if (!hostname) {
+      return res.status(400).json({ error: "hostname is required" });
+    }
+    await webhookPool.query(
+      `INSERT INTO network_devices (client_id, hostname, device_type, ip_address, os_name, os_version, cpu, ram_gb, disk_gb, status, itarian_agent_id, last_seen, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+       ON CONFLICT (client_id, hostname) DO UPDATE SET
+         status = COALESCE(EXCLUDED.status, network_devices.status),
+         ip_address = COALESCE(EXCLUDED.ip_address, network_devices.ip_address),
+         os_name = COALESCE(EXCLUDED.os_name, network_devices.os_name),
+         os_version = COALESCE(EXCLUDED.os_version, network_devices.os_version),
+         cpu = COALESCE(EXCLUDED.cpu, network_devices.cpu),
+         ram_gb = COALESCE(EXCLUDED.ram_gb, network_devices.ram_gb),
+         disk_gb = COALESCE(EXCLUDED.disk_gb, network_devices.disk_gb),
+         itarian_agent_id = COALESCE(EXCLUDED.itarian_agent_id, network_devices.itarian_agent_id),
+         last_seen = NOW(),
+         updated_at = NOW()`,
+      [client_id || null, hostname, req.body.device_type || 'Workstation', ip_address || null, os_name || null, os_version || null, cpu || null, ram_gb || null, disk_gb || null, status || 'online', itarian_agent_id || null]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("Webhook update-device error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/webhook/notify", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { user_id, title, message, type, entity_type, entity_id } = req.body;
+    if (!title || !message) {
+      return res.status(400).json({ error: "title and message are required" });
+    }
+    await webhookPool.query(
+      "INSERT INTO notifications (user_id, title, message, type, entity_type, entity_id) VALUES ($1, $2, $3, $4, $5, $6)",
+      [user_id || null, title, message, type || 'info', entity_type || null, entity_id || null]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("Webhook notify error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/webhook/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    portal: "Blue Mogul Client Portal",
+    endpoints: [
+      "POST /api/webhook/agent-log",
+      "POST /api/webhook/create-ticket",
+      "POST /api/webhook/update-device",
+      "POST /api/webhook/notify",
+    ],
+    timestamp: new Date().toISOString(),
+  });
+});
 
 app.get("/portal/logout.php", (req, res) => {
   req.session.destroy(() => {

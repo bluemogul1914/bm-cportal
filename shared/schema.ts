@@ -241,3 +241,101 @@ export const insertAgentLogSchema = createInsertSchema(agentLogs).omit({
 
 export type InsertAgentLog = z.infer<typeof insertAgentLogSchema>;
 export type AgentLog = typeof agentLogs.$inferSelect;
+
+export const networkDevices = pgTable("network_devices", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id),
+  hostname: varchar("hostname", { length: 255 }).notNull(),
+  deviceType: varchar("device_type", { length: 100 }).notNull(),
+  manufacturer: varchar("manufacturer", { length: 100 }),
+  model: varchar("model", { length: 100 }),
+  serialNumber: varchar("serial_number", { length: 100 }),
+  ipAddress: varchar("ip_address", { length: 50 }),
+  macAddress: varchar("mac_address", { length: 50 }),
+  osName: varchar("os_name", { length: 100 }),
+  osVersion: varchar("os_version", { length: 100 }),
+  cpu: varchar("cpu", { length: 150 }),
+  ramGb: integer("ram_gb"),
+  diskGb: integer("disk_gb"),
+  status: varchar("status", { length: 50 }).default("online"),
+  lastSeen: timestamp("last_seen"),
+  itarianAgentId: varchar("itarian_agent_id", { length: 255 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertNetworkDeviceSchema = createInsertSchema(networkDevices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertNetworkDevice = z.infer<typeof insertNetworkDeviceSchema>;
+export type NetworkDevice = typeof networkDevices.$inferSelect;
+
+export const networkCredentials = pgTable("network_credentials", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id),
+  title: varchar("title", { length: 255 }).notNull(),
+  category: varchar("category", { length: 100 }).default("general"),
+  username: varchar("username", { length: 255 }),
+  password: varchar("password", { length: 500 }),
+  url: varchar("url", { length: 500 }),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertNetworkCredentialSchema = createInsertSchema(networkCredentials).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertNetworkCredential = z.infer<typeof insertNetworkCredentialSchema>;
+export type NetworkCredential = typeof networkCredentials.$inferSelect;
+
+export const knowledgeArticles = pgTable("knowledge_articles", {
+  id: serial("id").primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 255 }).notNull().unique(),
+  content: text("content").notNull(),
+  category: varchar("category", { length: 100 }).default("general"),
+  tags: text("tags"),
+  isPublished: boolean("is_published").default(false),
+  authorId: integer("author_id").references(() => users.id),
+  viewCount: integer("view_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertKnowledgeArticleSchema = createInsertSchema(knowledgeArticles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertKnowledgeArticle = z.infer<typeof insertKnowledgeArticleSchema>;
+export type KnowledgeArticle = typeof knowledgeArticles.$inferSelect;
+
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  type: varchar("type", { length: 50 }).default("info"),
+  entityType: varchar("entity_type", { length: 50 }),
+  entityId: integer("entity_id"),
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
