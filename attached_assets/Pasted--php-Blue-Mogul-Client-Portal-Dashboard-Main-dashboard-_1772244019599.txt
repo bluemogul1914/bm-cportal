@@ -1,0 +1,609 @@
+<?php
+/**
+ * Blue Mogul Client Portal - Dashboard
+ * Main dashboard page for clients
+ */
+
+require_once 'config.php';
+
+// Check if user is logged in
+if (!isLoggedIn()) {
+    redirect('index.php?message=' . urlencode('Please log in to continue') . '&type=warning');
+}
+
+// Get user info
+$userId = $_SESSION['user_id'];
+$userName = $_SESSION['user_name'] ?? 'User';
+$userEmail = $_SESSION['user_email'];
+$isAdmin = $_SESSION['is_admin'] ?? false;
+
+// Get database connection
+$db = getDB();
+
+// Fetch user's client record
+$stmt = $db->prepare("SELECT * FROM clients WHERE user_id = :user_id LIMIT 1");
+$stmt->execute(['user_id' => $userId]);
+$client = $stmt->fetch();
+$clientId = $client['id'] ?? null;
+
+// Get counts for stats cards
+$ticketCount = 0;
+$invoiceCount = 0;
+$serviceCount = 0;
+
+if ($clientId) {
+    // Count open tickets
+    $stmt = $db->prepare("SELECT COUNT(*) FROM tickets WHERE client_id = :client_id AND status IN ('open', 'in_progress')");
+    $stmt->execute(['client_id' => $clientId]);
+    $ticketCount = $stmt->fetchColumn();
+    
+    // Count unpaid invoices
+    $stmt = $db->prepare("SELECT COUNT(*) FROM invoices WHERE client_id = :client_id AND status = 'unpaid'");
+    $stmt->execute(['client_id' => $clientId]);
+    $invoiceCount = $stmt->fetchColumn();
+    
+    // Count active services
+    $stmt = $db->prepare("SELECT COUNT(*) FROM subscriptions WHERE client_id = :client_id AND status = 'active'");
+    $stmt->execute(['client_id' => $clientId]);
+    $serviceCount = $stmt->fetchColumn();
+}
+
+// Get recent tickets
+$recentTickets = [];
+if ($clientId) {
+    $stmt = $db->prepare("
+        SELECT * FROM tickets 
+        WHERE client_id = :client_id 
+        AND status IN ('open', 'in_progress')
+        ORDER BY created_at DESC 
+        LIMIT 5
+    ");
+    $stmt->execute(['client_id' => $clientId]);
+    $recentTickets = $stmt->fetchAll();
+}
+
+// Get unpaid invoices
+$unpaidInvoices = [];
+if ($clientId) {
+    $stmt = $db->prepare("
+        SELECT * FROM invoices 
+        WHERE client_id = :client_id 
+        AND status = 'unpaid'
+        ORDER BY due_date ASC 
+        LIMIT 5
+    ");
+    $stmt->execute(['client_id' => $clientId]);
+    $unpaidInvoices = $stmt->fetchAll();
+}
+
+// Get active services
+$activeServices = [];
+if ($clientId) {
+    $stmt = $db->prepare("
+        SELECT s.*, p.name as product_name, p.category, p.billing_period 
+        FROM subscriptions s
+        JOIN products p ON s.product_id = p.id
+        WHERE s.client_id = :client_id 
+        AND s.status = 'active'
+        ORDER BY s.created_at DESC
+    ");
+    $stmt->execute(['client_id' => $clientId]);
+    $activeServices = $stmt->fetchAll();
+}
+
+// Get last login time
+$lastLogin = $_SESSION['logged_in_at'] ?? time();
+$lastLoginFormatted = date('F j, Y \a\t g:i A', $lastLogin);
+
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Blue Mogul Client Portal</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="assets/css/style.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'blue-mogul': {
+                            'primary': '#1a56db',
+                            'secondary': '#0d1b3e',
+                            'accent': '#3b82f6',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                
+                <!-- Logo & Navigation -->
+                <div class="flex items-center space-x-8">
+                    <a href="dashboard.php" class="flex items-center">
+                        <img src="https://www.genspark.ai/api/files/s/ooZqusbl" alt="Blue Mogul" class="h-10">
+                    </a>
+                    
+                    <nav class="hidden md:flex space-x-6">
+                        <a href="dashboard.php" class="text-blue-mogul-primary font-semibold border-b-2 border-blue-mogul-primary pb-1">
+                            <i class="fas fa-home mr-2"></i>Dashboard
+                        </a>
+                        <a href="tickets.php" class="text-gray-600 hover:text-blue-mogul-primary transition-colors">
+                            <i class="fas fa-ticket-alt mr-2"></i>Tickets
+                        </a>
+                        <a href="invoices.php" class="text-gray-600 hover:text-blue-mogul-primary transition-colors">
+                            <i class="fas fa-file-invoice-dollar mr-2"></i>Invoices
+                        </a>
+                        <a href="services.php" class="text-gray-600 hover:text-blue-mogul-primary transition-colors">
+                            <i class="fas fa-server mr-2"></i>Services
+                        </a>
+                        <a href="products.php" class="text-gray-600 hover:text-blue-mogul-primary transition-colors">
+                            <i class="fas fa-shopping-cart mr-2"></i>Products
+                        </a>
+                    </nav>
+                </div>
+                
+                <!-- Right Side - Notifications & Profile -->
+                <div class="flex items-center space-x-4">
+                    
+                    <!-- Notifications -->
+                    <div class="relative">
+                        <button id="notifications-btn" class="p-2 text-gray-600 hover:text-blue-mogul-primary hover:bg-gray-100 rounded-lg transition-all relative">
+                            <i class="fas fa-bell text-xl"></i>
+                            <?php if ($ticketCount > 0 || $invoiceCount > 0): ?>
+                            <span class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                            <?php endif; ?>
+                        </button>
+                    </div>
+                    
+                    <!-- Profile Dropdown -->
+                    <div class="relative">
+                        <button id="profile-btn" class="flex items-center space-x-3 p-2 hover:bg-gray-100 rounded-lg transition-all">
+                            <div class="w-8 h-8 bg-blue-mogul-primary text-white rounded-full flex items-center justify-center font-semibold">
+                                <?= strtoupper(substr($userName, 0, 1)) ?>
+                            </div>
+                            <div class="hidden md:block text-left">
+                                <p class="text-sm font-semibold text-gray-800"><?= htmlspecialchars($userName) ?></p>
+                                <p class="text-xs text-gray-500">Client</p>
+                            </div>
+                            <i class="fas fa-chevron-down text-gray-400 text-sm"></i>
+                        </button>
+                        
+                        <!-- Dropdown Menu -->
+                        <div id="profile-menu" class="hidden absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-100 py-2">
+                            <div class="px-4 py-3 border-b border-gray-100">
+                                <p class="text-sm font-semibold text-gray-800"><?= htmlspecialchars($userName) ?></p>
+                                <p class="text-xs text-gray-500"><?= htmlspecialchars($userEmail) ?></p>
+                            </div>
+                            <a href="profile.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                                <i class="fas fa-user-circle mr-3 text-gray-400"></i>
+                                My Profile
+                            </a>
+                            <a href="billing.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                                <i class="fas fa-credit-card mr-3 text-gray-400"></i>
+                                Billing & Payment
+                            </a>
+                            <a href="settings.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                                <i class="fas fa-cog mr-3 text-gray-400"></i>
+                                Settings
+                            </a>
+                            <?php if ($isAdmin): ?>
+                            <a href="admin.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-100">
+                                <i class="fas fa-tools mr-3 text-gray-400"></i>
+                                Admin Panel
+                            </a>
+                            <?php endif; ?>
+                            <a href="logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors border-t border-gray-100">
+                                <i class="fas fa-sign-out-alt mr-3"></i>
+                                Logout
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- Mobile Menu Toggle -->
+                    <button id="mobile-menu-btn" class="md:hidden p-2 text-gray-600 hover:text-blue-mogul-primary">
+                        <i class="fas fa-bars text-xl"></i>
+                    </button>
+                </div>
+                
+            </div>
+        </div>
+        
+        <!-- Mobile Navigation -->
+        <div id="mobile-menu" class="hidden md:hidden border-t border-gray-100 bg-white">
+            <nav class="px-4 py-4 space-y-2">
+                <a href="dashboard.php" class="flex items-center px-4 py-2 text-blue-mogul-primary bg-blue-50 rounded-lg font-semibold">
+                    <i class="fas fa-home mr-3"></i>Dashboard
+                </a>
+                <a href="tickets.php" class="flex items-center px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg">
+                    <i class="fas fa-ticket-alt mr-3"></i>Tickets
+                </a>
+                <a href="invoices.php" class="flex items-center px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg">
+                    <i class="fas fa-file-invoice-dollar mr-3"></i>Invoices
+                </a>
+                <a href="services.php" class="flex items-center px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg">
+                    <i class="fas fa-server mr-3"></i>Services
+                </a>
+                <a href="products.php" class="flex items-center px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg">
+                    <i class="fas fa-shopping-cart mr-3"></i>Products
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- Welcome Section -->
+        <div class="mb-8 animate-fadeIn">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">
+                Welcome back, <?= htmlspecialchars($userName) ?>! 👋
+            </h1>
+            <p class="text-gray-600">
+                <i class="fas fa-clock mr-2"></i>
+                Last login: <?= $lastLoginFormatted ?>
+            </p>
+        </div>
+        
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-slideUp">
+            
+            <!-- Tickets Card -->
+            <div class="card bg-white hover:shadow-lg transition-all cursor-pointer" onclick="window.location.href='tickets.php'">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium mb-1">ACTIVE TICKETS</p>
+                        <p class="text-4xl font-bold text-gray-900"><?= $ticketCount ?></p>
+                        <p class="text-sm text-gray-600 mt-2">
+                            <?php if ($ticketCount > 0): ?>
+                                <span class="text-orange-500">
+                                    <i class="fas fa-exclamation-circle mr-1"></i>
+                                    Needs attention
+                                </span>
+                            <?php else: ?>
+                                <span class="text-green-500">
+                                    <i class="fas fa-check-circle mr-1"></i>
+                                    All resolved
+                                </span>
+                            <?php endif; ?>
+                        </p>
+                    </div>
+                    <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+                        <i class="fas fa-ticket-alt text-3xl text-blue-mogul-primary"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Invoices Card -->
+            <div class="card bg-white hover:shadow-lg transition-all cursor-pointer" onclick="window.location.href='invoices.php'">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium mb-1">UNPAID INVOICES</p>
+                        <p class="text-4xl font-bold text-gray-900"><?= $invoiceCount ?></p>
+                        <p class="text-sm text-gray-600 mt-2">
+                            <?php if ($invoiceCount > 0): ?>
+                                <span class="text-red-500">
+                                    <i class="fas fa-exclamation-triangle mr-1"></i>
+                                    Payment due
+                                </span>
+                            <?php else: ?>
+                                <span class="text-green-500">
+                                    <i class="fas fa-check-circle mr-1"></i>
+                                    All paid
+                                </span>
+                            <?php endif; ?>
+                        </p>
+                    </div>
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                        <i class="fas fa-file-invoice-dollar text-3xl text-green-600"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Services Card -->
+            <div class="card bg-white hover:shadow-lg transition-all cursor-pointer" onclick="window.location.href='services.php'">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium mb-1">ACTIVE SERVICES</p>
+                        <p class="text-4xl font-bold text-gray-900"><?= $serviceCount ?></p>
+                        <p class="text-sm text-gray-600 mt-2">
+                            <span class="text-blue-mogul-primary">
+                                <i class="fas fa-check-circle mr-1"></i>
+                                All running
+                            </span>
+                        </p>
+                    </div>
+                    <div class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center">
+                        <i class="fas fa-server text-3xl text-purple-600"></i>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+        
+        <!-- Two Column Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Left Column -->
+            <div class="space-y-6">
+                
+                <!-- Open Tickets -->
+                <div class="card bg-white animate-slideUp">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-gray-900">
+                            <i class="fas fa-ticket-alt text-blue-mogul-primary mr-2"></i>
+                            Open Tickets
+                        </h2>
+                        <a href="tickets.php" class="text-sm text-blue-mogul-primary hover:text-blue-mogul-accent font-semibold transition-colors">
+                            View All <i class="fas fa-arrow-right ml-1"></i>
+                        </a>
+                    </div>
+                    
+                    <?php if (empty($recentTickets)): ?>
+                        <div class="text-center py-8 text-gray-500">
+                            <i class="fas fa-check-circle text-5xl mb-4 text-green-500"></i>
+                            <p class="font-semibold">No open tickets!</p>
+                            <p class="text-sm mt-2">You're all caught up.</p>
+                            <a href="create-ticket.php" class="btn btn-primary mt-4 inline-flex">
+                                <i class="fas fa-plus mr-2"></i>
+                                Create New Ticket
+                            </a>
+                        </div>
+                    <?php else: ?>
+                        <div class="space-y-3">
+                            <?php foreach ($recentTickets as $ticket): ?>
+                                <div class="border border-gray-200 rounded-lg p-4 hover:border-blue-mogul-primary hover:shadow-md transition-all cursor-pointer" onclick="window.location.href='ticket-view.php?id=<?= $ticket['id'] ?>'">
+                                    <div class="flex items-start justify-between">
+                                        <div class="flex-1">
+                                            <h3 class="font-semibold text-gray-900 mb-1">
+                                                <?= htmlspecialchars($ticket['subject']) ?>
+                                            </h3>
+                                            <div class="flex items-center space-x-4 text-sm text-gray-500">
+                                                <span>
+                                                    <i class="fas fa-clock mr-1"></i>
+                                                    <?= date('M j, Y', strtotime($ticket['created_at'])) ?>
+                                                </span>
+                                                <span class="badge badge-<?= $ticket['priority'] === 'high' ? 'danger' : ($ticket['priority'] === 'medium' ? 'warning' : 'info') ?>">
+                                                    <?= ucfirst($ticket['priority']) ?>
+                                                </span>
+                                                <span class="badge badge-info">
+                                                    <?= ucfirst(str_replace('_', ' ', $ticket['status'])) ?>
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <i class="fas fa-chevron-right text-gray-400"></i>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-200">
+                            <a href="create-ticket.php" class="btn btn-outline w-full">
+                                <i class="fas fa-plus mr-2"></i>
+                                Create New Ticket
+                            </a>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                
+                <!-- Active Services -->
+                <div class="card bg-white animate-slideUp">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-gray-900">
+                            <i class="fas fa-server text-blue-mogul-primary mr-2"></i>
+                            Active Services
+                        </h2>
+                        <a href="services.php" class="text-sm text-blue-mogul-primary hover:text-blue-mogul-accent font-semibold transition-colors">
+                            View All <i class="fas fa-arrow-right ml-1"></i>
+                        </a>
+                    </div>
+                    
+                    <?php if (empty($activeServices)): ?>
+                        <div class="text-center py-8 text-gray-500">
+                            <i class="fas fa-shopping-cart text-5xl mb-4 text-gray-300"></i>
+                            <p class="font-semibold">No active services</p>
+                            <p class="text-sm mt-2">Browse our services to get started.</p>
+                            <a href="products.php" class="btn btn-primary mt-4 inline-flex">
+                                <i class="fas fa-shopping-cart mr-2"></i>
+                                Browse Services
+                            </a>
+                        </div>
+                    <?php else: ?>
+                        <div class="space-y-3">
+                            <?php foreach ($activeServices as $service): ?>
+                                <div class="border border-gray-200 rounded-lg p-4 hover:border-blue-mogul-primary hover:shadow-md transition-all">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex-1">
+                                            <h3 class="font-semibold text-gray-900 mb-1">
+                                                <?= htmlspecialchars($service['product_name']) ?>
+                                            </h3>
+                                            <div class="flex items-center space-x-3 text-sm text-gray-500">
+                                                <span class="badge badge-success">Active</span>
+                                                <span><?= ucfirst($service['category']) ?></span>
+                                            </div>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-xl font-bold text-gray-900">
+                                                $<?= number_format($service['mrr'], 2) ?>
+                                            </p>
+                                            <p class="text-xs text-gray-500">/<?= $service['billing_period'] ?></p>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-200">
+                            <a href="products.php" class="btn btn-outline w-full">
+                                <i class="fas fa-plus mr-2"></i>
+                                Add More Services
+                            </a>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                
+            </div>
+            
+            <!-- Right Column -->
+            <div class="space-y-6">
+                
+                <!-- Outstanding Invoices -->
+                <div class="card bg-white animate-slideUp">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-gray-900">
+                            <i class="fas fa-file-invoice-dollar text-blue-mogul-primary mr-2"></i>
+                            Outstanding Invoices
+                        </h2>
+                        <a href="invoices.php" class="text-sm text-blue-mogul-primary hover:text-blue-mogul-accent font-semibold transition-colors">
+                            View All <i class="fas fa-arrow-right ml-1"></i>
+                        </a>
+                    </div>
+                    
+                    <?php if (empty($unpaidInvoices)): ?>
+                        <div class="text-center py-8 text-gray-500">
+                            <i class="fas fa-check-circle text-5xl mb-4 text-green-500"></i>
+                            <p class="font-semibold">All invoices paid!</p>
+                            <p class="text-sm mt-2">You're up to date with payments.</p>
+                        </div>
+                    <?php else: ?>
+                        <div class="space-y-3">
+                            <?php 
+                            $totalDue = 0;
+                            foreach ($unpaidInvoices as $invoice): 
+                                $totalDue += $invoice['amount'];
+                                $isPastDue = strtotime($invoice['due_date']) < time();
+                            ?>
+                                <div class="border border-gray-200 rounded-lg p-4 hover:border-blue-mogul-primary hover:shadow-md transition-all">
+                                    <div class="flex items-start justify-between mb-3">
+                                        <div>
+                                            <h3 class="font-semibold text-gray-900">
+                                                Invoice #<?= htmlspecialchars($invoice['invoice_number']) ?>
+                                            </h3>
+                                            <p class="text-sm text-gray-500 mt-1">
+                                                <i class="fas fa-calendar mr-1"></i>
+                                                Due: <?= date('M j, Y', strtotime($invoice['due_date'])) ?>
+                                                <?php if ($isPastDue): ?>
+                                                    <span class="badge badge-danger ml-2">Past Due</span>
+                                                <?php endif; ?>
+                                            </p>
+                                        </div>
+                                        <p class="text-xl font-bold text-gray-900">
+                                            $<?= number_format($invoice['amount'], 2) ?>
+                                        </p>
+                                    </div>
+                                    <button onclick="window.location.href='invoice-pay.php?id=<?= $invoice['id'] ?>'" class="btn btn-primary w-full">
+                                        <i class="fas fa-credit-card mr-2"></i>
+                                        Pay Now
+                                    </button>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        
+                        <!-- Total Due -->
+                        <div class="mt-4 pt-4 border-t-2 border-gray-200">
+                            <div class="flex items-center justify-between text-lg font-bold">
+                                <span class="text-gray-700">Total Due:</span>
+                                <span class="text-2xl text-red-600">$<?= number_format($totalDue, 2) ?></span>
+                            </div>
+                            <button onclick="window.location.href='invoices.php'" class="btn btn-success w-full mt-3">
+                                <i class="fas fa-money-bill-wave mr-2"></i>
+                                Pay All Invoices
+                            </button>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                
+                <!-- Quick Actions -->
+                <div class="card bg-gradient-to-br from-blue-mogul-primary to-blue-mogul-accent text-white animate-slideUp">
+                    <h2 class="text-xl font-bold mb-4">
+                        <i class="fas fa-bolt mr-2"></i>
+                        Quick Actions
+                    </h2>
+                    <div class="grid grid-cols-2 gap-3">
+                        <a href="create-ticket.php" class="bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg p-4 text-center transition-all">
+                            <i class="fas fa-ticket-alt text-3xl mb-2"></i>
+                            <p class="font-semibold text-sm">New Ticket</p>
+                        </a>
+                        <a href="products.php" class="bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg p-4 text-center transition-all">
+                            <i class="fas fa-shopping-cart text-3xl mb-2"></i>
+                            <p class="font-semibold text-sm">Order Service</p>
+                        </a>
+                        <a href="billing.php" class="bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg p-4 text-center transition-all">
+                            <i class="fas fa-credit-card text-3xl mb-2"></i>
+                            <p class="font-semibold text-sm">Manage Billing</p>
+                        </a>
+                        <a href="support.php" class="bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg p-4 text-center transition-all">
+                            <i class="fas fa-life-ring text-3xl mb-2"></i>
+                            <p class="font-semibold text-sm">Get Support</p>
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Contact Support -->
+                <div class="card bg-white animate-slideUp">
+                    <h2 class="text-xl font-bold text-gray-900 mb-4">
+                        <i class="fas fa-headset text-blue-mogul-primary mr-2"></i>
+                        Need Help?
+                    </h2>
+                    <p class="text-gray-600 mb-4">
+                        Our support team is here to help you 24/7.
+                    </p>
+                    <div class="space-y-3">
+                        <a href="tel:3463095514" class="flex items-center text-gray-700 hover:text-blue-mogul-primary transition-colors">
+                            <i class="fas fa-phone-alt w-6"></i>
+                            <span class="font-semibold">346-309-5514</span>
+                        </a>
+                        <a href="mailto:contact@bluemogul.biz" class="flex items-center text-gray-700 hover:text-blue-mogul-primary transition-colors">
+                            <i class="fas fa-envelope w-6"></i>
+                            <span class="font-semibold">contact@bluemogul.biz</span>
+                        </a>
+                        <a href="create-ticket.php" class="flex items-center text-gray-700 hover:text-blue-mogul-primary transition-colors">
+                            <i class="fas fa-ticket-alt w-6"></i>
+                            <span class="font-semibold">Create Support Ticket</span>
+                        </a>
+                    </div>
+                </div>
+                
+            </div>
+            
+        </div>
+        
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-gray-200 mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="text-center text-gray-500 text-sm">
+                <p>&copy; <?= date('Y') ?> Blue Mogul Enterprise LLC. All rights reserved.</p>
+                <div class="mt-2 space-x-4">
+                    <a href="privacy.php" class="hover:text-blue-mogul-primary transition-colors">Privacy Policy</a>
+                    <a href="terms.php" class="hover:text-blue-mogul-primary transition-colors">Terms of Service</a>
+                    <a href="support.php" class="hover:text-blue-mogul-primary transition-colors">Support</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script src="assets/js/dashboard.js"></script>
+
+</body>
+</html>
