@@ -47,14 +47,15 @@ document.addEventListener('DOMContentLoaded', function() {
             setLoadingState(true);
             
             try {
-                const formData = new FormData();
-                formData.append('email', email);
-                formData.append('password', password);
-                formData.append('remember', remember ? '1' : '0');
+                const params = new URLSearchParams();
+                params.append('email', email);
+                params.append('password', password);
+                params.append('remember', remember ? '1' : '0');
                 
                 const response = await fetch('/portal/login-handler.php', {
                     method: 'POST',
-                    body: formData
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: params.toString()
                 });
                 
                 const result = await response.json();
