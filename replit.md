@@ -21,6 +21,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `pay-invoice.php` - Stripe Checkout payment flow for invoices
 - `payment-success.php` - Post-payment confirmation (supports demo mode)
 - `services.php` - Active subscriptions with costs and details
+- `products.php` - Product catalog browsing with category filters and "Request Service" flow
 - `documents.php` - Document management with categories, upload, delete
 - `profile.php` - Profile editing and password change
 
@@ -34,7 +35,10 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-invoices.php` - Invoice management
 - `admin-invoice-add.php` - Create new invoices
 - `admin-invoice-detail.php` - Invoice detail with payment history, mark paid/unpaid
-- `admin-ai-agents.php` - AI agent monitoring
+- `admin-products.php` - Product catalog management (CRUD, toggle active/inactive)
+- `admin-services.php` - Subscription management (assign products to clients, suspend/cancel)
+- `admin-ai-agents.php` - AI Agent Army command center (10 agents with codenames, blueprints, workflows, ROI)
+- `admin-automation.php` - 30-day deployment roadmap, integration status, getting started guide
 - `admin-reports.php` - Revenue trends, charts, analytics
 - `admin-settings.php` - Company info, API keys, SMTP, system info
 
