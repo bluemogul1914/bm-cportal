@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'includes/email.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
     echo '<script>window.location="/portal";</script>';
@@ -34,6 +35,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
             $stmt->execute([$client_id, $invoice_number, $amount, !empty($due_date) ? $due_date : null]);
             $new_invoice_id = $pdo->lastInsertId();
             $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'invoice_created', 'invoice', $new_invoice_id, 'Created invoice ' . $invoice_number, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+            $c_stmt = $pdo->prepare("SELECT name, email FROM clients WHERE id = ?");
+            $c_stmt->execute([$client_id]);
+            $c_info = $c_stmt->fetch(PDO::FETCH_ASSOC);
+            if ($c_info && !empty($c_info['email'])) {
+                notify_invoice_created($invoice_number, $amount, !empty($due_date) ? $due_date : 'Upon receipt', $c_info['email'], $c_info['name'] ?? 'Client');
+            }
             $success_msg = "Invoice $invoice_number created successfully!";
         } catch (PDOException $e) {
             error_log("Invoice creation error: " . $e->getMessage());

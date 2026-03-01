@@ -60,9 +60,18 @@ An online PHP code editor and execution environment built with React + Express, 
 ### Shared Components
 - `includes/client-sidebar.php` - Client portal sidebar (dark navy #0d1b3e)
 - `includes/admin-sidebar.php` - Admin panel sidebar
+- `includes/email.php` - SMTP email helper (send_email, email_template, notification functions)
 - `config.php` - Database connection, session, API keys, helpers
 - `login-handler.php` - Authentication handler
 - `setup.php` - Database initializer
+
+### Email Notifications
+- SMTP settings stored in `system_settings` table, configured via Admin Settings > Email tab
+- `includes/email.php` provides: `send_email()`, `email_template()`, `send_test_email()`
+- Auto-notifications wired into: ticket creation (tickets.php), admin ticket replies (admin-ticket-detail.php), invoice creation (admin-invoice-add.php), invoice paid (admin-invoice-detail.php), document uploads (documents.php)
+- Notification helpers: `notify_ticket_created()`, `notify_ticket_reply()`, `notify_invoice_created()`, `notify_invoice_paid()`, `notify_document_uploaded()`
+- Test email feature available in Admin Settings > Email tab
+- Uses raw SMTP sockets (fsockopen) with STARTTLS/SSL support — PHP `mail()` is disabled in sandbox
 
 ### Branding
 - Colors: Primary #1a56db, Secondary #0d1b3e, Accent #3b82f6

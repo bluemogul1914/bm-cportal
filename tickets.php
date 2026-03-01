@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'includes/email.php';
 
 if (!isset($_SESSION['user_id'])) {
     portal_redirect('/portal');
@@ -34,6 +35,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
             $stmt->execute([$client_id, $subject, $description, $priority]);
             $new_ticket_id = $pdo->lastInsertId();
             $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'ticket_created', 'ticket', $new_ticket_id, 'Created ticket: ' . $subject, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+            $client_email = $_SESSION['user_email'] ?? '';
+            $client_name_for_email = $_SESSION['user_name'] ?? 'Client';
+            if (!empty($client_email)) {
+                notify_ticket_created($new_ticket_id, $subject, $client_email, $client_name_for_email);
+            }
             $success_msg = 'Ticket created successfully!';
         } catch (PDOException $e) {
             error_log("Ticket creation error: " . $e->getMessage());

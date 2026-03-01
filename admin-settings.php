@@ -7,6 +7,16 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
 
 $user_name = $_SESSION['user_name'] ?? 'Admin';
 
+require_once 'includes/email.php';
+
+$test_email_result = null;
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['section'] ?? '') === 'test_email') {
+    $test_to = trim($_POST['test_email_to'] ?? '');
+    if (!empty($test_to)) {
+        $test_email_result = send_test_email($test_to);
+    }
+}
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $section = $_POST['section'] ?? '';
 
@@ -293,6 +303,35 @@ function getSetting($key, $default = '') {
                                 <i class="fas fa-save mr-2"></i>Save Email Settings
                             </button>
                         </form>
+
+                        <div class="mt-8 pt-6 border-t border-gray-200">
+                            <h3 class="text-md font-semibold text-gray-900 mb-4">Test Email Configuration</h3>
+                            <?php if ($test_email_result !== null): ?>
+                                <?php if ($test_email_result['success']): ?>
+                                    <div class="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                                        <p class="text-sm text-green-800"><i class="fas fa-check-circle mr-2"></i>Test email sent successfully! Check your inbox.</p>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                                        <p class="text-sm text-red-800"><i class="fas fa-exclamation-circle mr-2"></i>Failed to send: <?php echo htmlspecialchars($test_email_result['error'] ?? 'Unknown error'); ?></p>
+                                    </div>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                            <form method="POST" class="flex items-end gap-4">
+                                <input type="hidden" name="section" value="test_email">
+                                <div class="flex-1">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Recipient Email</label>
+                                    <input type="email" name="test_email_to" required placeholder="test@example.com"
+                                           data-testid="input-test-email"
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <button type="submit" data-testid="button-send-test-email"
+                                        class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md font-medium transition whitespace-nowrap">
+                                    <i class="fas fa-paper-plane mr-2"></i>Send Test Email
+                                </button>
+                            </form>
+                            <p class="mt-2 text-xs text-gray-500">Save your SMTP settings above first, then send a test email to verify the configuration.</p>
+                        </div>
                     </div>
                 </div>
 

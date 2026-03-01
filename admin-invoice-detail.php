@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'includes/email.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
     echo '<script>window.location="/portal";</script>';
@@ -36,6 +37,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                 $stmt->execute([$invoice_id, $inv['client_id'], $inv['amount']]);
             }
             $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'invoice_updated', 'invoice', $invoice_id, 'Marked invoice #' . $invoice_id . ' as paid', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+            if ($inv) {
+                $inv_stmt = $pdo->prepare("SELECT i.invoice_number, c.name, c.email FROM invoices i LEFT JOIN clients c ON i.client_id = c.id WHERE i.id = ?");
+                $inv_stmt->execute([$invoice_id]);
+                $inv_info = $inv_stmt->fetch(PDO::FETCH_ASSOC);
+                if ($inv_info && !empty($inv_info['email'])) {
+                    notify_invoice_paid($inv_info['invoice_number'], $inv['amount'], $inv_info['email'], $inv_info['name'] ?? 'Client');
+                }
+            }
             $success_msg = 'Invoice marked as paid.';
         } catch (PDOException $e) {
             error_log("Mark paid error: " . $e->getMessage());

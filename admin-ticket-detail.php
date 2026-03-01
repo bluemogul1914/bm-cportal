@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'includes/email.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
     echo '<script>window.location="/portal";</script>';
@@ -34,6 +35,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                 $stmt = $pdo->prepare("UPDATE tickets SET updated_at = NOW() WHERE id = ?");
                 $stmt->execute([$ticket_id]);
                 $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'comment_added', 'ticket', $ticket_id, ($is_internal ? 'Added internal note to' : 'Added reply to') . ' ticket #' . $ticket_id, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+                if (!$is_internal) {
+                    $t_stmt = $pdo->prepare("SELECT t.subject, c.email, c.name FROM tickets t LEFT JOIN clients c ON t.client_id = c.id WHERE t.id = ?");
+                    $t_stmt->execute([$ticket_id]);
+                    $t_info = $t_stmt->fetch(PDO::FETCH_ASSOC);
+                    if ($t_info && !empty($t_info['email'])) {
+                        notify_ticket_reply($ticket_id, $t_info['subject'], $t_info['email'], $t_info['name'] ?? 'Client', $comment, $user_name);
+                    }
+                }
                 $success_msg = $is_internal ? 'Internal note added.' : 'Reply sent to client.';
             } catch (PDOException $e) {
                 error_log("Reply error: " . $e->getMessage());

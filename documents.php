@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'includes/email.php';
 
 if (!isset($_SESSION['user_id'])) {
     portal_redirect('/portal');
@@ -38,6 +39,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 $stmt->execute([$client_id, $user_id, $doc_name, $filename, $filepath, $category, $description]);
                 $new_doc_id = $pdo->lastInsertId();
                 $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'document_uploaded', 'document', $new_doc_id, 'Uploaded: ' . $doc_name, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+                $doc_email = $_SESSION['user_email'] ?? '';
+                $doc_client_name = $_SESSION['user_name'] ?? 'Client';
+                if (!empty($doc_email)) {
+                    notify_document_uploaded($doc_name, $category, $doc_email, $doc_client_name);
+                }
                 $success_msg = 'Document record created successfully!';
             } catch (PDOException $e) {
                 error_log("Document upload error: " . $e->getMessage());
