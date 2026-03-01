@@ -19,8 +19,6 @@ $voip_token_set = !empty($voip_token);
 $voip_connected = $voip_username_set && ($voip_password_set || $voip_token_set);
 
 $active_tab = $_GET['tab'] ?? 'overview';
-$api_auth = $voip_password_set ? $voip_password : $voip_token;
-
 $error_msg = '';
 $success_msg = '';
 
@@ -47,22 +45,140 @@ function voip_api_call($action, $extra_params = []) {
     return $data;
 }
 
-if ($voip_connected) {
-    if ($active_tab === 'overview') {
-        $balance_result = voip_api_call('getBalance');
-        if (($balance_result['status'] ?? '') === 'success') {
-            $balance = $balance_result['balance'] ?? null;
-        }
+if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    $action = $_POST['action'] ?? '';
 
+    if ($action === 'update_did') {
+        $did = trim($_POST['did'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+        $routing = trim($_POST['routing'] ?? '');
+        $pop = trim($_POST['pop'] ?? '');
+        $callerid_prefix = trim($_POST['callerid_prefix'] ?? '');
+
+        if ($did) {
+            $params = ['did' => $did];
+            if ($description !== '') $params['description'] = $description;
+            if ($routing !== '') $params['routing'] = $routing;
+            if ($pop !== '') $params['pop'] = $pop;
+            if ($callerid_prefix !== '') $params['callerid_prefix'] = $callerid_prefix;
+
+            $result = voip_api_call('setDIDInfo', $params);
+            if (($result['status'] ?? '') === 'success') {
+                $success_msg = 'DID ' . htmlspecialchars($did) . ' updated successfully.';
+            } else {
+                $error_msg = 'Failed to update DID: ' . htmlspecialchars($result['status'] ?? 'Unknown error');
+            }
+        }
+        $active_tab = 'dids';
+    }
+
+    if ($action === 'create_subaccount') {
+        $sa_username = trim($_POST['sa_username'] ?? '');
+        $sa_password = trim($_POST['sa_password'] ?? '');
+        $sa_protocol = trim($_POST['sa_protocol'] ?? '1');
+        $sa_description = trim($_POST['sa_description'] ?? '');
+        $sa_auth_type = trim($_POST['sa_auth_type'] ?? '1');
+        $sa_callerid = trim($_POST['sa_callerid'] ?? '');
+        $sa_lock_intl = isset($_POST['sa_lock_intl']) ? 'yes' : 'no';
+        $sa_internal_ext = trim($_POST['sa_internal_extension'] ?? '');
+        $sa_internal_voicemail = trim($_POST['sa_internal_voicemail'] ?? '');
+        $sa_internal_callerid = trim($_POST['sa_internal_callerid'] ?? '');
+
+        if ($sa_username && $sa_password) {
+            $create_params = [
+                'username' => $sa_username,
+                'password' => $sa_password,
+                'protocol' => $sa_protocol,
+                'description' => $sa_description,
+                'auth_type' => $sa_auth_type,
+                'lock_international' => $sa_lock_intl,
+                'device_type' => '2',
+                'canada_routing' => '1',
+                'international_route' => '1',
+                'music_on_hold' => 'default',
+                'allowed_codecs' => 'ulaw;alaw;g729',
+                'dtmf_mode' => 'auto',
+                'nat' => 'yes',
+            ];
+            if ($sa_callerid !== '') $create_params['callerid_number'] = $sa_callerid;
+            if ($sa_internal_ext !== '') $create_params['internal_extension'] = $sa_internal_ext;
+            if ($sa_internal_voicemail !== '') $create_params['internal_voicemail'] = $sa_internal_voicemail;
+            if ($sa_internal_callerid !== '') $create_params['internal_callerid'] = $sa_internal_callerid;
+
+            $result = voip_api_call('createSubAccount', $create_params);
+            if (($result['status'] ?? '') === 'success') {
+                $success_msg = 'Sub-account &ldquo;' . htmlspecialchars($sa_username) . '&rdquo; created successfully! (ID: ' . htmlspecialchars($result['id'] ?? 'N/A') . ')';
+            } else {
+                $error_msg = 'Failed to create sub-account: ' . htmlspecialchars($result['status'] ?? 'Unknown error');
+            }
+        } else {
+            $error_msg = 'Username and password are required.';
+        }
+        $active_tab = 'subaccounts';
+    }
+
+    if ($action === 'update_subaccount') {
+        $sa_id = trim($_POST['sa_id'] ?? '');
+        $sa_description = trim($_POST['sa_description'] ?? '');
+        $sa_password = trim($_POST['sa_password'] ?? '');
+        $sa_callerid = trim($_POST['sa_callerid'] ?? '');
+        $sa_lock_intl = isset($_POST['sa_lock_intl']) ? 'yes' : 'no';
+
+        if ($sa_id) {
+            $update_params = ['id' => $sa_id, 'lock_international' => $sa_lock_intl];
+            if ($sa_description !== '') $update_params['description'] = $sa_description;
+            if ($sa_password !== '') $update_params['password'] = $sa_password;
+            if ($sa_callerid !== '') $update_params['callerid_number'] = $sa_callerid;
+
+            $result = voip_api_call('setSubAccount', $update_params);
+            if (($result['status'] ?? '') === 'success') {
+                $success_msg = 'Sub-account updated successfully.';
+            } else {
+                $error_msg = 'Failed to update sub-account: ' . htmlspecialchars($result['status'] ?? 'Unknown error');
+            }
+        }
+        $active_tab = 'subaccounts';
+    }
+
+    if ($action === 'delete_subaccount') {
+        $sa_id = trim($_POST['sa_id'] ?? '');
+        if ($sa_id) {
+            $result = voip_api_call('delSubAccount', ['id' => $sa_id]);
+            if (($result['status'] ?? '') === 'success') {
+                $success_msg = 'Sub-account deleted.';
+            } else {
+                $error_msg = 'Failed to delete sub-account: ' . htmlspecialchars($result['status'] ?? 'Unknown error');
+            }
+        }
+        $active_tab = 'subaccounts';
+    }
+}
+
+if ($voip_connected) {
+    $balance_result = voip_api_call('getBalance');
+    if (($balance_result['status'] ?? '') === 'success') {
+        $balance = $balance_result['balance'] ?? null;
+    }
+
+    if ($active_tab === 'overview') {
         $ip_result = voip_api_call('getIP');
         if (($ip_result['status'] ?? '') === 'success') {
             $ip_info = $ip_result['ip'] ?? null;
         }
-
         $servers_result = voip_api_call('getServersInfo');
         if (($servers_result['status'] ?? '') === 'success') {
             $servers = $servers_result['servers'] ?? [];
             if (!is_array($servers)) $servers = [];
+        }
+        $dids_result = voip_api_call('getDIDsInfo');
+        $did_count = 0;
+        if (($dids_result['status'] ?? '') === 'success') {
+            $did_count = count($dids_result['dids'] ?? []);
+        }
+        $sub_result_ov = voip_api_call('getSubAccounts');
+        $sub_count = 0;
+        if (($sub_result_ov['status'] ?? '') === 'success') {
+            $sub_count = count($sub_result_ov['accounts'] ?? []);
         }
     }
 
@@ -74,7 +190,14 @@ if ($voip_connected) {
         } elseif (($dids_result['status'] ?? '') === 'no_did') {
             $dids = [];
         } else {
-            $error_msg = 'DIDs: ' . ($dids_result['message'] ?? $dids_result['status'] ?? 'Unknown error');
+            if (!$error_msg) $error_msg = 'DIDs: ' . ($dids_result['message'] ?? $dids_result['status'] ?? 'Unknown error');
+        }
+
+        $sub_for_routing = voip_api_call('getSubAccounts');
+        $routing_accounts = [];
+        if (($sub_for_routing['status'] ?? '') === 'success') {
+            $routing_accounts = $sub_for_routing['accounts'] ?? [];
+            if (!is_array($routing_accounts)) $routing_accounts = [];
         }
     }
 
@@ -86,7 +209,7 @@ if ($voip_connected) {
         } elseif (($sub_result['status'] ?? '') === 'no_subaccount') {
             $subaccounts = [];
         } else {
-            $error_msg = 'Sub-accounts: ' . ($sub_result['message'] ?? $sub_result['status'] ?? 'Unknown error');
+            if (!$error_msg) $error_msg = 'Sub-accounts: ' . ($sub_result['message'] ?? $sub_result['status'] ?? 'Unknown error');
         }
     }
 
@@ -106,7 +229,7 @@ if ($voip_connected) {
         } elseif (($cdr_result['status'] ?? '') === 'no_cdr') {
             $cdr_records = [];
         } else {
-            $error_msg = 'CDR: ' . ($cdr_result['message'] ?? $cdr_result['status'] ?? 'Unknown error');
+            if (!$error_msg) $error_msg = 'CDR: ' . ($cdr_result['message'] ?? $cdr_result['status'] ?? 'Unknown error');
         }
     }
 
@@ -172,14 +295,15 @@ $tabs = [
                     <p class="text-sm text-gray-500 mt-0.5">Phone system &mdash; CDR lookup, DID management, sub-accounts, and call routing</p>
                 </div>
                 <div class="flex items-center gap-3">
+                    <?php if ($balance !== null): ?>
+                        <span class="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium" data-testid="text-balance"><i class="fas fa-wallet mr-1"></i>$<?php echo number_format((float)$balance, 2); ?></span>
+                    <?php endif; ?>
                     <?php if ($voip_connected): ?>
                         <span class="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-xs font-medium" data-testid="status-connected"><i class="fas fa-circle text-[8px] mr-1"></i>Connected</span>
                     <?php else: ?>
                         <span class="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-xs font-medium" data-testid="status-disconnected"><i class="fas fa-circle text-[8px] mr-1"></i>Not Connected</span>
                     <?php endif; ?>
-                    <?php if ($balance !== null): ?>
-                        <span class="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium" data-testid="text-balance"><i class="fas fa-wallet mr-1"></i>$<?php echo number_format((float)$balance, 2); ?></span>
-                    <?php endif; ?>
+                    <a href="https://voip.ms/m/main.php" target="_blank" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full text-xs font-medium transition" data-testid="link-voipms-portal"><i class="fas fa-external-link-alt mr-1"></i>VoIP.ms Portal</a>
                 </div>
             </div>
         </header>
@@ -189,7 +313,7 @@ $tabs = [
                 <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4" data-testid="alert-error"><i class="fas fa-exclamation-circle mr-2"></i><?php echo htmlspecialchars($error_msg); ?></div>
             <?php endif; ?>
             <?php if ($success_msg): ?>
-                <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4"><i class="fas fa-check-circle mr-2"></i><?php echo htmlspecialchars($success_msg); ?></div>
+                <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4" data-testid="alert-success"><i class="fas fa-check-circle mr-2"></i><?php echo $success_msg; ?></div>
             <?php endif; ?>
 
             <div class="flex bg-gray-100 rounded-lg p-1 mb-6 overflow-x-auto">
@@ -205,9 +329,7 @@ $tabs = [
                     <i class="fas fa-phone-slash text-gray-300 text-5xl mb-4"></i>
                     <h3 class="text-lg font-semibold text-gray-900 mb-2">VoIP.ms Not Connected</h3>
                     <p class="text-sm text-gray-500 mb-4">Set your API credentials in Replit Secrets to connect.</p>
-                    <a href="?tab=config" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-configure">
-                        <i class="fas fa-cog mr-2"></i>Configure
-                    </a>
+                    <a href="?tab=config" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-configure"><i class="fas fa-cog mr-2"></i>Configure</a>
                 </div>
 
             <?php elseif ($active_tab === 'overview'): ?>
@@ -215,30 +337,30 @@ $tabs = [
                     <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-balance">
                         <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Account Balance</p>
                         <?php if ($balance !== null): ?>
-                            <p class="text-2xl font-bold text-green-600">$<?php echo number_format((float)$balance, 2); ?></p>
+                            <p class="text-2xl font-bold <?php echo ((float)$balance < 5) ? 'text-red-600' : 'text-green-600'; ?>">$<?php echo number_format((float)$balance, 2); ?></p>
                             <p class="text-xs text-gray-400 mt-1"><?php echo ((float)$balance < 5) ? '<span class="text-red-500 font-medium">Low balance warning</span>' : 'Sufficient funds'; ?></p>
                         <?php else: ?>
                             <p class="text-lg font-bold text-gray-400">--</p>
                         <?php endif; ?>
                     </div>
-                    <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-connection">
-                        <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Connection Status</p>
-                        <p class="text-lg font-bold text-green-600"><i class="fas fa-check-circle mr-1"></i>Active</p>
-                        <p class="text-xs text-gray-400 mt-1">API v1 REST</p>
+                    <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-dids-count">
+                        <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Active DIDs</p>
+                        <p class="text-2xl font-bold text-blue-600"><?php echo $did_count ?? 0; ?></p>
+                        <a href="?tab=dids" class="text-xs text-blue-500 hover:underline mt-1 inline-block">Manage &rarr;</a>
+                    </div>
+                    <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-subs-count">
+                        <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Sub-Accounts</p>
+                        <p class="text-2xl font-bold text-purple-600"><?php echo $sub_count ?? 0; ?></p>
+                        <a href="?tab=subaccounts" class="text-xs text-purple-500 hover:underline mt-1 inline-block">Manage &rarr;</a>
                     </div>
                     <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-ip">
                         <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Your IP</p>
                         <?php if ($ip_info): ?>
                             <p class="text-sm font-bold text-gray-900 font-mono"><?php echo htmlspecialchars($ip_info); ?></p>
-                            <p class="text-xs text-gray-400 mt-1">Registered with VoIP.ms</p>
                         <?php else: ?>
                             <p class="text-sm font-bold text-gray-400">--</p>
                         <?php endif; ?>
-                    </div>
-                    <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-api-url">
-                        <p class="text-xs font-semibold text-gray-500 uppercase mb-1">API Endpoint</p>
-                        <p class="text-xs font-medium text-gray-900 break-all"><?php echo htmlspecialchars($voip_url); ?></p>
-                        <p class="text-xs text-gray-400 mt-1">REST/JSON</p>
+                        <p class="text-xs text-gray-400 mt-1">Registered with VoIP.ms</p>
                     </div>
                 </div>
 
@@ -250,11 +372,11 @@ $tabs = [
                         <div class="p-6 grid grid-cols-2 gap-3">
                             <a href="?tab=dids" class="flex items-center gap-3 p-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition" data-testid="action-view-dids">
                                 <div class="w-9 h-9 bg-blue-500 rounded-lg flex items-center justify-center"><i class="fas fa-phone-volume text-white text-sm"></i></div>
-                                <div><p class="text-sm font-medium text-gray-900">View DIDs</p><p class="text-[10px] text-gray-500">Phone numbers</p></div>
+                                <div><p class="text-sm font-medium text-gray-900">Manage DIDs</p><p class="text-[10px] text-gray-500">View & route numbers</p></div>
                             </a>
                             <a href="?tab=subaccounts" class="flex items-center gap-3 p-3 bg-purple-50 hover:bg-purple-100 rounded-lg transition" data-testid="action-subaccounts">
                                 <div class="w-9 h-9 bg-purple-500 rounded-lg flex items-center justify-center"><i class="fas fa-headset text-white text-sm"></i></div>
-                                <div><p class="text-sm font-medium text-gray-900">Sub-Accounts</p><p class="text-[10px] text-gray-500">SIP accounts</p></div>
+                                <div><p class="text-sm font-medium text-gray-900">Sub-Accounts</p><p class="text-[10px] text-gray-500">Create & manage SIP</p></div>
                             </a>
                             <a href="?tab=cdr" class="flex items-center gap-3 p-3 bg-green-50 hover:bg-green-100 rounded-lg transition" data-testid="action-cdr">
                                 <div class="w-9 h-9 bg-green-500 rounded-lg flex items-center justify-center"><i class="fas fa-list-alt text-white text-sm"></i></div>
@@ -270,7 +392,7 @@ $tabs = [
                     <?php if (!empty($servers)): ?>
                     <div class="bg-white rounded-lg border border-gray-200">
                         <div class="px-6 py-4 border-b border-gray-100">
-                            <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-server text-green-500 mr-2"></i>POP Servers</h2>
+                            <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-server text-green-500 mr-2"></i>POP Servers (<?php echo count($servers); ?>)</h2>
                         </div>
                         <div class="overflow-y-auto max-h-[260px]">
                             <table class="w-full">
@@ -305,7 +427,7 @@ $tabs = [
                             <p><i class="fas fa-check text-green-500 mr-2"></i>Call Detail Records (CDR)</p>
                             <p><i class="fas fa-check text-green-500 mr-2"></i>SIP registration status</p>
                             <p><i class="fas fa-check text-green-500 mr-2"></i>Voicemail management</p>
-                            <p><i class="fas fa-check text-green-500 mr-2"></i>Call forwarding & routing rules</p>
+                            <p><i class="fas fa-check text-green-500 mr-2"></i>Call forwarding & routing</p>
                             <p><i class="fas fa-check text-green-500 mr-2"></i>IVR & ring group config</p>
                         </div>
                     </div>
@@ -313,7 +435,7 @@ $tabs = [
                 </div>
 
             <?php elseif ($active_tab === 'dids'): ?>
-                <div class="bg-white rounded-lg border border-gray-200">
+                <div class="bg-white rounded-lg border border-gray-200 mb-6">
                     <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                         <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-phone-volume text-blue-500 mr-2"></i>DID Numbers (<?php echo count($dids); ?>)</h2>
                         <a href="https://voip.ms/m/orderdid.php" target="_blank" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition" data-testid="button-order-did"><i class="fas fa-plus mr-1"></i>Order New DID</a>
@@ -322,6 +444,7 @@ $tabs = [
                         <div class="p-12 text-center text-gray-500">
                             <i class="fas fa-phone-slash text-gray-300 text-4xl mb-3"></i>
                             <p class="text-sm">No DIDs found on this account.</p>
+                            <a href="https://voip.ms/m/orderdid.php" target="_blank" class="inline-flex items-center mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition"><i class="fas fa-plus mr-1"></i>Order a DID from VoIP.ms</a>
                         </div>
                     <?php else: ?>
                         <div class="overflow-x-auto">
@@ -331,32 +454,29 @@ $tabs = [
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">DID Number</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Description</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Routing</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Failover</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">CallerID</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">CallerID Prefix</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">SMS</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Order Date</th>
+                                        <th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">
                                     <?php foreach ($dids as $did): ?>
-                                    <tr class="hover:bg-gray-50 transition" data-testid="row-did-<?php echo htmlspecialchars($did['did'] ?? ''); ?>">
+                                    <?php
+                                        $routing = $did['routing'] ?? '';
+                                        if (strpos($routing, 'account:') === 0) $routing_label = '<span class="text-blue-600"><i class="fas fa-headset mr-1"></i>' . htmlspecialchars(substr($routing, 8)) . '</span>';
+                                        elseif (strpos($routing, 'sys:') === 0) $routing_label = '<span class="text-purple-600"><i class="fas fa-cog mr-1"></i>' . htmlspecialchars(substr($routing, 4)) . '</span>';
+                                        elseif (strpos($routing, 'ivr:') === 0) $routing_label = '<span class="text-green-600"><i class="fas fa-sitemap mr-1"></i>IVR ' . htmlspecialchars(substr($routing, 4)) . '</span>';
+                                        elseif (strpos($routing, 'ring_group:') === 0) $routing_label = '<span class="text-orange-600"><i class="fas fa-users mr-1"></i>Ring Group ' . htmlspecialchars(substr($routing, 11)) . '</span>';
+                                        else $routing_label = '<span class="text-gray-500">' . htmlspecialchars($routing) . '</span>';
+                                        $did_number = $did['did'] ?? '';
+                                    ?>
+                                    <tr class="hover:bg-gray-50 transition" data-testid="row-did-<?php echo htmlspecialchars($did_number); ?>">
                                         <td class="px-4 py-3">
-                                            <span class="text-sm font-medium text-gray-900 font-mono"><?php echo htmlspecialchars($did['did'] ?? ''); ?></span>
+                                            <span class="text-sm font-medium text-gray-900 font-mono"><?php echo htmlspecialchars($did_number); ?></span>
                                         </td>
                                         <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars($did['description'] ?? '--'); ?></td>
-                                        <td class="px-4 py-3">
-                                            <?php
-                                                $routing = $did['routing'] ?? '';
-                                                $routing_label = $routing;
-                                                if (strpos($routing, 'account:') === 0) $routing_label = '<span class="text-blue-600"><i class="fas fa-headset mr-1"></i>' . htmlspecialchars(substr($routing, 8)) . '</span>';
-                                                elseif (strpos($routing, 'sys:') === 0) $routing_label = '<span class="text-purple-600"><i class="fas fa-cog mr-1"></i>' . htmlspecialchars(substr($routing, 4)) . '</span>';
-                                                elseif (strpos($routing, 'ivr:') === 0) $routing_label = '<span class="text-green-600"><i class="fas fa-sitemap mr-1"></i>IVR ' . htmlspecialchars(substr($routing, 4)) . '</span>';
-                                                elseif (strpos($routing, 'ring_group:') === 0) $routing_label = '<span class="text-orange-600"><i class="fas fa-users mr-1"></i>Ring Group ' . htmlspecialchars(substr($routing, 11)) . '</span>';
-                                                else $routing_label = '<span class="text-gray-500">' . htmlspecialchars($routing) . '</span>';
-                                            ?>
-                                            <span class="text-xs"><?php echo $routing_label; ?></span>
-                                        </td>
-                                        <td class="px-4 py-3 text-xs text-gray-500"><?php echo htmlspecialchars($did['failover_busy'] ?? '--'); ?></td>
+                                        <td class="px-4 py-3 text-xs"><?php echo $routing_label; ?></td>
                                         <td class="px-4 py-3 text-xs text-gray-500"><?php echo htmlspecialchars($did['callerid_prefix'] ?? '--'); ?></td>
                                         <td class="px-4 py-3">
                                             <?php if (($did['sms_available'] ?? '') === '1' || ($did['sms_enabled'] ?? '') === '1'): ?>
@@ -366,6 +486,9 @@ $tabs = [
                                             <?php endif; ?>
                                         </td>
                                         <td class="px-4 py-3 text-xs text-gray-500"><?php echo htmlspecialchars($did['order_date'] ?? '--'); ?></td>
+                                        <td class="px-4 py-3 text-center">
+                                            <button onclick="openEditDid('<?php echo htmlspecialchars($did_number); ?>', '<?php echo htmlspecialchars(addslashes($did['description'] ?? '')); ?>', '<?php echo htmlspecialchars(addslashes($routing)); ?>', '<?php echo htmlspecialchars(addslashes($did['callerid_prefix'] ?? '')); ?>', '<?php echo htmlspecialchars($did['pop'] ?? ''); ?>')" class="text-blue-600 hover:text-blue-800 text-xs font-medium" data-testid="button-edit-did-<?php echo htmlspecialchars($did_number); ?>"><i class="fas fa-edit mr-1"></i>Edit</button>
+                                        </td>
                                     </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -374,16 +497,125 @@ $tabs = [
                     <?php endif; ?>
                 </div>
 
+                <div id="edit-did-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+                    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+                        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                            <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-edit text-blue-500 mr-2"></i>Edit DID</h3>
+                            <button onclick="closeEditDid()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+                        </div>
+                        <form method="POST" class="p-6">
+                            <input type="hidden" name="action" value="update_did">
+                            <input type="hidden" name="did" id="edit-did-number">
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">DID Number</label>
+                                <input type="text" id="edit-did-display" disabled class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50 font-mono">
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                <input type="text" name="description" id="edit-did-desc" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Main Office Line" data-testid="input-did-description">
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Routing</label>
+                                <select id="edit-did-routing-select" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-testid="select-did-routing">
+                                    <option value="">-- Select Routing --</option>
+                                    <?php foreach ($routing_accounts as $ra): ?>
+                                        <option value="account:<?php echo htmlspecialchars($ra['username'] ?? $ra['account'] ?? ''); ?>">Account: <?php echo htmlspecialchars($ra['username'] ?? $ra['account'] ?? ''); ?> <?php echo ($ra['description'] ?? '') ? '(' . htmlspecialchars($ra['description']) . ')' : ''; ?></option>
+                                    <?php endforeach; ?>
+                                    <option value="sys:hangup">System: Hangup</option>
+                                    <option value="sys:noservice">System: No Service</option>
+                                    <option value="sys:busy">System: Busy</option>
+                                    <option value="sys:disconnected">System: Disconnected</option>
+                                </select>
+                                <p class="text-xs text-gray-400 mt-1">Or enter a custom routing value below (overrides dropdown)</p>
+                                <input type="text" name="routing" id="edit-did-routing" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. account:100001_myext or ivr:12345">
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">CallerID Prefix</label>
+                                <input type="text" name="callerid_prefix" id="edit-did-callerid" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. BM-" data-testid="input-did-callerid">
+                            </div>
+                            <div class="flex justify-end gap-3">
+                                <button type="button" onclick="closeEditDid()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition">Cancel</button>
+                                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-save-did"><i class="fas fa-save mr-1"></i>Save Changes</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
             <?php elseif ($active_tab === 'subaccounts'): ?>
-                <div class="bg-white rounded-lg border border-gray-200">
+                <div class="bg-white rounded-lg border border-gray-200 mb-6">
                     <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                         <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-headset text-purple-500 mr-2"></i>Sub-Accounts (<?php echo count($subaccounts); ?>)</h2>
-                        <a href="https://voip.ms/m/managesubaccount.php" target="_blank" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition" data-testid="button-manage-subaccounts"><i class="fas fa-external-link-alt mr-1"></i>Manage in VoIP.ms</a>
+                        <button onclick="document.getElementById('create-sa-form').classList.toggle('hidden')" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition" data-testid="button-create-subaccount"><i class="fas fa-plus mr-1"></i>Create Sub-Account</button>
                     </div>
+
+                    <div id="create-sa-form" class="hidden border-b border-gray-100 bg-purple-50 p-6">
+                        <form method="POST">
+                            <input type="hidden" name="action" value="create_subaccount">
+                            <h3 class="text-sm font-semibold text-gray-900 mb-3"><i class="fas fa-user-plus text-purple-500 mr-1"></i>New Sub-Account</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Username *</label>
+                                    <input type="text" name="sa_username" required placeholder="e.g. extension100" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" data-testid="input-sa-username">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Password *</label>
+                                    <input type="text" name="sa_password" required placeholder="Min 8 characters" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" data-testid="input-sa-password">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                                    <input type="text" name="sa_description" placeholder="e.g. John's Desk Phone" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" data-testid="input-sa-description">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Protocol</label>
+                                    <select name="sa_protocol" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" data-testid="select-sa-protocol">
+                                        <option value="1">SIP (UDP)</option>
+                                        <option value="3">SIP (TCP)</option>
+                                        <option value="4">SIP (TLS)</option>
+                                        <option value="2">IAX2</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Auth Type</label>
+                                    <select name="sa_auth_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" data-testid="select-sa-auth">
+                                        <option value="1">User/Pass</option>
+                                        <option value="2">IP Auth</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">CallerID Number</label>
+                                    <input type="text" name="sa_callerid" placeholder="e.g. 5551234567" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" data-testid="input-sa-callerid">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Internal Extension</label>
+                                    <input type="text" name="sa_internal_extension" placeholder="e.g. 100" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" data-testid="input-sa-ext">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Internal Voicemail</label>
+                                    <input type="text" name="sa_internal_voicemail" placeholder="e.g. 101" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" data-testid="input-sa-vm">
+                                </div>
+                                <div class="flex items-end pb-1">
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" name="sa_lock_intl" class="rounded border-gray-300 text-purple-600 focus:ring-purple-500" data-testid="check-sa-lock-intl">
+                                        <span class="text-xs text-gray-700">Lock International Calls</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3 mt-4">
+                                <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-submit-sa"><i class="fas fa-user-plus mr-1"></i>Create Sub-Account</button>
+                                <button type="button" onclick="document.getElementById('create-sa-form').classList.add('hidden')" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+
                     <?php if (empty($subaccounts)): ?>
                         <div class="p-12 text-center text-gray-500">
                             <i class="fas fa-headset text-gray-300 text-4xl mb-3"></i>
                             <p class="text-sm">No sub-accounts found.</p>
+                            <p class="text-xs text-gray-400 mt-1">Click "Create Sub-Account" to provision a new SIP extension.</p>
                         </div>
                     <?php else: ?>
                         <div class="overflow-x-auto">
@@ -393,41 +625,44 @@ $tabs = [
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Username</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Description</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Protocol</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Auth Type</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">CallerID</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Codecs</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Intl Lock</th>
+                                        <th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">
                                     <?php foreach ($subaccounts as $sa): ?>
-                                    <tr class="hover:bg-gray-50 transition" data-testid="row-subaccount-<?php echo htmlspecialchars($sa['account'] ?? $sa['username'] ?? ''); ?>">
+                                    <?php
+                                        $sa_id = $sa['id'] ?? $sa['account'] ?? '';
+                                        $sa_username = $sa['username'] ?? $sa['account'] ?? '';
+                                    ?>
+                                    <tr class="hover:bg-gray-50 transition" data-testid="row-subaccount-<?php echo htmlspecialchars($sa_username); ?>">
                                         <td class="px-4 py-3">
-                                            <span class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($sa['username'] ?? $sa['account'] ?? ''); ?></span>
+                                            <span class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($sa_username); ?></span>
                                         </td>
                                         <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars($sa['description'] ?? '--'); ?></td>
                                         <td class="px-4 py-3">
-                                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-medium"><?php echo htmlspecialchars(strtoupper($sa['protocol'] ?? 'SIP')); ?></span>
-                                        </td>
-                                        <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars($sa['auth_type'] ?? '--'); ?></td>
-                                        <td class="px-4 py-3 text-xs text-gray-500 font-mono"><?php echo htmlspecialchars($sa['callerid_number'] ?? '--'); ?></td>
-                                        <td class="px-4 py-3 text-xs text-gray-500">
                                             <?php
-                                                $codecs_str = '';
-                                                $codec_fields = ['codec_ulaw', 'codec_alaw', 'codec_g729', 'codec_gsm', 'codec_opus'];
-                                                $codec_names = ['uLaw', 'aLaw', 'G.729', 'GSM', 'Opus'];
-                                                foreach ($codec_fields as $i => $cf) {
-                                                    if (($sa[$cf] ?? '') === 'yes') $codecs_str .= $codec_names[$i] . ' ';
-                                                }
-                                                echo htmlspecialchars(trim($codecs_str) ?: '--');
+                                                $proto_map = ['1' => 'SIP/UDP', '2' => 'IAX2', '3' => 'SIP/TCP', '4' => 'SIP/TLS'];
+                                                $proto = $proto_map[$sa['protocol'] ?? ''] ?? strtoupper($sa['protocol'] ?? 'SIP');
                                             ?>
+                                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-medium"><?php echo htmlspecialchars($proto); ?></span>
                                         </td>
+                                        <td class="px-4 py-3 text-xs text-gray-500 font-mono"><?php echo htmlspecialchars($sa['callerid_number'] ?? '--'); ?></td>
                                         <td class="px-4 py-3">
-                                            <?php if (($sa['lock_international'] ?? '') !== 'yes'): ?>
-                                                <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium"><i class="fas fa-globe mr-1"></i>Intl</span>
+                                            <?php if (($sa['lock_international'] ?? '') === 'yes'): ?>
+                                                <span class="px-2 py-0.5 bg-red-100 text-red-600 rounded text-[10px] font-medium"><i class="fas fa-lock mr-1"></i>Locked</span>
                                             <?php else: ?>
-                                                <span class="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] font-medium"><i class="fas fa-lock mr-1"></i>Domestic</span>
+                                                <span class="px-2 py-0.5 bg-green-100 text-green-600 rounded text-[10px] font-medium"><i class="fas fa-globe mr-1"></i>Open</span>
                                             <?php endif; ?>
+                                        </td>
+                                        <td class="px-4 py-3 text-center">
+                                            <button onclick="openEditSa('<?php echo htmlspecialchars($sa_id); ?>', '<?php echo htmlspecialchars(addslashes($sa_username)); ?>', '<?php echo htmlspecialchars(addslashes($sa['description'] ?? '')); ?>', '<?php echo htmlspecialchars(addslashes($sa['callerid_number'] ?? '')); ?>', '<?php echo ($sa['lock_international'] ?? '') === 'yes' ? '1' : '0'; ?>')" class="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2" data-testid="button-edit-sa-<?php echo htmlspecialchars($sa_id); ?>"><i class="fas fa-edit mr-1"></i>Edit</button>
+                                            <form method="POST" class="inline" onsubmit="return confirm('Delete sub-account <?php echo htmlspecialchars(addslashes($sa_username)); ?>? This cannot be undone.');">
+                                                <input type="hidden" name="action" value="delete_subaccount">
+                                                <input type="hidden" name="sa_id" value="<?php echo htmlspecialchars($sa_id); ?>">
+                                                <button type="submit" class="text-red-500 hover:text-red-700 text-xs font-medium" data-testid="button-delete-sa-<?php echo htmlspecialchars($sa_id); ?>"><i class="fas fa-trash-alt mr-1"></i>Delete</button>
+                                            </form>
                                         </td>
                                     </tr>
                                     <?php endforeach; ?>
@@ -437,13 +672,52 @@ $tabs = [
                     <?php endif; ?>
                 </div>
 
+                <div id="edit-sa-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+                    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+                        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                            <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-edit text-purple-500 mr-2"></i>Edit Sub-Account</h3>
+                            <button onclick="closeEditSa()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+                        </div>
+                        <form method="POST" class="p-6">
+                            <input type="hidden" name="action" value="update_subaccount">
+                            <input type="hidden" name="sa_id" id="edit-sa-id">
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                                <input type="text" id="edit-sa-username" disabled class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50">
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                <input type="text" name="sa_description" id="edit-sa-desc" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" data-testid="input-edit-sa-desc">
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">New Password <span class="text-gray-400 font-normal">(leave blank to keep current)</span></label>
+                                <input type="text" name="sa_password" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" placeholder="New password" data-testid="input-edit-sa-pass">
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">CallerID Number</label>
+                                <input type="text" name="sa_callerid" id="edit-sa-callerid" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" placeholder="e.g. 5551234567" data-testid="input-edit-sa-callerid">
+                            </div>
+                            <div class="mb-4">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" name="sa_lock_intl" id="edit-sa-lock-intl" class="rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                                    <span class="text-sm text-gray-700">Lock International Calls</span>
+                                </label>
+                            </div>
+                            <div class="flex justify-end gap-3">
+                                <button type="button" onclick="closeEditSa()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition">Cancel</button>
+                                <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-save-sa"><i class="fas fa-save mr-1"></i>Save Changes</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
             <?php elseif ($active_tab === 'cdr'): ?>
                 <?php
                     $cdr_from = $_GET['cdr_from'] ?? date('Y-m-d', strtotime('-7 days'));
                     $cdr_to = $_GET['cdr_to'] ?? date('Y-m-d');
                     $cdr_type = $_GET['cdr_type'] ?? '1';
                 ?>
-                <div class="bg-white rounded-lg border border-gray-200 mb-6">
+                <div class="bg-white rounded-lg border border-gray-200">
                     <div class="px-6 py-4 border-b border-gray-100">
                         <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-list-alt text-green-500 mr-2"></i>Call Detail Records</h2>
                     </div>
@@ -478,12 +752,8 @@ $tabs = [
                         <div class="px-6 py-3 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
                             <span class="text-sm text-blue-700 font-medium"><i class="fas fa-info-circle mr-1"></i><?php echo count($cdr_records); ?> records found</span>
                             <?php
-                                $total_duration = 0;
-                                $total_cost = 0;
-                                foreach ($cdr_records as $c) {
-                                    $total_duration += intval($c['seconds'] ?? $c['duration'] ?? 0);
-                                    $total_cost += floatval($c['total'] ?? $c['cost'] ?? 0);
-                                }
+                                $total_duration = 0; $total_cost = 0;
+                                foreach ($cdr_records as $c) { $total_duration += intval($c['seconds'] ?? $c['duration'] ?? 0); $total_cost += floatval($c['total'] ?? $c['cost'] ?? 0); }
                             ?>
                             <span class="text-sm text-blue-600">Total: <?php echo gmdate("H:i:s", $total_duration); ?> | $<?php echo number_format($total_cost, 4); ?></span>
                         </div>
@@ -492,8 +762,8 @@ $tabs = [
                                 <thead class="bg-gray-50">
                                     <tr>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Date/Time</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">From (CallerID)</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">To (Destination)</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">From</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">To</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Duration</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Disposition</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Cost</th>
@@ -504,8 +774,6 @@ $tabs = [
                                     <?php foreach (array_slice($cdr_records, 0, 100) as $cdr): ?>
                                     <?php
                                         $seconds = intval($cdr['seconds'] ?? $cdr['duration'] ?? 0);
-                                        $mins = floor($seconds / 60);
-                                        $secs = $seconds % 60;
                                         $disposition = strtolower($cdr['disposition'] ?? '');
                                         $disp_class = $disposition === 'answered' ? 'bg-green-100 text-green-700' : ($disposition === 'no answer' ? 'bg-yellow-100 text-yellow-700' : ($disposition === 'busy' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'));
                                     ?>
@@ -513,7 +781,7 @@ $tabs = [
                                         <td class="px-4 py-2 text-xs text-gray-900 whitespace-nowrap"><?php echo htmlspecialchars($cdr['date'] ?? ''); ?></td>
                                         <td class="px-4 py-2 text-xs text-gray-900 font-mono"><?php echo htmlspecialchars($cdr['callerid'] ?? $cdr['caller_id'] ?? ''); ?></td>
                                         <td class="px-4 py-2 text-xs text-gray-900 font-mono"><?php echo htmlspecialchars($cdr['destination'] ?? ''); ?></td>
-                                        <td class="px-4 py-2 text-xs text-gray-700"><?php echo $mins . 'm ' . $secs . 's'; ?></td>
+                                        <td class="px-4 py-2 text-xs text-gray-700"><?php echo floor($seconds/60) . 'm ' . ($seconds%60) . 's'; ?></td>
                                         <td class="px-4 py-2"><span class="px-2 py-0.5 rounded text-[10px] font-medium <?php echo $disp_class; ?>"><?php echo htmlspecialchars(ucfirst($cdr['disposition'] ?? '')); ?></span></td>
                                         <td class="px-4 py-2 text-xs text-gray-700">$<?php echo number_format(floatval($cdr['total'] ?? $cdr['cost'] ?? 0), 4); ?></td>
                                         <td class="px-4 py-2 text-xs text-gray-500"><?php echo htmlspecialchars($cdr['account'] ?? ''); ?></td>
@@ -523,9 +791,7 @@ $tabs = [
                             </table>
                         </div>
                         <?php if (count($cdr_records) > 100): ?>
-                            <div class="px-6 py-3 text-center text-xs text-gray-500 border-t border-gray-100">
-                                Showing first 100 of <?php echo count($cdr_records); ?> records. Narrow your date range for full results.
-                            </div>
+                            <div class="px-6 py-3 text-center text-xs text-gray-500 border-t border-gray-100">Showing first 100 of <?php echo count($cdr_records); ?> records.</div>
                         <?php endif; ?>
                     <?php endif; ?>
                 </div>
@@ -558,10 +824,7 @@ $tabs = [
                                 <tbody class="divide-y divide-gray-200">
                                     <?php foreach ($registration_status as $reg): ?>
                                     <tr class="hover:bg-gray-50 transition">
-                                        <td class="px-4 py-3">
-                                            <span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block mr-1"></span>
-                                            <span class="text-xs text-green-600 font-medium">Online</span>
-                                        </td>
+                                        <td class="px-4 py-3"><span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block mr-1"></span><span class="text-xs text-green-600 font-medium">Online</span></td>
                                         <td class="px-4 py-3 text-sm font-medium text-gray-900"><?php echo htmlspecialchars($reg['sub_account'] ?? $voip_username); ?></td>
                                         <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars($reg['server_name'] ?? $reg['server'] ?? ''); ?></td>
                                         <td class="px-4 py-3"><code class="text-xs font-mono text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded"><?php echo htmlspecialchars($reg['register_ip'] ?? $reg['ip'] ?? ''); ?></code></td>
@@ -603,48 +866,33 @@ $tabs = [
                     <div class="px-6 py-4 border-b border-gray-100">
                         <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-cog text-gray-500 mr-2"></i>Environment Variables</h2>
                     </div>
-                    <div class="p-6">
-                        <div class="space-y-4">
-                            <div class="flex items-center justify-between py-3 border-b border-gray-100">
-                                <div>
-                                    <p class="text-sm font-medium text-gray-900">VOIP_USERNAME</p>
-                                    <p class="text-xs text-gray-500">Your VoIP.ms account email (Set in Replit Secrets)</p>
-                                </div>
-                                <?php if ($voip_username_set): ?>
-                                    <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium" data-testid="env-voip-username"><i class="fas fa-check mr-1"></i>Set</span>
-                                <?php else: ?>
-                                    <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium" data-testid="env-voip-username"><i class="fas fa-times mr-1"></i>Not Set</span>
-                                <?php endif; ?>
+                    <div class="p-6 space-y-4">
+                        <?php
+                            $env_vars = [
+                                ['VOIP_USERNAME', 'Your VoIP.ms account email', $voip_username_set],
+                                ['VOIP_PASSWORD', 'API password from VoIP.ms settings', $voip_password_set],
+                                ['VOIP_TOKEN', 'Alternative: API token (used if password not set)', $voip_token_set],
+                            ];
+                            foreach ($env_vars as $ev):
+                        ?>
+                        <div class="flex items-center justify-between py-3 border-b border-gray-100">
+                            <div>
+                                <p class="text-sm font-medium text-gray-900"><?php echo $ev[0]; ?></p>
+                                <p class="text-xs text-gray-500"><?php echo $ev[1]; ?></p>
                             </div>
-                            <div class="flex items-center justify-between py-3 border-b border-gray-100">
-                                <div>
-                                    <p class="text-sm font-medium text-gray-900">VOIP_PASSWORD</p>
-                                    <p class="text-xs text-gray-500">API password from VoIP.ms SOAP/REST API settings</p>
-                                </div>
-                                <?php if ($voip_password_set): ?>
-                                    <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium" data-testid="env-voip-password"><i class="fas fa-check mr-1"></i>Set</span>
-                                <?php else: ?>
-                                    <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium" data-testid="env-voip-password"><i class="fas fa-times mr-1"></i>Not Set</span>
-                                <?php endif; ?>
+                            <?php if ($ev[2]): ?>
+                                <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium"><i class="fas fa-check mr-1"></i>Set</span>
+                            <?php else: ?>
+                                <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium"><i class="fas fa-times mr-1"></i>Not Set</span>
+                            <?php endif; ?>
+                        </div>
+                        <?php endforeach; ?>
+                        <div class="flex items-center justify-between py-3">
+                            <div>
+                                <p class="text-sm font-medium text-gray-900">VOIP_API_URL</p>
+                                <p class="text-xs text-gray-500">VoIP.ms REST API endpoint (default)</p>
                             </div>
-                            <div class="flex items-center justify-between py-3 border-b border-gray-100">
-                                <div>
-                                    <p class="text-sm font-medium text-gray-900">VOIP_TOKEN</p>
-                                    <p class="text-xs text-gray-500">Alternative: API token (used if password not set)</p>
-                                </div>
-                                <?php if ($voip_token_set): ?>
-                                    <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium" data-testid="env-voip-token"><i class="fas fa-check mr-1"></i>Set</span>
-                                <?php else: ?>
-                                    <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium" data-testid="env-voip-token"><i class="fas fa-times mr-1"></i>Not Set</span>
-                                <?php endif; ?>
-                            </div>
-                            <div class="flex items-center justify-between py-3">
-                                <div>
-                                    <p class="text-sm font-medium text-gray-900">VOIP_API_URL</p>
-                                    <p class="text-xs text-gray-500">VoIP.ms REST API endpoint (default)</p>
-                                </div>
-                                <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium" data-testid="env-voip-url"><?php echo htmlspecialchars($voip_url); ?></span>
-                            </div>
+                            <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium"><?php echo htmlspecialchars($voip_url); ?></span>
                         </div>
                     </div>
                 </div>
@@ -657,8 +905,8 @@ $tabs = [
                         <p><strong>1.</strong> Log in to your VoIP.ms account at <a href="https://voip.ms" target="_blank" class="text-blue-600 hover:underline">voip.ms</a></p>
                         <p><strong>2.</strong> Navigate to <strong>SOAP and REST/JSON API</strong> under Main Menu</p>
                         <p><strong>3.</strong> Enable the API and set an API password</p>
-                        <p><strong>4.</strong> Add your server's IP address to the allowed IPs list (or use 0.0.0.0/0 for development)</p>
-                        <p><strong>5.</strong> Set the following secrets in Replit:</p>
+                        <p><strong>4.</strong> Add your server's IP address to the allowed IPs list</p>
+                        <p><strong>5.</strong> Set the following secrets in Replit Secrets:</p>
                         <div class="bg-gray-50 rounded-lg p-4 font-mono text-xs space-y-1">
                             <p><span class="text-blue-600">VOIP_USERNAME</span> = your@email.com</p>
                             <p><span class="text-blue-600">VOIP_PASSWORD</span> = your_api_password</p>
@@ -670,5 +918,43 @@ $tabs = [
         </div>
     </div>
 </div>
+
+<script>
+function openEditDid(did, desc, routing, callerid, pop) {
+    document.getElementById('edit-did-number').value = did;
+    document.getElementById('edit-did-display').value = did;
+    document.getElementById('edit-did-desc').value = desc;
+    document.getElementById('edit-did-callerid').value = callerid;
+    document.getElementById('edit-did-routing').value = routing;
+    const routingSelect = document.getElementById('edit-did-routing-select');
+    routingSelect.value = routing;
+    document.getElementById('edit-did-modal').classList.remove('hidden');
+}
+function closeEditDid() {
+    document.getElementById('edit-did-modal').classList.add('hidden');
+}
+
+document.getElementById('edit-did-routing-select')?.addEventListener('change', function() {
+    if (this.value) {
+        document.getElementById('edit-did-routing').value = this.value;
+    }
+});
+
+function openEditSa(id, username, desc, callerid, lockIntl) {
+    document.getElementById('edit-sa-id').value = id;
+    document.getElementById('edit-sa-username').value = username;
+    document.getElementById('edit-sa-desc').value = desc;
+    document.getElementById('edit-sa-callerid').value = callerid;
+    document.getElementById('edit-sa-lock-intl').checked = lockIntl === '1';
+    document.getElementById('edit-sa-modal').classList.remove('hidden');
+}
+function closeEditSa() {
+    document.getElementById('edit-sa-modal').classList.add('hidden');
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { closeEditDid(); closeEditSa(); }
+});
+</script>
 </body>
 </html>
