@@ -2,8 +2,7 @@
 require_once 'config.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
-    header('Location: /portal');
-    exit();
+    portal_redirect('/portal');
 }
 
 $user_name = $_SESSION['user_name'] ?? 'Admin';

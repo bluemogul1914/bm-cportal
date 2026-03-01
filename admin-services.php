@@ -2,8 +2,7 @@
 require_once 'config.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
-    header('Location: /portal');
-    exit();
+    portal_redirect('/portal');
 }
 
 $user_id = $_SESSION['user_id'];
@@ -29,8 +28,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
             $stmt = $pdo->prepare("INSERT INTO subscriptions (client_id, product_id, status, start_date, mrr, created_at) VALUES (?, ?, 'active', ?, ?, NOW())");
             $stmt->execute([$client_id, $product_id, $start_date, $mrr]);
-            header('Location: admin-services.php?success=created');
-            exit();
+            portal_redirect('admin-services.php?success=created');
         }
     } elseif ($action === 'update_status') {
         $id = intval($_POST['id'] ?? 0);
@@ -39,8 +37,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $cancel_date = ($status === 'cancelled') ? date('Y-m-d') : null;
             $stmt = $pdo->prepare("UPDATE subscriptions SET status = ?, cancel_date = ? WHERE id = ?");
             $stmt->execute([$status, $cancel_date, $id]);
-            header('Location: admin-services.php?success=updated');
-            exit();
+            portal_redirect('admin-services.php?success=updated');
         }
     }
 }

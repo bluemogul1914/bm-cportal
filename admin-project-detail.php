@@ -2,16 +2,14 @@
 require_once 'config.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
-    header('Location: /portal');
-    exit();
+    portal_redirect('/portal');
 }
 
 $user_name = $_SESSION['user_name'] ?? 'Admin';
 $project_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 if (!$project_id) {
-    header('Location: admin-projects.php');
-    exit();
+    portal_redirect('admin-projects.php');
 }
 
 $pdo = getDB();
@@ -83,7 +81,7 @@ try {
     $stmt = $pdo->prepare("SELECT p.*, c.name as client_name, c.company as client_company FROM projects p LEFT JOIN clients c ON p.client_id = c.id WHERE p.id = ?");
     $stmt->execute([$project_id]);
     $project = $stmt->fetch();
-    if (!$project) { header('Location: admin-projects.php'); exit(); }
+    if (!$project) { portal_redirect('admin-projects.php'); exit(); }
 
     $tasks_stmt = $pdo->prepare("SELECT * FROM project_tasks WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC");
     $tasks_stmt->execute([$project_id]);
@@ -95,8 +93,7 @@ try {
 
     $clients = $pdo->query("SELECT id, name, company FROM clients ORDER BY name")->fetchAll();
 } catch (PDOException $e) {
-    header('Location: admin-projects.php');
-    exit();
+    portal_redirect('admin-projects.php');
 }
 
 $task_groups = ['todo' => [], 'in_progress' => [], 'review' => [], 'done' => []];

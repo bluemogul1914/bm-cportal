@@ -2,8 +2,7 @@
 require_once 'config.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
-    header('Location: /portal');
-    exit();
+    portal_redirect('/portal');
 }
 
 $user_id = $_SESSION['user_id'];
@@ -29,8 +28,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         if ($name && $category && $price >= 0) {
             $stmt = $pdo->prepare("INSERT INTO products (name, category, tier, price, billing_period, description, features, active) VALUES (?, ?, ?, ?, ?, ?, ?, true)");
             $stmt->execute([$name, $category, $tier, $price, $billing_period, $description, $features]);
-            header('Location: admin-products.php?success=created');
-            exit();
+            portal_redirect('admin-products.php?success=created');
         }
     } elseif ($action === 'update_product') {
         $id = intval($_POST['id'] ?? 0);
@@ -47,16 +45,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         if ($id && $name && $category) {
             $stmt = $pdo->prepare("UPDATE products SET name=?, category=?, tier=?, price=?, billing_period=?, description=?, features=?, active=? WHERE id=?");
             $stmt->execute([$name, $category, $tier, $price, $billing_period, $description, $features, $active, $id]);
-            header('Location: admin-products.php?success=updated');
-            exit();
+            portal_redirect('admin-products.php?success=updated');
         }
     } elseif ($action === 'toggle_active') {
         $id = intval($_POST['id'] ?? 0);
         if ($id) {
             $stmt = $pdo->prepare("UPDATE products SET active = NOT active WHERE id = ?");
             $stmt->execute([$id]);
-            header('Location: admin-products.php?success=toggled');
-            exit();
+            portal_redirect('admin-products.php?success=toggled');
         }
     }
 }

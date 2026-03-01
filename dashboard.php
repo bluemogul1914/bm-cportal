@@ -2,8 +2,7 @@
 require_once 'config.php';
 
 if (!isset($_SESSION['user_id'])) {
-    header('Location: /portal');
-    exit();
+    portal_redirect('/portal');
 }
 
 $user_id = $_SESSION['user_id'];
@@ -57,8 +56,7 @@ try {
 
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'mark_notifications_read') {
         $pdo->prepare("UPDATE notifications SET is_read = true WHERE user_id = ?")->execute([$user_id]);
-        header('Location: dashboard.php');
-        exit();
+        portal_redirect('dashboard.php');
     }
 
 } catch (PDOException $e) {

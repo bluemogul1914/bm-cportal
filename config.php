@@ -162,6 +162,20 @@ function getDB() {
 }
 
 /**
+ * Portal redirect - works in both CLI and web modes
+ * Outputs a marker that Express can detect for redirection
+ */
+function portal_redirect($url) {
+    if (php_sapi_name() === 'cli') {
+        echo "__REDIRECT__:" . $url;
+        exit();
+    } else {
+        header('Location: ' . $url);
+        exit();
+    }
+}
+
+/**
  * Check if user is logged in
  */
 function isLoggedIn() {

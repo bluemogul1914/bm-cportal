@@ -172,10 +172,24 @@ if ($_sessionData) {
 `;
 }
 
+function handlePhpResponse(stdout: string, res: Response) {
+  const redirectMatch = stdout.match(/^__REDIRECT__:(.+)$/m);
+  if (redirectMatch) {
+    let location = redirectMatch[1].trim();
+    if (!location.startsWith("http") && !location.startsWith("/")) {
+      location = "/portal/" + location;
+    }
+    return res.redirect(302, location);
+  }
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(stdout);
+}
+
 function executePhpFile(filePath: string, req: Request, res: Response) {
   const sessionCode = buildSessionPhpCode(req);
   const queryParams = Object.entries(req.query || {}).map(([k, v]) => `$_GET['${k.replace(/'/g, "\\'")}'] = '${String(v).replace(/'/g, "\\'")}';`).join("\n");
   const phpCode = `<?php
+error_reporting(E_ERROR | E_PARSE);
 session_start();
 ${sessionCode}
 ${queryParams}
@@ -198,8 +212,7 @@ require '${filePath.replace(/'/g, "\\'")}';
           console.error(`PHP execution error:`, stderr || error.message);
           return res.status(500).send("Server error");
         }
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.send(stdout);
+        handlePhpResponse(stdout, res);
       }
     );
   });
@@ -250,6 +263,7 @@ app.post("/portal/:file", (req, res) => {
   const postData = formParts.join("&");
 
   const phpCode = `<?php
+error_reporting(E_ERROR | E_PARSE);
 session_start();
 ${sessionCode}
 $_SERVER['REQUEST_METHOD'] = 'POST';
@@ -281,8 +295,7 @@ require '${filePath.replace(/'/g, "\\'")}';
           const json = JSON.parse(stdout);
           res.json(json);
         } catch {
-          res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.send(stdout);
+          handlePhpResponse(stdout, res);
         }
       }
     );

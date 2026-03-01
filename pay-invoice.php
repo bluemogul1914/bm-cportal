@@ -2,8 +2,7 @@
 require_once 'config.php';
 
 if (!isset($_SESSION['user_id'])) {
-    header('Location: /portal');
-    exit();
+    portal_redirect('/portal');
 }
 
 $user_id = $_SESSION['user_id'];

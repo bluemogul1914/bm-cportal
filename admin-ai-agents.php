@@ -2,8 +2,7 @@
 require_once 'config.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
-    header('Location: /portal');
-    exit();
+    portal_redirect('/portal');
 }
 
 $user_name = $_SESSION['user_name'] ?? 'Admin';
@@ -20,8 +19,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         if ($id) {
             $stmt = $pdo->prepare("UPDATE agent_config SET enabled = NOT enabled, last_modified = NOW() WHERE id = ?");
             $stmt->execute([$id]);
-            header('Location: admin-ai-agents.php?success=toggled');
-            exit();
+            portal_redirect('admin-ai-agents.php?success=toggled');
         }
     } elseif ($action === 'update_schedule') {
         $id = intval($_POST['id'] ?? 0);
@@ -29,16 +27,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         if ($id && $schedule) {
             $stmt = $pdo->prepare("UPDATE agent_config SET schedule = ?, last_modified = NOW() WHERE id = ?");
             $stmt->execute([$schedule, $id]);
-            header('Location: admin-ai-agents.php?success=updated');
-            exit();
+            portal_redirect('admin-ai-agents.php?success=updated');
         }
     } elseif ($action === 'run_agent') {
         $agent_name = trim($_POST['agent_name'] ?? '');
         if ($agent_name) {
             $stmt = $pdo->prepare("INSERT INTO agent_logs (agent_name, action, status, message, execution_time, executed_at) VALUES (?, 'manual_run', 'success', ?, ?, NOW())");
             $stmt->execute([$agent_name, 'Manual execution triggered by ' . $user_name, rand(800, 4500)]);
-            header('Location: admin-ai-agents.php?success=run&agent=' . urlencode($agent_name));
-            exit();
+            portal_redirect('admin-ai-agents.php?success=run&agent=' . urlencode($agent_name));
         }
     } elseif ($action === 'update_config') {
         $id = intval($_POST['id'] ?? 0);
@@ -48,8 +44,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             if ($decoded !== null) {
                 $stmt = $pdo->prepare("UPDATE agent_config SET config = ?::jsonb, last_modified = NOW() WHERE id = ?");
                 $stmt->execute([$config_json, $id]);
-                header('Location: admin-ai-agents.php?success=configured');
-                exit();
+                portal_redirect('admin-ai-agents.php?success=configured');
             }
         }
     }
