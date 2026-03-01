@@ -68,9 +68,17 @@ function send_email($to, $subject, $html_body, $plain_body = '') {
     $errno = 0;
     $errstr = '';
 
-    $secure = ($smtp['port'] === 465) ? 'ssl' : 'tls';
-    $prefix = ($smtp['port'] === 465) ? 'ssl://' : '';
-    $socket = @fsockopen($prefix . $smtp['host'], $smtp['port'], $errno, $errstr, 15);
+    $ctx = stream_context_create(['ssl' => [
+        'verify_peer' => false,
+        'verify_peer_name' => false,
+        'allow_self_signed' => true,
+    ]]);
+
+    if ($smtp['port'] === 465) {
+        $socket = @stream_socket_client('ssl://' . $smtp['host'] . ':' . $smtp['port'], $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
+    } else {
+        $socket = @stream_socket_client('tcp://' . $smtp['host'] . ':' . $smtp['port'], $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
+    }
 
     if (!$socket) {
         error_log("SMTP connection failed: $errstr ($errno)");
@@ -79,13 +87,15 @@ function send_email($to, $subject, $html_body, $plain_body = '') {
 
     stream_set_timeout($socket, 15);
 
-    $response = fgets($socket, 512);
-    if (substr($response, 0, 3) !== '220') {
-        fclose($socket);
-        return ['success' => false, 'error' => "Server greeting failed: $response"];
+    $greeting = '';
+    while ($line = fgets($socket, 512)) {
+        $greeting .= $line;
+        if (substr($line, 3, 1) === ' ' || substr($line, 3, 1) === "\r" || strlen(trim($line)) === 3) break;
     }
-
-    $commands = [];
+    if (substr(trim($greeting), 0, 3) !== '220') {
+        fclose($socket);
+        return ['success' => false, 'error' => "Server greeting failed: $greeting"];
+    }
 
     fwrite($socket, "EHLO " . gethostname() . "\r\n");
     $ehlo_response = '';
@@ -107,13 +117,7 @@ function send_email($to, $subject, $html_body, $plain_body = '') {
             return ['success' => false, 'error' => "STARTTLS failed: $tls_response"];
         }
 
-        $ctx = stream_context_create(['ssl' => [
-            'verify_peer' => true,
-            'verify_peer_name' => true,
-            'allow_self_signed' => false,
-        ]]);
-        stream_context_set_option($socket, $ctx);
-        $crypto = stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT);
+        $crypto = @stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT);
         if (!$crypto) {
             fclose($socket);
             return ['success' => false, 'error' => 'TLS negotiation failed'];
