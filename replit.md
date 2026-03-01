@@ -7,7 +7,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - **Frontend**: React with Tailwind CSS, shadcn/ui components, wouter routing
 - **Backend**: Express.js with PHP code execution via child_process
 - **Database**: PostgreSQL with Drizzle ORM
-- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, documents, payments, activity_log, agent_logs, agent_config, system_settings, network_devices, network_credentials, knowledge_articles, notifications, snippets + Stripe schema
+- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, documents, payments, activity_log, agent_logs, agent_config, agent_metrics, system_settings, network_devices, network_credentials, knowledge_articles, notifications, projects, project_tasks, project_notes, snippets + Stripe schema
 - **Runtime**: PHP 8.2 installed via Nix for server-side code execution
 - **Payments**: Stripe integration via Replit connector (OAuth-managed)
 
@@ -25,6 +25,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `documents.php` - Document management with categories, upload, delete
 - `profile.php` - Profile editing and password change
 - `settings.php` - Account settings (notification prefs, 2FA, theme, communication prefs)
+- `projects.php` - Client project tracking with progress bars, task lists, status cards
 - `help.php` - Client-facing Help Center / Knowledge Base with search, categories, article view
 
 ### Admin Portal Pages
@@ -52,6 +53,8 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-stripe.php` - Stripe payment integration (billing overview, recent payments)
 - `admin-audit.php` - Activity audit trail (filterable log of all user actions)
 - `admin-roles.php` - Roles & Access Control (RBAC: super-admin, admin, sales, IT support, billing, user)
+- `admin-projects.php` - Project management list (create, filter, status/type/priority, progress tracking)
+- `admin-project-detail.php` - Individual project view with task board, notes, timeline, status management
 
 ### Shared Components
 - `includes/client-sidebar.php` - Client portal sidebar (dark navy #0d1b3e)
@@ -96,7 +99,23 @@ An online PHP code editor and execution environment built with React + Express, 
 - `POST /api/webhook/create-ticket` - Create ticket from agent (client_id, subject, description, priority, source)
 - `POST /api/webhook/update-device` - Update/add network device (hostname, client_id, status, ip_address, etc.)
 - `POST /api/webhook/notify` - Send notification to user (user_id, title, message, type, entity_type, entity_id)
+- `POST /api/webhook/create-project` - Create project with tasks (name, client_id, project_type, tasks[])
+- `POST /api/webhook/update-project` - Update project status/progress (project_id, status, progress, add_tasks[], add_note)
 - `GET /api/webhook/health` - Health check and endpoint listing
+
+### AI Agent Army API
+- `GET /api/agents` - List all agents with metrics
+- `GET /api/agents/dashboard` - Dashboard totals (online, hrs saved, revenue, success rate)
+- `GET /api/agents/activity` - Recent agent activity feed
+- `GET /api/agents/roi` - ROI calculator data with infra stack
+- `GET /api/agents/:key` - Single agent detail with recent logs
+- `POST /api/agents/:key/run` - Trigger single agent via N8N webhook
+- `POST /api/agents/run-all` - Trigger all agents (Orchestrator)
+- `POST /api/agents/update-webhook` - Set agent's N8N webhook URL
+- `POST /api/cron/daily-reset` - Reset daily metrics counters
+
+### Project Management API
+- `GET /api/projects` - List all projects with task counts
 
 ## Critical Notes
 

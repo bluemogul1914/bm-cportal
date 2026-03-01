@@ -151,7 +151,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php"];
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -547,6 +547,102 @@ app.post("/api/cron/daily-reset", express.json(), async (req, res) => {
     )).rows[0];
     await webhookPool.query("UPDATE agent_metrics SET runs_today = 0, updated_at = NOW()");
     res.json({ success: true, reset_at: new Date().toISOString(), yesterday: snapshot });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Project Management API (COMMANDER agent webhooks)
+// ═══════════════════════════════════════════════════════════════
+
+app.post("/api/webhook/create-project", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { agent_key, client_id, name, description, project_type, priority, start_date, due_date, assigned_to, tasks } = req.body;
+    if (!name) return res.status(400).json({ error: "name is required" });
+    const result = await webhookPool.query(
+      `INSERT INTO projects (client_id, name, description, project_type, priority, assigned_to, start_date, due_date, status, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'planning', NULL) RETURNING id`,
+      [client_id || null, name, description || null, project_type || 'general', priority || 'medium', assigned_to || null, start_date || null, due_date || null]
+    );
+    const projectId = result.rows[0].id;
+    if (tasks && Array.isArray(tasks)) {
+      for (let i = 0; i < tasks.length; i++) {
+        const t = tasks[i];
+        await webhookPool.query(
+          "INSERT INTO project_tasks (project_id, title, description, priority, assigned_to, due_date, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+          [projectId, t.title, t.description || null, t.priority || 'medium', t.assigned_to || null, t.due_date || null, i + 1]
+        );
+      }
+    }
+    if (agent_key) {
+      await webhookPool.query(
+        "INSERT INTO agent_logs (agent_key, action, status, message, metadata) VALUES ($1, 'Create project', 'success', $2, $3)",
+        [agent_key, `Created project: ${name}`, JSON.stringify({ project_id: projectId, client_id, tasks_count: tasks?.length || 0 })]
+      );
+      await webhookPool.query(`
+        INSERT INTO agent_metrics (agent_key, runs_total, runs_today, last_status, last_run_at, online, updated_at)
+        VALUES ($1, 1, 1, 'success', NOW(), TRUE, NOW())
+        ON CONFLICT (agent_key) DO UPDATE SET runs_total = agent_metrics.runs_total + 1, runs_today = agent_metrics.runs_today + 1,
+          last_status = 'success', last_run_at = NOW(), online = TRUE, updated_at = NOW()
+      `, [agent_key]);
+    }
+    res.json({ success: true, project_id: projectId, name, tasks_created: tasks?.length || 0 });
+  } catch (err: any) {
+    console.error("Webhook create-project error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/webhook/update-project", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { project_id, agent_key, status, progress, assigned_to, add_tasks, add_note } = req.body;
+    if (!project_id) return res.status(400).json({ error: "project_id is required" });
+    const updates: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+    if (status) { updates.push(`status = $${idx++}`); params.push(status); if (status === 'completed') { updates.push(`completed_at = NOW()`); } }
+    if (progress !== undefined) { updates.push(`progress = $${idx++}`); params.push(progress); }
+    if (assigned_to) { updates.push(`assigned_to = $${idx++}`); params.push(assigned_to); }
+    if (updates.length > 0) {
+      updates.push('updated_at = NOW()');
+      params.push(project_id);
+      await webhookPool.query(`UPDATE projects SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+    }
+    if (add_tasks && Array.isArray(add_tasks)) {
+      for (const t of add_tasks) {
+        await webhookPool.query(
+          "INSERT INTO project_tasks (project_id, title, description, priority, assigned_to, due_date) VALUES ($1, $2, $3, $4, $5, $6)",
+          [project_id, t.title, t.description || null, t.priority || 'medium', t.assigned_to || null, t.due_date || null]
+        );
+      }
+    }
+    if (add_note) {
+      await webhookPool.query("INSERT INTO project_notes (project_id, note) VALUES ($1, $2)", [project_id, add_note]);
+    }
+    if (agent_key) {
+      await webhookPool.query(
+        "INSERT INTO agent_logs (agent_key, action, status, message, metadata) VALUES ($1, 'Update project', 'success', $2, $3)",
+        [agent_key, `Updated project #${project_id}`, JSON.stringify(req.body)]
+      );
+    }
+    res.json({ success: true, project_id });
+  } catch (err: any) {
+    console.error("Webhook update-project error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/projects", async (_req, res) => {
+  try {
+    const result = await webhookPool.query(`
+      SELECT p.*, c.name as client_name, c.company as client_company,
+        (SELECT COUNT(*) FROM project_tasks pt WHERE pt.project_id = p.id) as task_count,
+        (SELECT COUNT(*) FROM project_tasks pt WHERE pt.project_id = p.id AND pt.status = 'done') as tasks_done
+      FROM projects p LEFT JOIN clients c ON p.client_id = c.id
+      ORDER BY p.updated_at DESC LIMIT 100
+    `);
+    res.json({ projects: result.rows, count: result.rows.length });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
