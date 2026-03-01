@@ -31,9 +31,10 @@ $servers = [];
 $ip_info = null;
 
 function voip_api_call($action, $extra_params = []) {
+    $password = !empty(VOIP_API_PASSWORD) ? VOIP_API_PASSWORD : VOIP_API_TOKEN;
     $params = array_merge([
         'api_username' => VOIP_API_USERNAME,
-        'api_password' => !empty(VOIP_API_PASSWORD) ? VOIP_API_PASSWORD : VOIP_API_TOKEN,
+        'api_password' => $password,
         'method' => $action,
     ], $extra_params);
     $url = VOIP_API_URL . '?' . http_build_query($params);
@@ -42,6 +43,17 @@ function voip_api_call($action, $extra_params = []) {
     if ($response === false) return ['status' => 'error', 'message' => 'Connection failed'];
     $data = json_decode($response, true);
     if (!$data) return ['status' => 'error', 'message' => 'Invalid response'];
+
+    if (($data['status'] ?? '') === 'invalid_credentials' && !empty(VOIP_API_PASSWORD) && !empty(VOIP_API_TOKEN)) {
+        $params['api_password'] = VOIP_API_TOKEN;
+        $url = VOIP_API_URL . '?' . http_build_query($params);
+        $response = @file_get_contents($url, false, $ctx);
+        if ($response !== false) {
+            $data2 = json_decode($response, true);
+            if ($data2 && ($data2['status'] ?? '') !== 'invalid_credentials') return $data2;
+        }
+    }
+
     return $data;
 }
 
@@ -257,10 +269,16 @@ if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     }
 }
 
+$api_authenticated = false;
 if ($voip_connected) {
     $balance_result = voip_api_call('getBalance');
     if (($balance_result['status'] ?? '') === 'success') {
         $balance = $balance_result['balance'] ?? null;
+        $api_authenticated = true;
+    } elseif (($balance_result['status'] ?? '') === 'invalid_credentials') {
+        if (!$error_msg) {
+            $error_msg = 'VoIP.ms API credentials are invalid. Please verify your VOIP_USERNAME is your VoIP.ms email and VOIP_PASSWORD is the API password (set under SOAP/REST API in your VoIP.ms panel — this is different from your login password).';
+        }
     }
 
     if ($active_tab === 'overview') {
@@ -401,8 +419,10 @@ $tabs = [
                     <?php if ($balance !== null): ?>
                         <span class="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium" data-testid="text-balance"><i class="fas fa-wallet mr-1"></i>$<?php echo number_format((float)$balance, 2); ?></span>
                     <?php endif; ?>
-                    <?php if ($voip_connected): ?>
+                    <?php if ($api_authenticated): ?>
                         <span class="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-xs font-medium" data-testid="status-connected"><i class="fas fa-circle text-[8px] mr-1"></i>Connected</span>
+                    <?php elseif ($voip_connected): ?>
+                        <span class="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium" data-testid="status-auth-failed"><i class="fas fa-exclamation-triangle text-[10px] mr-1"></i>Auth Failed</span>
                     <?php else: ?>
                         <span class="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-xs font-medium" data-testid="status-disconnected"><i class="fas fa-circle text-[8px] mr-1"></i>Not Connected</span>
                     <?php endif; ?>
