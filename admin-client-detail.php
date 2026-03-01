@@ -365,10 +365,10 @@ if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
                         <div class="p-4">
                             <form method="POST" class="mb-4">
                                 <input type="hidden" name="action" value="add_log_entry">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
-                                    <input type="text" name="log_text" placeholder="New log entry..." class="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-testid="input-log-entry">
-                                    <button type="submit" class="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition" data-testid="button-add-log">Submit</button>
+                                <div class="flex items-start gap-2 mb-2">
+                                    <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0 mt-3"></div>
+                                    <textarea name="log_text" rows="3" placeholder="New log entry..." class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y" data-testid="input-log-entry"></textarea>
+                                    <button type="submit" class="px-3 py-2 bg-primary text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition mt-0" data-testid="button-add-log">Submit</button>
                                 </div>
                                 <div class="ml-4 flex items-center gap-2">
                                     <label class="text-[10px] text-gray-400 uppercase">Tags:</label>
@@ -383,7 +383,7 @@ if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
                                     </select>
                                 </div>
                             </form>
-                            <div class="space-y-3 max-h-80 overflow-y-auto" data-testid="log-entries-list">
+                            <div class="space-y-3 max-h-[500px] overflow-y-auto" data-testid="log-entries-list">
                                 <?php if (empty($all_client_logs)): ?>
                                 <p class="text-center text-gray-400 text-sm py-4">No activity yet.</p>
                                 <?php else: ?>
