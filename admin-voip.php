@@ -44,7 +44,12 @@ function voip_api_call($action, $extra_params = []) {
     $data = json_decode($response, true);
     if (!$data) return ['status' => 'error', 'message' => 'Invalid response'];
 
-    if (($data['status'] ?? '') === 'invalid_credentials' && !empty(VOIP_API_PASSWORD) && !empty(VOIP_API_TOKEN)) {
+    $status = $data['status'] ?? '';
+    if ($status === 'ip_not_enabled') {
+        return $data;
+    }
+
+    if ($status === 'invalid_credentials' && !empty(VOIP_API_PASSWORD) && !empty(VOIP_API_TOKEN)) {
         $params['api_password'] = VOIP_API_TOKEN;
         $url = VOIP_API_URL . '?' . http_build_query($params);
         $response = @file_get_contents($url, false, $ctx);
@@ -275,6 +280,10 @@ if ($voip_connected) {
     if (($balance_result['status'] ?? '') === 'success') {
         $balance = $balance_result['balance'] ?? null;
         $api_authenticated = true;
+    } elseif (($balance_result['status'] ?? '') === 'ip_not_enabled') {
+        if (!$error_msg) {
+            $error_msg = 'API credentials are correct, but this server\'s IP is not whitelisted in VoIP.ms. Go to VoIP.ms → Main Menu → SOAP and REST/JSON API → Allowed IPs, and add this server\'s IP address (or select "Allow All" for testing).';
+        }
     } elseif (($balance_result['status'] ?? '') === 'invalid_credentials') {
         if (!$error_msg) {
             $error_msg = 'VoIP.ms API credentials are invalid. Please verify your VOIP_USERNAME is your VoIP.ms email and VOIP_PASSWORD is the API password (set under SOAP/REST API in your VoIP.ms panel — this is different from your login password).';
@@ -421,6 +430,8 @@ $tabs = [
                     <?php endif; ?>
                     <?php if ($api_authenticated): ?>
                         <span class="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-xs font-medium" data-testid="status-connected"><i class="fas fa-circle text-[8px] mr-1"></i>Connected</span>
+                    <?php elseif ($voip_connected && ($balance_result['status'] ?? '') === 'ip_not_enabled'): ?>
+                        <span class="px-3 py-1.5 bg-orange-100 text-orange-700 rounded-full text-xs font-medium" data-testid="status-ip-blocked"><i class="fas fa-shield-alt text-[10px] mr-1"></i>IP Not Whitelisted</span>
                     <?php elseif ($voip_connected): ?>
                         <span class="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium" data-testid="status-auth-failed"><i class="fas fa-exclamation-triangle text-[10px] mr-1"></i>Auth Failed</span>
                     <?php else: ?>
