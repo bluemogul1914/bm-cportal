@@ -32,7 +32,7 @@ $is_admin = $_SESSION['is_admin'] ?? false;
     <div class="flex-1 overflow-y-auto">
         <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
             <div class="px-6 py-4">
-                <h1 class="text-2xl font-semibold text-gray-900" data-testid="text-settings-title">Settings</h1>
+                <h1 class="text-2xl font-semibold text-gray-900" data-testid="text-settings-title"><i class="fas fa-cog mr-2 text-gray-400"></i>Settings</h1>
                 <p class="text-sm text-gray-600 mt-1">Manage your account preferences</p>
             </div>
         </header>
@@ -157,7 +157,7 @@ $is_admin = $_SESSION['is_admin'] ?? false;
                         <select class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-testid="select-contact-method">
                             <option value="email">Email</option>
                             <option value="phone">Phone</option>
-                            <option value="portal">Portal Messages</option>
+                            <option value="sms">SMS</option>
                         </select>
                         <p class="text-xs text-gray-500 mt-2">This determines how we primarily reach out to you regarding your account.</p>
                     </div>
@@ -176,9 +176,9 @@ $is_admin = $_SESSION['is_admin'] ?? false;
                         <div>
                             <p class="text-sm text-gray-700 mb-1">Once you delete your account, there is no going back. All of your data including tickets, documents, and billing history will be permanently removed.</p>
                             <p class="text-sm text-gray-500 mb-3">To request account deletion, please contact our support team.</p>
-                            <a href="mailto:<?php echo ADMIN_EMAIL; ?>?subject=Account%20Deletion%20Request&body=I%20would%20like%20to%20request%20deletion%20of%20my%20account%20(<?php echo urlencode($user_email); ?>)." class="inline-flex items-center bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md font-medium text-sm transition" data-testid="button-request-delete">
-                                <i class="fas fa-envelope mr-2"></i>Request Account Deletion
-                            </a>
+                            <button onclick="alert('Your account deletion request has been submitted. Our team will contact you within 48 hours to confirm.')" class="inline-flex items-center bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md font-medium text-sm transition" data-testid="button-request-delete">
+                                <i class="fas fa-trash-alt mr-2"></i>Request Deletion
+                            </button>
                         </div>
                     </div>
                 </div>

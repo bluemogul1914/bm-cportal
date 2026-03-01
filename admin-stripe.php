@@ -9,27 +9,25 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
 $user_email = $_SESSION['user_email'] ?? '';
 $is_admin = true;
 
-$stripe_secret_set = !empty(STRIPE_SECRET_KEY);
-$stripe_public_set = !empty(STRIPE_PUBLIC_KEY);
-$stripe_webhook_set = !empty(STRIPE_WEBHOOK_SECRET);
+$stripe_secret_set = !empty(getenv('STRIPE_SECRET_KEY'));
+$stripe_public_set = !empty(getenv('STRIPE_PUBLIC_KEY'));
+$stripe_webhook_set = !empty(getenv('STRIPE_WEBHOOK_SECRET'));
 $stripe_connected = $stripe_secret_set && $stripe_public_set;
 
-$pdo = getDB();
-
+$total_paid = 0;
+$total_unpaid = 0;
 $recent_payments = [];
-$total_revenue = 0;
-$payments_this_month = 0;
-$payments_count = 0;
 
 try {
-    $stmt = $pdo->query("SELECT p.*, c.name as client_name, c.company as client_company FROM payments p LEFT JOIN clients c ON p.client_id = c.id ORDER BY p.created_at DESC LIMIT 10");
-    $recent_payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $pdo = getDB();
 
-    $total_revenue = $pdo->query("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status = 'succeeded'")->fetchColumn();
-    $payments_this_month = $pdo->query("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status = 'succeeded' AND created_at >= date_trunc('month', CURRENT_DATE)")->fetchColumn();
-    $payments_count = $pdo->query("SELECT COUNT(*) FROM payments")->fetchColumn();
+    $total_paid = $pdo->query("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='paid'")->fetchColumn();
+    $total_unpaid = $pdo->query("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='unpaid'")->fetchColumn();
+
+    $stmt = $pdo->query("SELECT p.*, i.invoice_number FROM payments p JOIN invoices i ON p.invoice_id = i.id ORDER BY p.payment_date DESC LIMIT 10");
+    $recent_payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    // payments table may not exist yet
+    // tables may not exist yet
 }
 ?>
 <!DOCTYPE html>
@@ -51,8 +49,8 @@ try {
         <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
             <div class="px-6 py-4 flex items-center justify-between">
                 <div>
-                    <h1 class="text-2xl font-semibold text-gray-900" data-testid="text-page-title"><i class="fas fa-credit-card text-blue-500 mr-2"></i>Stripe Integration</h1>
-                    <p class="text-sm text-gray-500 mt-0.5">Payment processing &mdash; Billing, invoices, and payment tracking</p>
+                    <h1 class="text-2xl font-semibold text-gray-900" data-testid="text-page-title"><i class="fas fa-credit-card text-primary mr-2"></i>Stripe Integration</h1>
+                    <p class="text-sm text-gray-500 mt-0.5">Payment processing, billing, and invoice management</p>
                 </div>
                 <div class="flex items-center gap-3">
                     <?php if ($stripe_connected): ?>
@@ -68,23 +66,49 @@ try {
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-connection-status">
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Connection Status</p>
-                    <?php if ($stripe_connected): ?>
+                    <?php if ($stripe_secret_set): ?>
                         <p class="text-lg font-bold text-green-600"><i class="fas fa-check-circle mr-1"></i>Active</p>
+                        <p class="text-xs text-gray-400 mt-1">Secret key configured</p>
                     <?php else: ?>
                         <p class="text-lg font-bold text-red-600"><i class="fas fa-times-circle mr-1"></i>Inactive</p>
+                        <p class="text-xs text-gray-400 mt-1">Secret key not set</p>
+                    <?php endif; ?>
+                </div>
+                <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-public-key-status">
+                    <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Public Key Status</p>
+                    <?php if ($stripe_public_set): ?>
+                        <p class="text-lg font-bold text-green-600"><i class="fas fa-check-circle mr-1"></i>Set</p>
+                        <p class="text-xs text-gray-400 mt-1">Public key configured</p>
+                    <?php else: ?>
+                        <p class="text-lg font-bold text-red-600"><i class="fas fa-times-circle mr-1"></i>Not Set</p>
+                        <p class="text-xs text-gray-400 mt-1">Public key missing</p>
+                    <?php endif; ?>
+                </div>
+                <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-webhook-status">
+                    <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Webhook Status</p>
+                    <?php if ($stripe_webhook_set): ?>
+                        <p class="text-lg font-bold text-green-600"><i class="fas fa-check-circle mr-1"></i>Active</p>
+                        <p class="text-xs text-gray-400 mt-1">Webhook secret configured</p>
+                    <?php else: ?>
+                        <p class="text-lg font-bold text-red-600"><i class="fas fa-times-circle mr-1"></i>Inactive</p>
+                        <p class="text-xs text-gray-400 mt-1">Webhook secret not set</p>
                     <?php endif; ?>
                 </div>
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-total-revenue">
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Total Revenue</p>
-                    <p class="text-2xl font-bold text-gray-900">$<?php echo number_format($total_revenue / 100, 2); ?></p>
+                    <p class="text-2xl font-bold text-gray-900">$<?php echo number_format($total_paid, 2); ?></p>
+                    <p class="text-xs text-gray-400 mt-1">From paid invoices</p>
                 </div>
-                <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-monthly-revenue">
-                    <p class="text-xs font-semibold text-gray-500 uppercase mb-1">This Month</p>
-                    <p class="text-2xl font-bold text-blue-600">$<?php echo number_format($payments_this_month / 100, 2); ?></p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-paid-invoices">
+                    <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Total Paid</p>
+                    <p class="text-2xl font-bold text-green-600">$<?php echo number_format($total_paid, 2); ?></p>
                 </div>
-                <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-total-payments">
-                    <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Total Payments</p>
-                    <p class="text-2xl font-bold text-gray-900"><?php echo number_format($payments_count); ?></p>
+                <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-unpaid-invoices">
+                    <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Total Unpaid</p>
+                    <p class="text-2xl font-bold text-red-600">$<?php echo number_format($total_unpaid, 2); ?></p>
                 </div>
             </div>
 
@@ -131,41 +155,28 @@ try {
                 </div>
             </div>
 
-            <div class="bg-white rounded-lg border border-gray-200">
+            <div class="bg-white rounded-lg border border-gray-200 mb-6">
                 <div class="px-6 py-4 border-b border-gray-100">
-                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-history text-blue-500 mr-2"></i>Recent Payment Activity</h2>
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-history text-primary mr-2"></i>Recent Payments</h2>
                 </div>
                 <?php if (!empty($recent_payments)): ?>
                 <div class="overflow-x-auto">
-                    <table class="w-full">
+                    <table class="w-full" data-testid="table-recent-payments">
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Date</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Client</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Invoice #</th>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Amount</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Stripe ID</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Method</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
-                            <?php foreach ($recent_payments as $payment): ?>
-                                <tr class="hover:bg-gray-50 transition" data-testid="payment-row-<?php echo $payment['id']; ?>">
-                                    <td class="px-4 py-3 text-sm text-gray-600"><?php echo date('M d, Y g:i A', strtotime($payment['created_at'])); ?></td>
-                                    <td class="px-4 py-3 text-sm font-medium text-gray-900"><?php echo htmlspecialchars($payment['client_company'] ?: $payment['client_name'] ?: 'N/A'); ?></td>
-                                    <td class="px-4 py-3 text-sm font-semibold text-gray-900">$<?php echo number_format($payment['amount'] / 100, 2); ?></td>
-                                    <td class="px-4 py-3">
-                                        <?php
-                                            $status = $payment['status'] ?? 'unknown';
-                                            $status_classes = match($status) {
-                                                'succeeded' => 'bg-green-100 text-green-700',
-                                                'pending' => 'bg-yellow-100 text-yellow-700',
-                                                'failed' => 'bg-red-100 text-red-700',
-                                                default => 'bg-gray-100 text-gray-700',
-                                            };
-                                        ?>
-                                        <span class="px-2 py-0.5 rounded-full text-xs font-medium <?php echo $status_classes; ?>"><?php echo ucfirst($status); ?></span>
-                                    </td>
-                                    <td class="px-4 py-3"><code class="text-xs font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded"><?php echo htmlspecialchars($payment['stripe_payment_intent_id'] ?? 'N/A'); ?></code></td>
+                            <?php foreach ($recent_payments as $index => $payment): ?>
+                                <tr class="hover:bg-gray-50 transition" data-testid="payment-row-<?php echo $index; ?>">
+                                    <td class="px-4 py-3 text-sm text-gray-600"><?php echo date('M d, Y', strtotime($payment['payment_date'])); ?></td>
+                                    <td class="px-4 py-3 text-sm font-medium text-gray-900"><?php echo htmlspecialchars($payment['invoice_number'] ?? 'N/A'); ?></td>
+                                    <td class="px-4 py-3 text-sm font-semibold text-gray-900">$<?php echo number_format($payment['amount'] ?? 0, 2); ?></td>
+                                    <td class="px-4 py-3 text-sm text-gray-600"><?php echo htmlspecialchars(ucfirst($payment['payment_method'] ?? 'N/A')); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -177,6 +188,39 @@ try {
                         No payment records found
                     </div>
                 <?php endif; ?>
+            </div>
+
+            <div class="bg-white rounded-lg border border-gray-200 mb-6">
+                <div class="px-6 py-4 border-b border-gray-100">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-bolt text-primary mr-2"></i>Features</h2>
+                </div>
+                <div class="p-6 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <div class="text-center p-4 rounded-lg border border-gray-100" data-testid="feature-payment-processing">
+                        <i class="fas fa-credit-card text-primary text-2xl mb-2"></i>
+                        <p class="text-sm font-medium text-gray-900">Payment Processing</p>
+                        <p class="text-xs text-gray-500 mt-1">Accept online payments</p>
+                    </div>
+                    <div class="text-center p-4 rounded-lg border border-gray-100" data-testid="feature-subscription-billing">
+                        <i class="fas fa-sync-alt text-primary text-2xl mb-2"></i>
+                        <p class="text-sm font-medium text-gray-900">Subscription Billing</p>
+                        <p class="text-xs text-gray-500 mt-1">Recurring payment plans</p>
+                    </div>
+                    <div class="text-center p-4 rounded-lg border border-gray-100" data-testid="feature-invoice-generation">
+                        <i class="fas fa-file-invoice text-primary text-2xl mb-2"></i>
+                        <p class="text-sm font-medium text-gray-900">Invoice Generation</p>
+                        <p class="text-xs text-gray-500 mt-1">Automated invoicing</p>
+                    </div>
+                    <div class="text-center p-4 rounded-lg border border-gray-100" data-testid="feature-webhook-events">
+                        <i class="fas fa-satellite-dish text-primary text-2xl mb-2"></i>
+                        <p class="text-sm font-medium text-gray-900">Webhook Events</p>
+                        <p class="text-xs text-gray-500 mt-1">Real-time notifications</p>
+                    </div>
+                    <div class="text-center p-4 rounded-lg border border-gray-100" data-testid="feature-customer-portal">
+                        <i class="fas fa-user-circle text-primary text-2xl mb-2"></i>
+                        <p class="text-sm font-medium text-gray-900">Customer Portal</p>
+                        <p class="text-xs text-gray-500 mt-1">Self-service billing</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

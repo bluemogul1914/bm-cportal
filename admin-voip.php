@@ -62,6 +62,28 @@ function voip_api_call($action, $extra_params = []) {
     return $data;
 }
 
+$test_connection_result = null;
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'test_connection') {
+    $active_tab = 'config';
+    $tc_user = VOIP_API_USERNAME;
+    $tc_pass = !empty(VOIP_API_PASSWORD) ? VOIP_API_PASSWORD : VOIP_API_TOKEN;
+    $tc_url = VOIP_API_URL . '?' . http_build_query([
+        'method' => 'getBalance',
+        'api_username' => $tc_user,
+        'api_password' => $tc_pass,
+    ]);
+    $tc_ctx = stream_context_create(['http' => ['timeout' => 10, 'ignore_errors' => true]]);
+    $tc_response = @file_get_contents($tc_url, false, $tc_ctx);
+    if ($tc_response === false) {
+        $test_connection_result = ['status' => 'error', 'message' => 'Connection failed - could not reach VoIP.ms API'];
+    } else {
+        $test_connection_result = json_decode($tc_response, true);
+        if (!$test_connection_result) {
+            $test_connection_result = ['status' => 'error', 'message' => 'Invalid response from API'];
+        }
+    }
+}
+
 if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $action = $_POST['action'] ?? '';
 
@@ -1411,10 +1433,37 @@ $tabs = [
                     </div>
                     <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-api-username">
                         <p class="text-xs font-semibold text-gray-500 uppercase mb-1">API Username</p>
-                        <?php if ($voip_username_set): ?>
-                            <p class="text-sm font-medium text-gray-900"><code class="bg-gray-100 px-2 py-0.5 rounded text-xs"><?php echo htmlspecialchars($voip_username); ?></code></p>
+                        <?php if ($voip_username_set):
+                            $masked = substr($voip_username, 0, 3) . str_repeat('*', max(0, strlen($voip_username) - 6)) . substr($voip_username, -3);
+                        ?>
+                            <p class="text-sm font-medium text-gray-900" data-testid="text-masked-username"><code class="bg-gray-100 px-2 py-0.5 rounded text-xs"><?php echo htmlspecialchars($masked); ?></code></p>
                         <?php else: ?>
                             <p class="text-sm text-gray-500">Not configured</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg border border-gray-200 mb-6">
+                    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+                        <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-plug text-green-500 mr-2"></i>Test Connection</h2>
+                        <form method="POST">
+                            <input type="hidden" name="action" value="test_connection">
+                            <button type="submit" class="px-4 py-2 bg-primary hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-test-connection"><i class="fas fa-bolt mr-1"></i>Test Connection</button>
+                        </form>
+                    </div>
+                    <div class="p-6">
+                        <?php if ($test_connection_result !== null): ?>
+                            <?php if (($test_connection_result['status'] ?? '') === 'success'): ?>
+                                <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm" data-testid="test-result-success">
+                                    <i class="fas fa-check-circle mr-2"></i>Connection successful! Balance: $<?php echo number_format((float)($test_connection_result['balance']['current_balance'] ?? $test_connection_result['balance'] ?? 0), 2); ?>
+                                </div>
+                            <?php else: ?>
+                                <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm" data-testid="test-result-error">
+                                    <i class="fas fa-exclamation-circle mr-2"></i>Connection failed: <?php echo htmlspecialchars($test_connection_result['status'] ?? $test_connection_result['message'] ?? 'Unknown error'); ?>
+                                </div>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <p class="text-sm text-gray-500"><i class="fas fa-info-circle mr-1"></i>Click "Test Connection" to verify your VoIP.ms API credentials by calling the getBalance method.</p>
                         <?php endif; ?>
                     </div>
                 </div>

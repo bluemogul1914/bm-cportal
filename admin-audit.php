@@ -12,8 +12,8 @@ $limit = 25;
 $offset = ($page - 1) * $limit;
 
 $search = $_GET['search'] ?? '';
-$action_filter = $_GET['action'] ?? '';
-$entity_filter = $_GET['entity_type'] ?? '';
+$action_filter = $_GET['action_filter'] ?? '';
+$entity_filter = $_GET['entity_filter'] ?? '';
 $date_from = $_GET['date_from'] ?? '';
 $date_to = $_GET['date_to'] ?? '';
 
@@ -75,17 +75,17 @@ try {
     $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $today_stmt = $pdo->query("
-        SELECT COUNT(*) as count FROM activity_log WHERE DATE(created_at) = CURRENT_DATE
+        SELECT COUNT(*) as count FROM activity_log WHERE created_at >= CURRENT_DATE
     ");
     $total_today = $today_stmt->fetch(PDO::FETCH_ASSOC)['count'];
 
     $week_stmt = $pdo->query("
-        SELECT COUNT(*) as count FROM activity_log WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+        SELECT COUNT(*) as count FROM activity_log WHERE created_at >= CURRENT_DATE - 7
     ");
     $total_week = $week_stmt->fetch(PDO::FETCH_ASSOC)['count'];
 
     $unique_users_stmt = $pdo->query("
-        SELECT COUNT(DISTINCT user_id) as count FROM activity_log WHERE DATE(created_at) = CURRENT_DATE
+        SELECT COUNT(DISTINCT user_id) as count FROM activity_log WHERE created_at >= CURRENT_DATE
     ");
     $unique_users_today = $unique_users_stmt->fetch(PDO::FETCH_ASSOC)['count'];
 
@@ -149,7 +149,7 @@ try {
                 <div class="px-6 py-4">
                     <div class="flex items-center justify-between">
                         <div>
-                            <h1 class="text-2xl font-semibold text-gray-900" data-testid="text-page-title">Audit Trail</h1>
+                            <h1 class="text-2xl font-semibold text-gray-900" data-testid="text-page-title"><i class="fas fa-clipboard-list mr-2"></i>Audit Trail</h1>
                             <p class="text-sm text-gray-600 mt-1">Activity log and user action history</p>
                         </div>
                     </div>
@@ -185,7 +185,7 @@ try {
                                    class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                                    data-testid="input-search">
                         </div>
-                        <select name="action" class="px-4 py-2 border border-gray-300 rounded-md" data-testid="select-action">
+                        <select name="action_filter" class="px-4 py-2 border border-gray-300 rounded-md" data-testid="select-action">
                             <option value="">All Actions</option>
                             <?php foreach ($action_types as $at): ?>
                                 <option value="<?php echo htmlspecialchars($at); ?>" <?php echo $action_filter === $at ? 'selected' : ''; ?>>
@@ -193,7 +193,7 @@ try {
                                 </option>
                             <?php endforeach; ?>
                         </select>
-                        <select name="entity_type" class="px-4 py-2 border border-gray-300 rounded-md" data-testid="select-entity-type">
+                        <select name="entity_filter" class="px-4 py-2 border border-gray-300 rounded-md" data-testid="select-entity-type">
                             <option value="">All Entities</option>
                             <?php foreach ($entity_types as $et): ?>
                                 <option value="<?php echo htmlspecialchars($et); ?>" <?php echo $entity_filter === $et ? 'selected' : ''; ?>>
@@ -209,8 +209,8 @@ try {
                                class="px-4 py-2 border border-gray-300 rounded-md"
                                placeholder="To" title="To date"
                                data-testid="input-date-to">
-                        <button type="submit" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium" data-testid="button-search">
-                            <i class="fas fa-search mr-2"></i>Search
+                        <button type="submit" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium" data-testid="button-apply">
+                            <i class="fas fa-filter mr-2"></i>Apply
                         </button>
                         <?php if ($search || $action_filter || $entity_filter || $date_from || $date_to): ?>
                             <a href="admin-audit.php" class="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md font-medium" data-testid="link-clear-filters">
@@ -307,8 +307,8 @@ try {
                                 <?php
                                     $query_string = http_build_query(array_filter([
                                         'search' => $search,
-                                        'action' => $action_filter,
-                                        'entity_type' => $entity_filter,
+                                        'action_filter' => $action_filter,
+                                        'entity_filter' => $entity_filter,
                                         'date_from' => $date_from,
                                         'date_to' => $date_to,
                                     ]));

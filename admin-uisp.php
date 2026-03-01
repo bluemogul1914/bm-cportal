@@ -9,8 +9,18 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
 $user_email = $_SESSION['user_email'] ?? '';
 $is_admin = true;
 
-$uisp_connected = !empty(UISP_API_KEY);
+$uisp_connected = !empty(getenv('UISP_API_KEY'));
 $uisp_url = UISP_URL;
+
+$device_count = 0;
+try {
+    $db = getDB();
+    $stmt = $db->query("SELECT COUNT(*) as count FROM network_devices");
+    $result = $stmt->fetch();
+    $device_count = $result['count'] ?? 0;
+} catch (Exception $e) {
+    $device_count = 0;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -45,7 +55,7 @@ $uisp_url = UISP_URL;
         </header>
 
         <div class="p-6">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-connection-status">
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Connection Status</p>
                     <?php if ($uisp_connected): ?>
@@ -54,59 +64,72 @@ $uisp_url = UISP_URL;
                         <p class="text-lg font-bold text-red-600"><i class="fas fa-times-circle mr-1"></i>Inactive</p>
                     <?php endif; ?>
                 </div>
-                <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-api-endpoint">
-                    <p class="text-xs font-semibold text-gray-500 uppercase mb-1">API Endpoint</p>
-                    <p class="text-sm font-medium text-gray-900 break-all"><?php echo htmlspecialchars($uisp_url); ?></p>
-                </div>
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-api-key">
-                    <p class="text-xs font-semibold text-gray-500 uppercase mb-1">API Key</p>
+                    <p class="text-xs font-semibold text-gray-500 uppercase mb-1">API Key Status</p>
                     <?php if ($uisp_connected): ?>
-                        <p class="text-sm font-medium text-gray-900"><code class="bg-gray-100 px-2 py-0.5 rounded text-xs"><?php echo substr(UISP_API_KEY, 0, 8); ?>...****</code></p>
+                        <p class="text-lg font-bold text-green-600"><i class="fas fa-key mr-1"></i>Configured</p>
                     <?php else: ?>
-                        <p class="text-sm text-gray-500">Not configured</p>
+                        <p class="text-lg font-bold text-red-600"><i class="fas fa-key mr-1"></i>Not Set</p>
                     <?php endif; ?>
+                </div>
+                <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-devices-tracked">
+                    <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Devices Tracked</p>
+                    <p class="text-lg font-bold text-gray-900"><i class="fas fa-server mr-1"></i><?php echo (int)$device_count; ?></p>
+                </div>
+                <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-service-plans">
+                    <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Service Plans</p>
+                    <p class="text-lg font-bold text-gray-900"><i class="fas fa-list-alt mr-1"></i>Sync Available</p>
                 </div>
             </div>
 
             <div class="bg-white rounded-lg border border-gray-200 mb-6">
                 <div class="px-6 py-4 border-b border-gray-100">
-                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-sync-alt text-blue-500 mr-2"></i>Sync Capabilities</h2>
+                    <h2 class="text-lg font-semibold text-gray-900" data-testid="text-features-title"><i class="fas fa-sync-alt text-blue-500 mr-2"></i>Features</h2>
                 </div>
                 <div class="p-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="flex items-start gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div class="flex items-start gap-4" data-testid="feature-device-monitoring">
                             <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                 <i class="fas fa-satellite-dish text-blue-600"></i>
                             </div>
                             <div>
-                                <h3 class="text-sm font-semibold text-gray-900 mb-1">Network Devices</h3>
+                                <h3 class="text-sm font-semibold text-gray-900 mb-1">Device Monitoring</h3>
                                 <p class="text-xs text-gray-500">Import and monitor network devices from UISP. Track routers, switches, access points, and other infrastructure equipment with real-time status updates.</p>
                             </div>
                         </div>
-                        <div class="flex items-start gap-4">
+                        <div class="flex items-start gap-4" data-testid="feature-service-plan-sync">
                             <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                 <i class="fas fa-chart-line text-purple-600"></i>
                             </div>
                             <div>
-                                <h3 class="text-sm font-semibold text-gray-900 mb-1">Service Plans</h3>
+                                <h3 class="text-sm font-semibold text-gray-900 mb-1">Service Plan Sync</h3>
                                 <p class="text-xs text-gray-500">Synchronize service plans and subscriptions. Map UISP service tiers to Blue Mogul products for unified billing and service management.</p>
                             </div>
                         </div>
-                        <div class="flex items-start gap-4">
+                        <div class="flex items-start gap-4" data-testid="feature-client-site-management">
                             <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                 <i class="fas fa-map-marker-alt text-green-600"></i>
                             </div>
                             <div>
-                                <h3 class="text-sm font-semibold text-gray-900 mb-1">Site Management</h3>
+                                <h3 class="text-sm font-semibold text-gray-900 mb-1">Client Site Management</h3>
                                 <p class="text-xs text-gray-500">Manage client sites and locations from UISP. Track installations, site surveys, and deployment status across your service area.</p>
                             </div>
                         </div>
-                        <div class="flex items-start gap-4">
+                        <div class="flex items-start gap-4" data-testid="feature-network-maps">
+                            <div class="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-map text-indigo-600"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-semibold text-gray-900 mb-1">Network Maps</h3>
+                                <p class="text-xs text-gray-500">Visualize your network topology and infrastructure layout. View device connections, coverage areas, and network paths on interactive maps.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-4" data-testid="feature-signal-monitoring">
                             <div class="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                 <i class="fas fa-tachometer-alt text-yellow-600"></i>
                             </div>
                             <div>
-                                <h3 class="text-sm font-semibold text-gray-900 mb-1">Performance Monitoring</h3>
+                                <h3 class="text-sm font-semibold text-gray-900 mb-1">Signal Monitoring</h3>
                                 <p class="text-xs text-gray-500">Pull bandwidth usage, latency, and signal quality metrics from UISP to provide clients with network performance visibility.</p>
                             </div>
                         </div>
@@ -116,7 +139,7 @@ $uisp_url = UISP_URL;
 
             <div class="bg-white rounded-lg border border-gray-200">
                 <div class="px-6 py-4 border-b border-gray-100">
-                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-cog text-gray-500 mr-2"></i>Configuration</h2>
+                    <h2 class="text-lg font-semibold text-gray-900" data-testid="text-config-title"><i class="fas fa-cog text-gray-500 mr-2"></i>Configuration</h2>
                 </div>
                 <div class="p-6">
                     <div class="space-y-4">
