@@ -213,6 +213,14 @@ app.get("/portal/:file", (req, res) => {
   const file = req.params.file;
   const phpFile = file.endsWith(".php") ? file : `${file}.php`;
 
+  if (phpFile === "logout.php") {
+    if ((req.session as any)?.portalUser) {
+      delete (req.session as any).portalUser;
+    }
+    req.session.destroy(() => {});
+    return res.redirect("/portal/index.php?logout=1");
+  }
+
   if (!ALLOWED_PHP_FILES.includes(phpFile)) {
     return res.status(404).send("Not found");
   }
