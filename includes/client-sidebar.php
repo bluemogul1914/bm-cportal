@@ -43,6 +43,11 @@
                 <i class="fas fa-folder w-5"></i>
                 <span>Documents</span>
             </a>
+
+            <a href="client-voip.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'client-voip.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-voice-services">
+                <i class="fas fa-phone-alt w-5"></i>
+                <span>Voice Services</span>
+            </a>
         </div>
 
         <div class="mt-8">

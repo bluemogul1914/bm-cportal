@@ -25,6 +25,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `documents.php` - Document management with categories, upload, delete
 - `profile.php` - Profile editing and password change
 - `settings.php` - Account settings (notification prefs, 2FA, theme, communication prefs)
+- `client-voip.php` - Client voice services (VoIP.ms white-label portal: My Services, CallerID Filtering, Call Forwarding, Callback, Voicemail, Order DIDs)
 - `projects.php` - Client project tracking with progress bars, task lists, status cards
 - `help.php` - Client-facing Help Center / Knowledge Base with search, categories, article view
 
