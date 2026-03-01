@@ -72,6 +72,32 @@ if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $pop = trim($_POST['pop'] ?? '');
         $callerid_prefix = trim($_POST['callerid_prefix'] ?? '');
 
+        $routing_type = trim($_POST['routing_type'] ?? '');
+        if ($routing_type && $routing === '') {
+            $rt_map = [
+                'account' => 'routing_account',
+                'ivr' => 'routing_ivr',
+                'queue' => 'routing_queue',
+                'timecondition' => 'routing_timecondition',
+                'fwd' => 'routing_fwd',
+                'conference' => 'routing_conference',
+                'ring_group' => 'routing_ring_group',
+                'recording' => 'routing_recording',
+                'callback' => 'routing_callback',
+                'disa' => 'routing_disa',
+                'voicemail' => 'routing_voicemail',
+                'sys' => 'routing_sys',
+            ];
+            $rt_field = $rt_map[$routing_type] ?? '';
+            $rt_value = trim($_POST[$rt_field] ?? '');
+            if ($rt_value !== '') {
+                if ($routing_type === 'account') $routing = 'account:' . $rt_value;
+                elseif ($routing_type === 'fwd') $routing = 'fwd:' . $rt_value;
+                elseif ($routing_type === 'sys') $routing = 'sys:' . $rt_value;
+                else $routing = $routing_type . ':' . $rt_value;
+            }
+        }
+
         if ($did) {
             $params = ['did' => $did];
             if ($description !== '') $params['description'] = $description;
@@ -82,6 +108,7 @@ if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $result = voip_api_call('setDIDInfo', $params);
             if (($result['status'] ?? '') === 'success') {
                 $success_msg = 'DID ' . htmlspecialchars($did) . ' updated successfully.';
+                try { getDB()->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$_SESSION['user_id'], 'did_updated', 'voip_did', $did, 'Updated DID ' . $did, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']); } catch (\Exception $e) {}
             } else {
                 $error_msg = 'Failed to update DID: ' . htmlspecialchars($result['status'] ?? 'Unknown error');
             }
@@ -96,6 +123,7 @@ if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $result = voip_api_call('setDIDInfo', ['did' => $did, 'routing' => $routing]);
             if (($result['status'] ?? '') === 'success') {
                 $success_msg = 'DID ' . htmlspecialchars($did) . ' routed to ' . htmlspecialchars($routing) . ' successfully.';
+                try { getDB()->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$_SESSION['user_id'], 'did_routed', 'voip_did', $did, 'Routed DID ' . $did . ' to ' . $routing, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']); } catch (\Exception $e) {}
             } else {
                 $error_msg = 'Failed to route DID: ' . htmlspecialchars($result['status'] ?? 'Unknown error');
             }
@@ -111,6 +139,7 @@ if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $result = voip_api_call('cancelDID', ['did' => $did, 'cancelcomment' => $comment, 'portout' => $port_out]);
             if (($result['status'] ?? '') === 'success') {
                 $success_msg = 'DID ' . htmlspecialchars($did) . ' has been cancelled. It will be released at the end of the billing period.';
+                try { getDB()->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$_SESSION['user_id'], 'did_cancelled', 'voip_did', $did, 'Cancelled DID ' . $did, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']); } catch (\Exception $e) {}
             } else {
                 $error_msg = 'Failed to cancel DID: ' . htmlspecialchars($result['status'] ?? 'Unknown error');
             }
@@ -228,6 +257,7 @@ if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $result = voip_api_call('createSubAccount', $create_params);
             if (($result['status'] ?? '') === 'success') {
                 $success_msg = 'Sub-account &ldquo;' . htmlspecialchars($sa_username) . '&rdquo; created successfully! (ID: ' . htmlspecialchars($result['id'] ?? 'N/A') . ')';
+                try { getDB()->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$_SESSION['user_id'], 'subaccount_created', 'voip_subaccount', $result['id'] ?? '', 'Created sub-account: ' . $sa_username, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']); } catch (\Exception $e) {}
             } else {
                 $error_msg = 'Failed to create sub-account: ' . htmlspecialchars($result['status'] ?? 'Unknown error');
             }
@@ -253,6 +283,7 @@ if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $result = voip_api_call('setSubAccount', $update_params);
             if (($result['status'] ?? '') === 'success') {
                 $success_msg = 'Sub-account updated successfully.';
+                try { getDB()->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$_SESSION['user_id'], 'subaccount_updated', 'voip_subaccount', $sa_id, 'Updated sub-account ID ' . $sa_id, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']); } catch (\Exception $e) {}
             } else {
                 $error_msg = 'Failed to update sub-account: ' . htmlspecialchars($result['status'] ?? 'Unknown error');
             }
@@ -266,6 +297,7 @@ if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $result = voip_api_call('delSubAccount', ['id' => $sa_id]);
             if (($result['status'] ?? '') === 'success') {
                 $success_msg = 'Sub-account deleted.';
+                try { getDB()->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$_SESSION['user_id'], 'subaccount_deleted', 'voip_subaccount', $sa_id, 'Deleted sub-account ID ' . $sa_id, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']); } catch (\Exception $e) {}
             } else {
                 $error_msg = 'Failed to delete sub-account: ' . htmlspecialchars($result['status'] ?? 'Unknown error');
             }
@@ -312,7 +344,20 @@ if ($voip_connected) {
         }
     }
 
-    if ($active_tab === 'dids') {
+    $routing_accounts = [];
+    $ivrs = [];
+    $ring_groups = [];
+    $queues = [];
+    $voicemails_list = [];
+    $conferences = [];
+    $callbacks_list = [];
+    $disas = [];
+    $recordings_list = [];
+    $forwarding_list = [];
+    $time_conditions = [];
+    $pop_servers = [];
+
+    if ($active_tab === 'dids' || $active_tab === 'did_edit') {
         $dids_result = voip_api_call('getDIDsInfo');
         if (($dids_result['status'] ?? '') === 'success') {
             $dids = $dids_result['dids'] ?? [];
@@ -324,10 +369,75 @@ if ($voip_connected) {
         }
 
         $sub_for_routing = voip_api_call('getSubAccounts');
-        $routing_accounts = [];
         if (($sub_for_routing['status'] ?? '') === 'success') {
             $routing_accounts = $sub_for_routing['accounts'] ?? [];
             if (!is_array($routing_accounts)) $routing_accounts = [];
+        }
+
+        $ivr_result = voip_api_call('getIVRs');
+        if (($ivr_result['status'] ?? '') === 'success') {
+            $ivrs = $ivr_result['ivrs'] ?? [];
+            if (!is_array($ivrs)) $ivrs = [];
+        }
+
+        $rg_result = voip_api_call('getRingGroups');
+        if (($rg_result['status'] ?? '') === 'success') {
+            $ring_groups = $rg_result['ring_groups'] ?? [];
+            if (!is_array($ring_groups)) $ring_groups = [];
+        }
+
+        $q_result = voip_api_call('getQueues');
+        if (($q_result['status'] ?? '') === 'success') {
+            $queues = $q_result['queues'] ?? [];
+            if (!is_array($queues)) $queues = [];
+        }
+
+        $vm_result = voip_api_call('getVoicemails');
+        if (($vm_result['status'] ?? '') === 'success') {
+            $voicemails_list = $vm_result['voicemails'] ?? [];
+            if (!is_array($voicemails_list)) $voicemails_list = [];
+        }
+
+        $conf_result = voip_api_call('getConferences');
+        if (($conf_result['status'] ?? '') === 'success') {
+            $conferences = $conf_result['conferences'] ?? [];
+            if (!is_array($conferences)) $conferences = [];
+        }
+
+        $cb_result = voip_api_call('getCallbacks');
+        if (($cb_result['status'] ?? '') === 'success') {
+            $callbacks_list = $cb_result['callbacks'] ?? [];
+            if (!is_array($callbacks_list)) $callbacks_list = [];
+        }
+
+        $disa_result = voip_api_call('getDISAs');
+        if (($disa_result['status'] ?? '') === 'success') {
+            $disas = $disa_result['disas'] ?? [];
+            if (!is_array($disas)) $disas = [];
+        }
+
+        $rec_result = voip_api_call('getRecordings');
+        if (($rec_result['status'] ?? '') === 'success') {
+            $recordings_list = $rec_result['recordings'] ?? [];
+            if (!is_array($recordings_list)) $recordings_list = [];
+        }
+
+        $fwd_result = voip_api_call('getForwardings');
+        if (($fwd_result['status'] ?? '') === 'success') {
+            $forwarding_list = $fwd_result['forwardings'] ?? [];
+            if (!is_array($forwarding_list)) $forwarding_list = [];
+        }
+
+        $tc_result = voip_api_call('getTimeConditions');
+        if (($tc_result['status'] ?? '') === 'success') {
+            $time_conditions = $tc_result['timeconditions'] ?? [];
+            if (!is_array($time_conditions)) $time_conditions = [];
+        }
+
+        $pop_result = voip_api_call('getServersInfo');
+        if (($pop_result['status'] ?? '') === 'success') {
+            $pop_servers = $pop_result['servers'] ?? [];
+            if (!is_array($pop_servers)) $pop_servers = [];
         }
     }
 
@@ -568,12 +678,346 @@ $tabs = [
                     <?php endif; ?>
                 </div>
 
-            <?php elseif ($active_tab === 'dids'): ?>
+            <?php elseif ($active_tab === 'dids' || $active_tab === 'did_edit'): ?>
+                <?php
+                    $edit_did_number = $_GET['did'] ?? '';
+                    $edit_did_data = null;
+                    if ($active_tab === 'did_edit' && $edit_did_number) {
+                        foreach ($dids as $d) { if (($d['did'] ?? '') === $edit_did_number) { $edit_did_data = $d; break; } }
+                    }
+                ?>
+                <?php if ($active_tab === 'did_edit' && $edit_did_data): ?>
+                <?php
+                    $ed = $edit_did_data;
+                    $ed_routing = $ed['routing'] ?? '';
+                    $ed_routing_type = '';
+                    $ed_routing_value = '';
+                    if (strpos($ed_routing, 'account:') === 0) { $ed_routing_type = 'account'; $ed_routing_value = substr($ed_routing, 8); }
+                    elseif (strpos($ed_routing, 'ivr:') === 0) { $ed_routing_type = 'ivr'; $ed_routing_value = substr($ed_routing, 4); }
+                    elseif (strpos($ed_routing, 'ring_group:') === 0) { $ed_routing_type = 'ring_group'; $ed_routing_value = substr($ed_routing, 11); }
+                    elseif (strpos($ed_routing, 'queue:') === 0) { $ed_routing_type = 'queue'; $ed_routing_value = substr($ed_routing, 6); }
+                    elseif (strpos($ed_routing, 'callforward:') === 0) { $ed_routing_type = 'callforward'; $ed_routing_value = substr($ed_routing, 12); }
+                    elseif (strpos($ed_routing, 'recording:') === 0) { $ed_routing_type = 'recording'; $ed_routing_value = substr($ed_routing, 10); }
+                    elseif (strpos($ed_routing, 'callback:') === 0) { $ed_routing_type = 'callback'; $ed_routing_value = substr($ed_routing, 9); }
+                    elseif (strpos($ed_routing, 'disa:') === 0) { $ed_routing_type = 'disa'; $ed_routing_value = substr($ed_routing, 5); }
+                    elseif (strpos($ed_routing, 'conference:') === 0) { $ed_routing_type = 'conference'; $ed_routing_value = substr($ed_routing, 11); }
+                    elseif (strpos($ed_routing, 'timecondition:') === 0) { $ed_routing_type = 'timecondition'; $ed_routing_value = substr($ed_routing, 14); }
+                    elseif (strpos($ed_routing, 'callingcard:') === 0) { $ed_routing_type = 'callingcard'; $ed_routing_value = substr($ed_routing, 12); }
+                    elseif (strpos($ed_routing, 'fwd:') === 0) { $ed_routing_type = 'fwd'; $ed_routing_value = substr($ed_routing, 4); }
+                    elseif (strpos($ed_routing, 'voicemail:') === 0) { $ed_routing_type = 'voicemail'; $ed_routing_value = substr($ed_routing, 10); }
+                    elseif (strpos($ed_routing, 'sys:') === 0) { $ed_routing_type = 'sys'; $ed_routing_value = substr($ed_routing, 4); }
+                    else { $ed_routing_type = 'account'; $ed_routing_value = $ed_routing; }
+                ?>
+                <div class="mb-4">
+                    <a href="?tab=dids" class="text-sm text-blue-600 hover:underline" data-testid="link-back-to-dids"><i class="fas fa-arrow-left mr-1"></i>Back to DID Numbers</a>
+                </div>
+                <div class="bg-white rounded-lg border border-gray-200 mb-6">
+                    <div class="px-6 py-4 border-b border-gray-100">
+                        <div class="flex items-center justify-between">
+                            <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-edit text-blue-500 mr-2"></i>Edit DID Settings</h2>
+                            <span class="text-sm font-mono font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-lg"><?php echo htmlspecialchars($ed['did']); ?></span>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1"><?php echo htmlspecialchars($ed['description'] ?? 'No description'); ?></p>
+                    </div>
+                    <form method="POST" class="p-6">
+                        <input type="hidden" name="action" value="update_did">
+                        <input type="hidden" name="did" value="<?php echo htmlspecialchars($ed['did']); ?>">
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-700 mb-1">Description / Note</label>
+                                <input type="text" name="description" value="<?php echo htmlspecialchars($ed['description'] ?? ''); ?>" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Main Office, Fax Line" data-testid="input-did-description">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-700 mb-1">CallerID Prefix</label>
+                                <input type="text" name="callerid_prefix" value="<?php echo htmlspecialchars($ed['callerid_prefix'] ?? ''); ?>" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. BM-STD-" data-testid="input-did-callerid">
+                            </div>
+                        </div>
+
+                        <div class="border border-gray-200 rounded-lg mb-6">
+                            <div class="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between rounded-t-lg">
+                                <h3 class="text-sm font-semibold text-gray-900"><i class="fas fa-route text-blue-500 mr-1"></i>Routing Settings</h3>
+                                <span class="text-xs text-gray-500">Current: <code class="bg-gray-100 px-1.5 py-0.5 rounded"><?php echo htmlspecialchars($ed_routing ?: 'none'); ?></code></span>
+                            </div>
+                            <div class="p-4">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-blue-50 cursor-pointer transition <?php echo $ed_routing_type === 'account' ? 'bg-blue-50 ring-1 ring-blue-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="account" <?php echo $ed_routing_type === 'account' ? 'checked' : ''; ?> class="text-blue-600 focus:ring-blue-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-headset text-blue-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">SIP / IAX</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-green-50 cursor-pointer transition <?php echo $ed_routing_type === 'ivr' ? 'bg-green-50 ring-1 ring-green-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="ivr" <?php echo $ed_routing_type === 'ivr' ? 'checked' : ''; ?> class="text-green-600 focus:ring-green-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-sitemap text-green-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">IVR</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-purple-50 cursor-pointer transition <?php echo $ed_routing_type === 'queue' ? 'bg-purple-50 ring-1 ring-purple-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="queue" <?php echo $ed_routing_type === 'queue' ? 'checked' : ''; ?> class="text-purple-600 focus:ring-purple-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-users-cog text-purple-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">Calling Queue</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-yellow-50 cursor-pointer transition <?php echo $ed_routing_type === 'timecondition' ? 'bg-yellow-50 ring-1 ring-yellow-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="timecondition" <?php echo $ed_routing_type === 'timecondition' ? 'checked' : ''; ?> class="text-yellow-600 focus:ring-yellow-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-clock text-yellow-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">Time Conditions</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-orange-50 cursor-pointer transition <?php echo ($ed_routing_type === 'fwd' || $ed_routing_type === 'callforward') ? 'bg-orange-50 ring-1 ring-orange-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="fwd" <?php echo ($ed_routing_type === 'fwd' || $ed_routing_type === 'callforward') ? 'checked' : ''; ?> class="text-orange-600 focus:ring-orange-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-forward text-orange-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">Call Forwarding</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-teal-50 cursor-pointer transition <?php echo $ed_routing_type === 'conference' ? 'bg-teal-50 ring-1 ring-teal-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="conference" <?php echo $ed_routing_type === 'conference' ? 'checked' : ''; ?> class="text-teal-600 focus:ring-teal-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-users text-teal-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">Audio Conferencing</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-indigo-50 cursor-pointer transition <?php echo $ed_routing_type === 'ring_group' ? 'bg-indigo-50 ring-1 ring-indigo-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="ring_group" <?php echo $ed_routing_type === 'ring_group' ? 'checked' : ''; ?> class="text-indigo-600 focus:ring-indigo-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-phone-volume text-indigo-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">Ring Group</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-pink-50 cursor-pointer transition <?php echo $ed_routing_type === 'recording' ? 'bg-pink-50 ring-1 ring-pink-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="recording" <?php echo $ed_routing_type === 'recording' ? 'checked' : ''; ?> class="text-pink-600 focus:ring-pink-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-microphone text-pink-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">Play Recording</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-amber-50 cursor-pointer transition <?php echo $ed_routing_type === 'callback' ? 'bg-amber-50 ring-1 ring-amber-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="callback" <?php echo $ed_routing_type === 'callback' ? 'checked' : ''; ?> class="text-amber-600 focus:ring-amber-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-phone-alt text-amber-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">Callback</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-cyan-50 cursor-pointer transition <?php echo $ed_routing_type === 'disa' ? 'bg-cyan-50 ring-1 ring-cyan-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="disa" <?php echo $ed_routing_type === 'disa' ? 'checked' : ''; ?> class="text-cyan-600 focus:ring-cyan-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-key text-cyan-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">DISA</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-violet-50 cursor-pointer transition <?php echo $ed_routing_type === 'voicemail' ? 'bg-violet-50 ring-1 ring-violet-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="voicemail" <?php echo $ed_routing_type === 'voicemail' ? 'checked' : ''; ?> class="text-violet-600 focus:ring-violet-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-voicemail text-violet-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">Voicemail</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2 rounded hover:bg-gray-100 cursor-pointer transition <?php echo $ed_routing_type === 'sys' ? 'bg-gray-100 ring-1 ring-gray-300' : ''; ?>">
+                                        <input type="radio" name="routing_type" value="sys" <?php echo $ed_routing_type === 'sys' ? 'checked' : ''; ?> class="text-gray-600 focus:ring-gray-500" onchange="showRoutingOption(this.value)">
+                                        <i class="fas fa-cog text-gray-500 w-4"></i>
+                                        <span class="text-sm text-gray-700">System</span>
+                                    </label>
+                                </div>
+
+                                <div class="mt-4 border-t border-gray-200 pt-4">
+                                    <div id="routing-opt-account" class="routing-option <?php echo $ed_routing_type !== 'account' ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">Sub-Account (SIP/IAX)</label>
+                                        <select name="routing_account" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" data-testid="select-routing-account">
+                                            <option value="">-- Select Sub-Account --</option>
+                                            <?php foreach ($routing_accounts as $ra): ?>
+                                                <option value="<?php echo htmlspecialchars($ra['username'] ?? $ra['account'] ?? ''); ?>" <?php echo $ed_routing_value === ($ra['username'] ?? $ra['account'] ?? '') ? 'selected' : ''; ?>><?php echo htmlspecialchars($ra['username'] ?? $ra['account'] ?? ''); ?> <?php echo ($ra['description'] ?? '') ? '(' . htmlspecialchars($ra['description']) . ')' : ''; ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div id="routing-opt-ivr" class="routing-option <?php echo $ed_routing_type !== 'ivr' ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">IVR</label>
+                                        <select name="routing_ivr" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" data-testid="select-routing-ivr">
+                                            <option value="">-- Select IVR --</option>
+                                            <?php foreach ($ivrs as $iv): ?><option value="<?php echo htmlspecialchars($iv['ivr'] ?? $iv['id'] ?? ''); ?>" <?php echo $ed_routing_value == ($iv['ivr'] ?? $iv['id'] ?? '') ? 'selected' : ''; ?>><?php echo htmlspecialchars($iv['name'] ?? $iv['description'] ?? 'IVR #' . ($iv['ivr'] ?? $iv['id'] ?? '')); ?></option><?php endforeach; ?>
+                                            <?php if (empty($ivrs)): ?><option disabled>No IVRs configured</option><?php endif; ?>
+                                        </select>
+                                    </div>
+                                    <div id="routing-opt-queue" class="routing-option <?php echo $ed_routing_type !== 'queue' ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">Calling Queue</label>
+                                        <select name="routing_queue" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500" data-testid="select-routing-queue">
+                                            <option value="">-- Select Queue --</option>
+                                            <?php foreach ($queues as $qu): ?><option value="<?php echo htmlspecialchars($qu['queue'] ?? $qu['id'] ?? ''); ?>" <?php echo $ed_routing_value == ($qu['queue'] ?? $qu['id'] ?? '') ? 'selected' : ''; ?>><?php echo htmlspecialchars($qu['description'] ?? $qu['name'] ?? 'Queue #' . ($qu['queue'] ?? $qu['id'] ?? '')); ?></option><?php endforeach; ?>
+                                            <?php if (empty($queues)): ?><option disabled>No queues configured</option><?php endif; ?>
+                                        </select>
+                                    </div>
+                                    <div id="routing-opt-timecondition" class="routing-option <?php echo $ed_routing_type !== 'timecondition' ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">Time Condition</label>
+                                        <select name="routing_timecondition" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500" data-testid="select-routing-tc">
+                                            <option value="">-- Select Time Condition --</option>
+                                            <?php foreach ($time_conditions as $tc): ?><option value="<?php echo htmlspecialchars($tc['timecondition'] ?? $tc['id'] ?? ''); ?>" <?php echo $ed_routing_value == ($tc['timecondition'] ?? $tc['id'] ?? '') ? 'selected' : ''; ?>><?php echo htmlspecialchars($tc['name'] ?? $tc['description'] ?? 'TC #' . ($tc['timecondition'] ?? $tc['id'] ?? '')); ?></option><?php endforeach; ?>
+                                            <?php if (empty($time_conditions)): ?><option disabled>No time conditions configured</option><?php endif; ?>
+                                        </select>
+                                    </div>
+                                    <div id="routing-opt-fwd" class="routing-option <?php echo ($ed_routing_type !== 'fwd' && $ed_routing_type !== 'callforward') ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">Forward to Number</label>
+                                        <input type="text" name="routing_fwd" value="<?php echo htmlspecialchars($ed_routing_value); ?>" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500" placeholder="e.g. 15551234567" data-testid="input-routing-fwd">
+                                        <p class="text-xs text-gray-400 mt-1">Enter the full phone number to forward calls to</p>
+                                    </div>
+                                    <div id="routing-opt-conference" class="routing-option <?php echo $ed_routing_type !== 'conference' ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">Conference</label>
+                                        <select name="routing_conference" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500" data-testid="select-routing-conf">
+                                            <option value="">-- Select Conference --</option>
+                                            <?php foreach ($conferences as $cf): ?><option value="<?php echo htmlspecialchars($cf['conference'] ?? $cf['id'] ?? ''); ?>" <?php echo $ed_routing_value == ($cf['conference'] ?? $cf['id'] ?? '') ? 'selected' : ''; ?>><?php echo htmlspecialchars($cf['description'] ?? $cf['name'] ?? 'Conf #' . ($cf['conference'] ?? $cf['id'] ?? '')); ?></option><?php endforeach; ?>
+                                            <?php if (empty($conferences)): ?><option disabled>No conferences configured</option><?php endif; ?>
+                                        </select>
+                                    </div>
+                                    <div id="routing-opt-ring_group" class="routing-option <?php echo $ed_routing_type !== 'ring_group' ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">Ring Group</label>
+                                        <select name="routing_ring_group" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" data-testid="select-routing-rg">
+                                            <option value="">-- Select Ring Group --</option>
+                                            <?php foreach ($ring_groups as $rg): ?><option value="<?php echo htmlspecialchars($rg['ring_group'] ?? $rg['id'] ?? ''); ?>" <?php echo $ed_routing_value == ($rg['ring_group'] ?? $rg['id'] ?? '') ? 'selected' : ''; ?>><?php echo htmlspecialchars($rg['description'] ?? $rg['name'] ?? 'RG #' . ($rg['ring_group'] ?? $rg['id'] ?? '')); ?></option><?php endforeach; ?>
+                                            <?php if (empty($ring_groups)): ?><option disabled>No ring groups configured</option><?php endif; ?>
+                                        </select>
+                                    </div>
+                                    <div id="routing-opt-recording" class="routing-option <?php echo $ed_routing_type !== 'recording' ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">Play Recording</label>
+                                        <select name="routing_recording" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pink-500" data-testid="select-routing-rec">
+                                            <option value="">-- Select Recording --</option>
+                                            <?php foreach ($recordings_list as $rc): ?><option value="<?php echo htmlspecialchars($rc['recording'] ?? $rc['id'] ?? ''); ?>" <?php echo $ed_routing_value == ($rc['recording'] ?? $rc['id'] ?? '') ? 'selected' : ''; ?>><?php echo htmlspecialchars($rc['description'] ?? $rc['name'] ?? 'Rec #' . ($rc['recording'] ?? $rc['id'] ?? '')); ?></option><?php endforeach; ?>
+                                            <?php if (empty($recordings_list)): ?><option disabled>No recordings found</option><?php endif; ?>
+                                        </select>
+                                    </div>
+                                    <div id="routing-opt-callback" class="routing-option <?php echo $ed_routing_type !== 'callback' ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">Callback</label>
+                                        <select name="routing_callback" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500" data-testid="select-routing-cb">
+                                            <option value="">-- Select Callback --</option>
+                                            <?php foreach ($callbacks_list as $cb): ?><option value="<?php echo htmlspecialchars($cb['callback'] ?? $cb['id'] ?? ''); ?>" <?php echo $ed_routing_value == ($cb['callback'] ?? $cb['id'] ?? '') ? 'selected' : ''; ?>><?php echo htmlspecialchars($cb['description'] ?? $cb['name'] ?? 'CB #' . ($cb['callback'] ?? $cb['id'] ?? '')); ?></option><?php endforeach; ?>
+                                            <?php if (empty($callbacks_list)): ?><option disabled>No callbacks configured</option><?php endif; ?>
+                                        </select>
+                                    </div>
+                                    <div id="routing-opt-disa" class="routing-option <?php echo $ed_routing_type !== 'disa' ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">DISA</label>
+                                        <select name="routing_disa" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500" data-testid="select-routing-disa">
+                                            <option value="">-- Select DISA --</option>
+                                            <?php foreach ($disas as $ds): ?><option value="<?php echo htmlspecialchars($ds['disa'] ?? $ds['id'] ?? ''); ?>" <?php echo $ed_routing_value == ($ds['disa'] ?? $ds['id'] ?? '') ? 'selected' : ''; ?>><?php echo htmlspecialchars($ds['name'] ?? $ds['description'] ?? 'DISA #' . ($ds['disa'] ?? $ds['id'] ?? '')); ?></option><?php endforeach; ?>
+                                            <?php if (empty($disas)): ?><option disabled>No DISAs configured</option><?php endif; ?>
+                                        </select>
+                                    </div>
+                                    <div id="routing-opt-voicemail" class="routing-option <?php echo $ed_routing_type !== 'voicemail' ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">Voicemail</label>
+                                        <select name="routing_voicemail" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500" data-testid="select-routing-vm">
+                                            <option value="">-- Select Voicemail --</option>
+                                            <?php foreach ($voicemails_list as $vm): ?><option value="<?php echo htmlspecialchars($vm['mailbox'] ?? $vm['id'] ?? ''); ?>" <?php echo $ed_routing_value == ($vm['mailbox'] ?? $vm['id'] ?? '') ? 'selected' : ''; ?>><?php echo htmlspecialchars(($vm['mailbox'] ?? '') . ' - ' . ($vm['name'] ?? $vm['description'] ?? '')); ?></option><?php endforeach; ?>
+                                            <?php if (empty($voicemails_list)): ?><option disabled>No voicemails configured</option><?php endif; ?>
+                                        </select>
+                                    </div>
+                                    <div id="routing-opt-sys" class="routing-option <?php echo $ed_routing_type !== 'sys' ? 'hidden' : ''; ?>">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">System Action</label>
+                                        <select name="routing_sys" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-500" data-testid="select-routing-sys">
+                                            <option value="hangup" <?php echo $ed_routing_value === 'hangup' ? 'selected' : ''; ?>>Hangup</option>
+                                            <option value="noservice" <?php echo $ed_routing_value === 'noservice' ? 'selected' : ''; ?>>No Service</option>
+                                            <option value="busy" <?php echo $ed_routing_value === 'busy' ? 'selected' : ''; ?>>Busy</option>
+                                            <option value="disconnected" <?php echo $ed_routing_value === 'disconnected' ? 'selected' : ''; ?>>Disconnected Number</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="border border-gray-200 rounded-lg mb-6">
+                            <div class="px-4 py-3 bg-gray-50 border-b border-gray-200 rounded-t-lg">
+                                <h3 class="text-sm font-semibold text-gray-900"><i class="fas fa-server text-green-500 mr-1"></i>DID Point of Presence (POP)</h3>
+                            </div>
+                            <div class="p-4">
+                                <p class="text-xs text-gray-500 mb-3">Select the POP server closest to your location for best call quality.</p>
+                                <?php if (!empty($pop_servers)): ?>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+                                    <?php
+                                        $us_servers = []; $ca_servers = []; $intl_servers = [];
+                                        foreach ($pop_servers as $ps) {
+                                            $country = strtolower($ps['server_country'] ?? '');
+                                            if ($country === 'us' || $country === 'united states' || strpos($country, 'us') !== false) $us_servers[] = $ps;
+                                            elseif ($country === 'ca' || $country === 'canada') $ca_servers[] = $ps;
+                                            else $intl_servers[] = $ps;
+                                        }
+                                    ?>
+                                    <div>
+                                        <p class="text-xs font-semibold text-gray-700 mb-2 border-b border-gray-100 pb-1"><i class="fas fa-flag-usa mr-1"></i>United States</p>
+                                        <div class="space-y-1 max-h-48 overflow-y-auto">
+                                            <?php foreach ($us_servers as $ps): ?>
+                                            <label class="flex items-center gap-2 p-1 rounded text-xs cursor-pointer hover:bg-gray-50">
+                                                <input type="radio" name="pop" value="<?php echo htmlspecialchars($ps['server_pop'] ?? ''); ?>" <?php echo ($ed['pop'] ?? '') == ($ps['server_pop'] ?? '') ? 'checked' : ''; ?> class="text-green-600 focus:ring-green-500">
+                                                <span class="font-medium"><?php echo htmlspecialchars($ps['server_name'] ?? $ps['server_pop'] ?? ''); ?></span>
+                                                <span class="text-gray-400 font-mono text-[10px]"><?php echo htmlspecialchars($ps['server_hostname'] ?? ''); ?></span>
+                                            </label>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <?php if (!empty($ca_servers)): ?>
+                                        <p class="text-xs font-semibold text-gray-700 mb-2 border-b border-gray-100 pb-1"><i class="fas fa-leaf mr-1"></i>Canada</p>
+                                        <div class="space-y-1 max-h-24 overflow-y-auto mb-3">
+                                            <?php foreach ($ca_servers as $ps): ?>
+                                            <label class="flex items-center gap-2 p-1 rounded text-xs cursor-pointer hover:bg-gray-50">
+                                                <input type="radio" name="pop" value="<?php echo htmlspecialchars($ps['server_pop'] ?? ''); ?>" <?php echo ($ed['pop'] ?? '') == ($ps['server_pop'] ?? '') ? 'checked' : ''; ?> class="text-green-600 focus:ring-green-500">
+                                                <span class="font-medium"><?php echo htmlspecialchars($ps['server_name'] ?? $ps['server_pop'] ?? ''); ?></span>
+                                            </label>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($intl_servers)): ?>
+                                        <p class="text-xs font-semibold text-gray-700 mb-2 border-b border-gray-100 pb-1"><i class="fas fa-globe mr-1"></i>International</p>
+                                        <div class="space-y-1 max-h-24 overflow-y-auto">
+                                            <?php foreach ($intl_servers as $ps): ?>
+                                            <label class="flex items-center gap-2 p-1 rounded text-xs cursor-pointer hover:bg-gray-50">
+                                                <input type="radio" name="pop" value="<?php echo htmlspecialchars($ps['server_pop'] ?? ''); ?>" <?php echo ($ed['pop'] ?? '') == ($ps['server_pop'] ?? '') ? 'checked' : ''; ?> class="text-green-600 focus:ring-green-500">
+                                                <span class="font-medium"><?php echo htmlspecialchars($ps['server_name'] ?? $ps['server_pop'] ?? ''); ?></span>
+                                            </label>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <?php else: ?>
+                                <p class="text-xs text-gray-400">POP server list unavailable.</p>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between pt-4 border-t border-gray-200">
+                            <a href="?tab=dids" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition">Cancel</a>
+                            <button type="submit" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-save-did"><i class="fas fa-save mr-1"></i>Save DID Settings</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="bg-white rounded-lg border border-red-200 p-6">
+                    <h3 class="text-sm font-semibold text-red-700 mb-3"><i class="fas fa-exclamation-triangle mr-1"></i>Cancel DID</h3>
+                    <p class="text-xs text-gray-600 mb-3">Cancelling this DID will release the number at the end of the current billing period.</p>
+                    <form method="POST" class="flex items-end gap-3">
+                        <input type="hidden" name="action" value="cancel_did">
+                        <input type="hidden" name="did" value="<?php echo htmlspecialchars($ed['did']); ?>">
+                        <div class="flex-1">
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Reason</label>
+                            <input type="text" name="cancel_comment" value="Cancelled via Blue Mogul portal" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" data-testid="input-cancel-comment">
+                        </div>
+                        <label class="flex items-center gap-2 pb-2 cursor-pointer"><input type="checkbox" name="port_out" class="rounded text-red-600"><span class="text-xs text-gray-700">Port-out</span></label>
+                        <button type="submit" onclick="return confirm('Cancel DID <?php echo htmlspecialchars($ed['did']); ?>? This cannot be undone.')" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-confirm-cancel"><i class="fas fa-trash-alt mr-1"></i>Cancel DID</button>
+                    </form>
+                </div>
+
+                <?php else: ?>
                 <div class="bg-white rounded-lg border border-gray-200 mb-6">
                     <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                        <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-phone-volume text-blue-500 mr-2"></i>DID Numbers (<?php echo count($dids); ?>)</h2>
-                        <a href="https://voip.ms/m/orderdid.php" target="_blank" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition" data-testid="button-order-did"><i class="fas fa-plus mr-1"></i>Order New DID</a>
+                        <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-phone-volume text-blue-500 mr-2"></i>Manage DID Numbers (<?php echo count($dids); ?>)</h2>
+                        <div class="flex items-center gap-2">
+                            <a href="https://voip.ms/m/orderdid.php" target="_blank" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition" data-testid="button-order-did"><i class="fas fa-plus mr-1"></i>Order New DID</a>
+                            <a href="https://voip.ms/m/cancelDID.php" target="_blank" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-medium rounded-lg transition border border-red-200" data-testid="button-cancel-dids"><i class="fas fa-ban mr-1"></i>Cancel DIDs</a>
+                        </div>
                     </div>
+
+                    <div class="px-6 py-3 bg-gray-50 border-b border-gray-100">
+                        <div class="flex flex-wrap items-end gap-3">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-gray-500 uppercase mb-1">Search</label>
+                                <input type="text" id="did-search" placeholder="DID or Description" class="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-40 focus:ring-2 focus:ring-blue-500" data-testid="input-did-search" oninput="filterDids()">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-gray-500 uppercase mb-1">Routing</label>
+                                <select id="did-filter-routing" class="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-36 focus:ring-2 focus:ring-blue-500" data-testid="select-filter-routing" onchange="filterDids()">
+                                    <option value="">Any</option>
+                                    <option value="account:">Sub-Account</option>
+                                    <option value="ivr:">IVR</option>
+                                    <option value="ring_group:">Ring Group</option>
+                                    <option value="queue:">Queue</option>
+                                    <option value="fwd:">Forwarding</option>
+                                    <option value="voicemail:">Voicemail</option>
+                                    <option value="sys:">System</option>
+                                </select>
+                            </div>
+                            <button onclick="document.getElementById('did-search').value=''; document.getElementById('did-filter-routing').value=''; filterDids();" class="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition">Clear Filters</button>
+                        </div>
+                    </div>
+
                     <?php if (empty($dids)): ?>
                         <div class="p-12 text-center text-gray-500">
                             <i class="fas fa-phone-slash text-gray-300 text-4xl mb-3"></i>
@@ -639,15 +1083,9 @@ $tabs = [
                                         </td>
                                         <td class="px-4 py-3 text-xs text-gray-500"><?php echo htmlspecialchars($did['order_date'] ?? '--'); ?></td>
                                         <td class="px-4 py-3 text-center">
-                                            <div class="relative inline-block" data-testid="actions-did-<?php echo htmlspecialchars($did_number); ?>">
-                                                <button onclick="toggleDidMenu('<?php echo htmlspecialchars($did_number); ?>')" class="px-2 py-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded text-xs font-medium transition" data-testid="button-did-menu-<?php echo htmlspecialchars($did_number); ?>"><i class="fas fa-ellipsis-v"></i></button>
-                                                <div id="did-menu-<?php echo htmlspecialchars($did_number); ?>" class="hidden absolute right-0 top-8 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-20 py-1">
-                                                    <button onclick="openManageDid(<?php echo $did_json_safe; ?>)" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition" data-testid="button-manage-did-<?php echo htmlspecialchars($did_number); ?>"><i class="fas fa-sliders-h text-blue-500 mr-2 w-4"></i>Manage DID</button>
-                                                    <button onclick="openRouteDid('<?php echo htmlspecialchars($did_number); ?>', '<?php echo htmlspecialchars(addslashes($routing)); ?>')" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition" data-testid="button-route-did-<?php echo htmlspecialchars($did_number); ?>"><i class="fas fa-exchange-alt text-purple-500 mr-2 w-4"></i>Route to Sub-Account</button>
-                                                    <button onclick="openRenewDid('<?php echo htmlspecialchars($did_number); ?>', '<?php echo htmlspecialchars($billing_type); ?>')" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition" data-testid="button-renew-did-<?php echo htmlspecialchars($did_number); ?>"><i class="fas fa-sync-alt text-green-500 mr-2 w-4"></i>Renewal Settings</button>
-                                                    <div class="border-t border-gray-100 my-1"></div>
-                                                    <button onclick="openCancelDid('<?php echo htmlspecialchars($did_number); ?>')" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition" data-testid="button-cancel-did-<?php echo htmlspecialchars($did_number); ?>"><i class="fas fa-trash-alt mr-2 w-4"></i>Cancel DID</button>
-                                                </div>
+                                            <div class="flex items-center justify-center gap-1" data-testid="actions-did-<?php echo htmlspecialchars($did_number); ?>">
+                                                <a href="?tab=did_edit&did=<?php echo urlencode($did_number); ?>" class="px-2 py-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded text-xs font-medium transition" title="Edit DID" data-testid="button-edit-did-<?php echo htmlspecialchars($did_number); ?>"><i class="fas fa-edit"></i></a>
+                                                <a href="?tab=did_edit&did=<?php echo urlencode($did_number); ?>#routing" class="px-2 py-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded text-xs font-medium transition" title="Routing" data-testid="button-route-did-<?php echo htmlspecialchars($did_number); ?>"><i class="fas fa-exchange-alt"></i></a>
                                             </div>
                                         </td>
                                     </tr>
@@ -658,215 +1096,7 @@ $tabs = [
                     <?php endif; ?>
                 </div>
 
-                <div id="manage-did-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-                    <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-                        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white rounded-t-xl z-10">
-                            <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-sliders-h text-blue-500 mr-2"></i>Manage DID <span id="manage-did-display" class="font-mono text-blue-600"></span></h3>
-                            <button onclick="closeManageDid()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
-                        </div>
-                        <div class="p-6 space-y-6">
-                            <form method="POST" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                <h4 class="text-sm font-semibold text-gray-800 mb-3"><i class="fas fa-info-circle text-blue-500 mr-1"></i>General Settings</h4>
-                                <input type="hidden" name="action" value="update_did">
-                                <input type="hidden" name="did" id="manage-did-number">
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                                    <div>
-                                        <label class="block text-xs font-medium text-gray-700 mb-1">Description</label>
-                                        <input type="text" name="description" id="manage-did-desc" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Main Office Line" data-testid="input-did-description">
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-medium text-gray-700 mb-1">CallerID Prefix</label>
-                                        <input type="text" name="callerid_prefix" id="manage-did-callerid" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. BM-" data-testid="input-did-callerid">
-                                    </div>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="block text-xs font-medium text-gray-700 mb-1">Routing (Sub-Account / System)</label>
-                                    <select id="manage-did-routing-select" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-testid="select-did-routing">
-                                        <option value="">-- Keep current --</option>
-                                        <?php foreach ($routing_accounts as $ra): ?>
-                                            <option value="account:<?php echo htmlspecialchars($ra['username'] ?? $ra['account'] ?? ''); ?>">Sub-Account: <?php echo htmlspecialchars($ra['username'] ?? $ra['account'] ?? ''); ?> <?php echo ($ra['description'] ?? '') ? '(' . htmlspecialchars($ra['description']) . ')' : ''; ?></option>
-                                        <?php endforeach; ?>
-                                        <option value="sys:hangup">System: Hangup</option>
-                                        <option value="sys:noservice">System: No Service</option>
-                                        <option value="sys:busy">System: Busy</option>
-                                        <option value="sys:disconnected">System: Disconnected</option>
-                                    </select>
-                                    <p class="text-xs text-gray-400 mt-1">Or enter custom routing below (overrides dropdown)</p>
-                                    <input type="text" name="routing" id="manage-did-routing" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. account:100001_myext, ivr:12345, ring_group:67890">
-                                </div>
-                                <div class="flex justify-end">
-                                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-save-did"><i class="fas fa-save mr-1"></i>Save General Settings</button>
-                                </div>
-                            </form>
-
-                            <form method="POST" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                <h4 class="text-sm font-semibold text-gray-800 mb-3"><i class="fas fa-forward text-orange-500 mr-1"></i>Call Forwarding</h4>
-                                <input type="hidden" name="action" value="set_did_forwarding">
-                                <input type="hidden" name="did" id="manage-did-fwd-number">
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                                    <div>
-                                        <label class="block text-xs font-medium text-gray-700 mb-1">Forward to Number</label>
-                                        <input type="text" name="fwd_number" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. 15551234567" data-testid="input-did-fwd-number">
-                                    </div>
-                                    <div class="flex items-end pb-1">
-                                        <label class="flex items-center gap-2 cursor-pointer">
-                                            <input type="checkbox" name="fwd_enable" checked class="rounded border-gray-300 text-orange-600 focus:ring-orange-500" data-testid="check-did-fwd-enable">
-                                            <span class="text-xs text-gray-700">Enable Forwarding</span>
-                                        </label>
-                                    </div>
-                                </div>
-                                <div class="flex justify-end">
-                                    <button type="submit" class="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg transition" data-testid="button-save-fwd"><i class="fas fa-forward mr-1"></i>Save Forwarding</button>
-                                </div>
-                            </form>
-
-                            <form method="POST" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                <h4 class="text-sm font-semibold text-gray-800 mb-3"><i class="fas fa-sms text-green-500 mr-1"></i>SMS Settings</h4>
-                                <input type="hidden" name="action" value="set_did_sms">
-                                <input type="hidden" name="did" id="manage-did-sms-number">
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                                    <div>
-                                        <label class="block text-xs font-medium text-gray-700 mb-1">SMS Notification Email</label>
-                                        <input type="email" name="sms_email" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. admin@bluemogul.biz" data-testid="input-did-sms-email">
-                                    </div>
-                                    <div class="flex items-end pb-1">
-                                        <label class="flex items-center gap-2 cursor-pointer">
-                                            <input type="checkbox" name="sms_enabled" id="manage-did-sms-check" class="rounded border-gray-300 text-green-600 focus:ring-green-500" data-testid="check-did-sms">
-                                            <span class="text-xs text-gray-700">Enable SMS on this DID</span>
-                                        </label>
-                                    </div>
-                                </div>
-                                <div class="flex justify-end">
-                                    <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-save-sms"><i class="fas fa-sms mr-1"></i>Save SMS Settings</button>
-                                </div>
-                            </form>
-
-                            <form method="POST" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                <h4 class="text-sm font-semibold text-gray-800 mb-3"><i class="fas fa-voicemail text-indigo-500 mr-1"></i>Voicemail Settings</h4>
-                                <input type="hidden" name="action" value="set_did_voicemail">
-                                <input type="hidden" name="did" id="manage-did-vm-number">
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                                    <div>
-                                        <label class="block text-xs font-medium text-gray-700 mb-1">Voicemail Email</label>
-                                        <input type="email" name="vm_email" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. admin@bluemogul.biz" data-testid="input-did-vm-email">
-                                    </div>
-                                    <div class="flex flex-col gap-2 pt-4">
-                                        <label class="flex items-center gap-2 cursor-pointer">
-                                            <input type="checkbox" name="vm_enabled" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" data-testid="check-did-vm">
-                                            <span class="text-xs text-gray-700">Enable Voicemail</span>
-                                        </label>
-                                        <label class="flex items-center gap-2 cursor-pointer">
-                                            <input type="checkbox" name="vm_attach" checked class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" data-testid="check-did-vm-attach">
-                                            <span class="text-xs text-gray-700">Attach audio to email</span>
-                                        </label>
-                                    </div>
-                                </div>
-                                <div class="flex justify-end">
-                                    <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-save-vm"><i class="fas fa-voicemail mr-1"></i>Save Voicemail</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="route-did-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-                    <div class="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
-                        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                            <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-exchange-alt text-purple-500 mr-2"></i>Route DID</h3>
-                            <button onclick="closeRouteDid()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
-                        </div>
-                        <form method="POST" class="p-6">
-                            <input type="hidden" name="action" value="route_did">
-                            <input type="hidden" name="did" id="route-did-number">
-                            <p class="text-sm text-gray-600 mb-3">Route DID <span id="route-did-display" class="font-mono font-semibold text-gray-900"></span> to a sub-account:</p>
-                            <div class="mb-3">
-                                <label class="block text-xs font-medium text-gray-700 mb-1">Current Routing</label>
-                                <input type="text" id="route-did-current" disabled class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50">
-                            </div>
-                            <div class="mb-4">
-                                <label class="block text-xs font-medium text-gray-700 mb-1">New Routing *</label>
-                                <select name="routing" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" data-testid="select-route-did">
-                                    <option value="">-- Select destination --</option>
-                                    <?php foreach ($routing_accounts as $ra): ?>
-                                        <option value="account:<?php echo htmlspecialchars($ra['username'] ?? $ra['account'] ?? ''); ?>">Sub-Account: <?php echo htmlspecialchars($ra['username'] ?? $ra['account'] ?? ''); ?> <?php echo ($ra['description'] ?? '') ? '(' . htmlspecialchars($ra['description']) . ')' : ''; ?></option>
-                                    <?php endforeach; ?>
-                                    <option value="sys:hangup">System: Hangup</option>
-                                    <option value="sys:noservice">System: No Service</option>
-                                    <option value="sys:busy">System: Busy</option>
-                                    <option value="sys:disconnected">System: Disconnected</option>
-                                </select>
-                            </div>
-                            <div class="flex justify-end gap-3">
-                                <button type="button" onclick="closeRouteDid()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition">Cancel</button>
-                                <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-save-route"><i class="fas fa-exchange-alt mr-1"></i>Route DID</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
-                <div id="renew-did-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-                    <div class="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
-                        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                            <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-sync-alt text-green-500 mr-2"></i>Renewal Settings</h3>
-                            <button onclick="closeRenewDid()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
-                        </div>
-                        <form method="POST" class="p-6">
-                            <input type="hidden" name="action" value="renew_did">
-                            <input type="hidden" name="did" id="renew-did-number">
-                            <p class="text-sm text-gray-600 mb-4">Set billing/renewal period for DID <span id="renew-did-display" class="font-mono font-semibold text-gray-900"></span>:</p>
-                            <div class="mb-4 space-y-3">
-                                <label class="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition">
-                                    <input type="radio" name="renew_period" value="monthly" id="renew-monthly" class="text-green-600 focus:ring-green-500" data-testid="radio-renew-monthly">
-                                    <div>
-                                        <p class="text-sm font-medium text-gray-900">Monthly</p>
-                                        <p class="text-xs text-gray-500">Billed every month, can cancel anytime</p>
-                                    </div>
-                                </label>
-                                <label class="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition">
-                                    <input type="radio" name="renew_period" value="annual" id="renew-annual" class="text-green-600 focus:ring-green-500" data-testid="radio-renew-annual">
-                                    <div>
-                                        <p class="text-sm font-medium text-gray-900">Annual</p>
-                                        <p class="text-xs text-gray-500">Billed once per year (discounted rate)</p>
-                                    </div>
-                                </label>
-                            </div>
-                            <div class="flex justify-end gap-3">
-                                <button type="button" onclick="closeRenewDid()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition">Cancel</button>
-                                <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-save-renew"><i class="fas fa-sync-alt mr-1"></i>Update Renewal</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
-                <div id="cancel-did-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-                    <div class="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
-                        <div class="px-6 py-4 border-b border-red-200 bg-red-50 flex items-center justify-between rounded-t-xl">
-                            <h3 class="text-lg font-semibold text-red-700"><i class="fas fa-exclamation-triangle mr-2"></i>Cancel DID</h3>
-                            <button onclick="closeCancelDid()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
-                        </div>
-                        <form method="POST" class="p-6">
-                            <input type="hidden" name="action" value="cancel_did">
-                            <input type="hidden" name="did" id="cancel-did-number">
-                            <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                                <p class="text-sm text-red-700"><i class="fas fa-exclamation-circle mr-1"></i>You are about to cancel DID <span id="cancel-did-display" class="font-mono font-semibold"></span>. This action will release the number at the end of the current billing period.</p>
-                            </div>
-                            <div class="mb-4">
-                                <label class="block text-xs font-medium text-gray-700 mb-1">Cancellation Reason</label>
-                                <textarea name="cancel_comment" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500" placeholder="Reason for cancelling..." data-testid="input-cancel-comment">Cancelled via Blue Mogul portal</textarea>
-                            </div>
-                            <div class="mb-4">
-                                <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" name="port_out" class="rounded border-gray-300 text-red-600 focus:ring-red-500" data-testid="check-port-out">
-                                    <span class="text-xs text-gray-700">This is a port-out (transferring number to another provider)</span>
-                                </label>
-                            </div>
-                            <div class="flex justify-end gap-3">
-                                <button type="button" onclick="closeCancelDid()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition">Keep DID</button>
-                                <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-confirm-cancel"><i class="fas fa-trash-alt mr-1"></i>Cancel DID</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+                <?php endif; ?>
 
             <?php elseif ($active_tab === 'subaccounts'): ?>
                 <div class="bg-white rounded-lg border border-gray-200 mb-6">
@@ -1247,73 +1477,33 @@ $tabs = [
 </div>
 
 <script>
-function toggleDidMenu(did) {
-    document.querySelectorAll('[id^="did-menu-"]').forEach(function(m) {
-        if (m.id !== 'did-menu-' + did) m.classList.add('hidden');
+function showRoutingOption(type) {
+    document.querySelectorAll('.routing-option').forEach(function(el) { el.classList.add('hidden'); });
+    var opt = document.getElementById('routing-opt-' + type);
+    if (opt) opt.classList.remove('hidden');
+    document.querySelectorAll('input[name="routing_type"]').forEach(function(radio) {
+        var label = radio.closest('label');
+        if (label) {
+            label.className = label.className.replace(/bg-\w+-50|ring-1|ring-\w+-300/g, '').trim();
+            if (radio.checked) {
+                var colors = { account: 'bg-blue-50 ring-1 ring-blue-300', ivr: 'bg-green-50 ring-1 ring-green-300', queue: 'bg-purple-50 ring-1 ring-purple-300', timecondition: 'bg-yellow-50 ring-1 ring-yellow-300', fwd: 'bg-orange-50 ring-1 ring-orange-300', conference: 'bg-teal-50 ring-1 ring-teal-300', ring_group: 'bg-indigo-50 ring-1 ring-indigo-300', recording: 'bg-pink-50 ring-1 ring-pink-300', callback: 'bg-amber-50 ring-1 ring-amber-300', disa: 'bg-cyan-50 ring-1 ring-cyan-300', voicemail: 'bg-violet-50 ring-1 ring-violet-300', sys: 'bg-gray-100 ring-1 ring-gray-300' };
+                label.className += ' ' + (colors[type] || '');
+            }
+        }
     });
-    var menu = document.getElementById('did-menu-' + did);
-    if (menu) menu.classList.toggle('hidden');
 }
-document.addEventListener('click', function(e) {
-    if (!e.target.closest('[data-testid^="button-did-menu-"]') && !e.target.closest('[id^="did-menu-"]')) {
-        document.querySelectorAll('[id^="did-menu-"]').forEach(function(m) { m.classList.add('hidden'); });
-    }
-});
 
-function openManageDid(didData) {
-    document.querySelectorAll('[id^="did-menu-"]').forEach(function(m) { m.classList.add('hidden'); });
-    document.getElementById('manage-did-display').textContent = didData.did;
-    document.getElementById('manage-did-number').value = didData.did;
-    document.getElementById('manage-did-desc').value = didData.description;
-    document.getElementById('manage-did-callerid').value = didData.callerid_prefix;
-    document.getElementById('manage-did-routing').value = didData.routing;
-    var sel = document.getElementById('manage-did-routing-select');
-    sel.value = didData.routing;
-    if (!sel.value) sel.value = '';
-    document.getElementById('manage-did-fwd-number').value = didData.did;
-    document.getElementById('manage-did-sms-number').value = didData.did;
-    document.getElementById('manage-did-vm-number').value = didData.did;
-    if (didData.sms_enabled === '1') {
-        var smsCheck = document.getElementById('manage-did-sms-check');
-        if (smsCheck) smsCheck.checked = true;
-    }
-    document.getElementById('manage-did-modal').classList.remove('hidden');
+function filterDids() {
+    var search = (document.getElementById('did-search')?.value || '').toLowerCase();
+    var routingFilter = document.getElementById('did-filter-routing')?.value || '';
+    var rows = document.querySelectorAll('[data-testid^="row-did-"]');
+    rows.forEach(function(row) {
+        var text = row.textContent.toLowerCase();
+        var matchSearch = !search || text.indexOf(search) !== -1;
+        var matchRouting = !routingFilter || text.indexOf(routingFilter.replace(':', '').toLowerCase()) !== -1;
+        row.style.display = (matchSearch && matchRouting) ? '' : 'none';
+    });
 }
-function closeManageDid() { document.getElementById('manage-did-modal').classList.add('hidden'); }
-
-document.getElementById('manage-did-routing-select')?.addEventListener('change', function() {
-    if (this.value) document.getElementById('manage-did-routing').value = this.value;
-});
-
-function openRouteDid(did, currentRouting) {
-    document.querySelectorAll('[id^="did-menu-"]').forEach(function(m) { m.classList.add('hidden'); });
-    document.getElementById('route-did-number').value = did;
-    document.getElementById('route-did-display').textContent = did;
-    document.getElementById('route-did-current').value = currentRouting || 'Not set';
-    document.getElementById('route-did-modal').classList.remove('hidden');
-}
-function closeRouteDid() { document.getElementById('route-did-modal').classList.add('hidden'); }
-
-function openRenewDid(did, billingType) {
-    document.querySelectorAll('[id^="did-menu-"]').forEach(function(m) { m.classList.add('hidden'); });
-    document.getElementById('renew-did-number').value = did;
-    document.getElementById('renew-did-display').textContent = did;
-    if (billingType === '2') {
-        document.getElementById('renew-annual').checked = true;
-    } else {
-        document.getElementById('renew-monthly').checked = true;
-    }
-    document.getElementById('renew-did-modal').classList.remove('hidden');
-}
-function closeRenewDid() { document.getElementById('renew-did-modal').classList.add('hidden'); }
-
-function openCancelDid(did) {
-    document.querySelectorAll('[id^="did-menu-"]').forEach(function(m) { m.classList.add('hidden'); });
-    document.getElementById('cancel-did-number').value = did;
-    document.getElementById('cancel-did-display').textContent = did;
-    document.getElementById('cancel-did-modal').classList.remove('hidden');
-}
-function closeCancelDid() { document.getElementById('cancel-did-modal').classList.add('hidden'); }
 
 function openEditSa(id, username, desc, callerid, lockIntl) {
     document.getElementById('edit-sa-id').value = id;

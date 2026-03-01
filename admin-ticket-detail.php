@@ -33,6 +33,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                 $stmt->execute([$ticket_id, $user_id, $comment, $is_internal]);
                 $stmt = $pdo->prepare("UPDATE tickets SET updated_at = NOW() WHERE id = ?");
                 $stmt->execute([$ticket_id]);
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'comment_added', 'ticket', $ticket_id, ($is_internal ? 'Added internal note to' : 'Added reply to') . ' ticket #' . $ticket_id, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
                 $success_msg = $is_internal ? 'Internal note added.' : 'Reply sent to client.';
             } catch (PDOException $e) {
                 error_log("Reply error: " . $e->getMessage());
