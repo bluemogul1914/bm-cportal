@@ -32,8 +32,8 @@ An online PHP code editor and execution environment built with React + Express, 
 ### Admin Portal Pages
 - `admin-dashboard.php` - Business metrics, MRR, churn, activity
 - `admin-clients.php` - Client list with search/filter
-- `admin-client-detail.php` - Full client profile with tickets, invoices, services, documents
-- `admin-client-edit.php` - Edit client information
+- `admin-client-detail.php` - Full CRM-style client profile: overview with 4 financial cards, services with status bars, location map (Leaflet/OpenStreetMap), activity logs with timestamps/ID#/tags, client profile card with avatar/tags, invoices mini-table, next invoice preview, credits management, active tickets, projects; tabs for Invoices (with billing summary), Payments, Documents, Tickets, Network (devices), Projects; master/sub-account hierarchy display
+- `admin-client-edit.php` - Edit client: info, parent account (master/sub-account), lat/lng location, credit balance, notes
 - `admin-tickets.php` - Ticket management with triage
 - `admin-ticket-detail.php` - Reply (public/internal), status/priority/assignee changes
 - `admin-invoices.php` - Invoice management

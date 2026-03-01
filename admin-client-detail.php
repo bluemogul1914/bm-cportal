@@ -25,10 +25,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
     if ($action === 'add_log_entry') {
         $log_text = trim($_POST['log_text'] ?? '');
+        $log_tags = $_POST['log_tags'] ?? '';
         if ($log_text) {
             try {
+                $details_data = json_encode(['message' => $log_text, 'tags' => $log_tags]);
                 $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
-                    ->execute([$user_id, 'client_note', 'client', $client_id, $log_text, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+                    ->execute([$user_id, 'client_note', 'client', $client_id, $details_data, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
                 $success_msg = 'Log entry added.';
             } catch (\Exception $e) {
                 $error_msg = 'Failed to add log entry.';
@@ -58,16 +60,62 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             }
         }
     }
+
+    if ($action === 'remove_tag') {
+        $tag = trim($_POST['tag'] ?? '');
+        if ($tag) {
+            try {
+                $existing = $pdo->prepare("SELECT notes FROM clients WHERE id = ?");
+                $existing->execute([$client_id]);
+                $row = $existing->fetch(PDO::FETCH_ASSOC);
+                $notes = $row['notes'] ?? '';
+                $tags_json = [];
+                if (preg_match('/\[TAGS:(.*?)\]/', $notes, $m)) {
+                    $tags_json = json_decode($m[1], true) ?: [];
+                    $notes = preg_replace('/\[TAGS:.*?\]/', '', $notes);
+                }
+                $tags_json = array_values(array_filter($tags_json, fn($t) => $t !== $tag));
+                $notes = trim($notes) . (count($tags_json) > 0 ? ' [TAGS:' . json_encode($tags_json) . ']' : '');
+                $pdo->prepare("UPDATE clients SET notes = ? WHERE id = ?")->execute([trim($notes), $client_id]);
+                $success_msg = 'Tag removed.';
+            } catch (\Exception $e) {
+                $error_msg = 'Failed to remove tag.';
+            }
+        }
+    }
+
+    if ($action === 'update_credit') {
+        $credit = floatval($_POST['credit_amount'] ?? 0);
+        try {
+            $pdo->prepare("UPDATE clients SET credit_balance = ? WHERE id = ?")->execute([$credit, $client_id]);
+            $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
+                ->execute([$user_id, 'credit_updated', 'client', $client_id, 'Credit balance updated to $' . number_format($credit, 2), $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+            $success_msg = 'Credit balance updated.';
+        } catch (\Exception $e) {
+            $error_msg = 'Failed to update credit.';
+        }
+    }
 }
 
 try {
     $stmt = $pdo->prepare("SELECT c.*, u.email as user_email, u.created_at as user_created_at FROM clients c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ?");
     $stmt->execute([$client_id]);
     $client = $stmt->fetch(PDO::FETCH_ASSOC);
-
     if (!$client) {
         portal_redirect('/portal/admin-clients.php');
     }
+
+    $parent_client = null;
+    if (!empty($client['parent_client_id'])) {
+        $stmt = $pdo->prepare("SELECT id, name, company, email FROM clients WHERE id = ?");
+        $stmt->execute([$client['parent_client_id']]);
+        $parent_client = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    $sub_accounts = [];
+    $stmt = $pdo->prepare("SELECT id, name, email, company, status FROM clients WHERE parent_client_id = ? ORDER BY name ASC");
+    $stmt->execute([$client_id]);
+    $sub_accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $stmt = $pdo->prepare("SELECT t.* FROM tickets t WHERE t.client_id = ? ORDER BY t.created_at DESC");
     $stmt->execute([$client_id]);
@@ -85,39 +133,29 @@ try {
     $stmt->execute([$client_id]);
     $all_documents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $stmt = $pdo->prepare("SELECT COALESCE(SUM(mrr), 0) as total_mrr FROM subscriptions WHERE client_id = ? AND status = 'active'");
-    $stmt->execute([$client_id]);
-    $total_mrr = $stmt->fetch(PDO::FETCH_ASSOC)['total_mrr'];
-
     $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) as total FROM invoices WHERE client_id = ? AND status = 'unpaid'");
     $stmt->execute([$client_id]);
-    $outstanding = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    $outstanding = (float)$stmt->fetch(PDO::FETCH_ASSOC)['total'];
 
     $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) as total FROM invoices WHERE client_id = ? AND status = 'paid'");
     $stmt->execute([$client_id]);
-    $total_paid = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    $total_paid = (float)$stmt->fetch(PDO::FETCH_ASSOC)['total'];
 
-    $stmt = $pdo->prepare("SELECT p.amount, p.payment_date FROM payments p JOIN invoices i ON p.invoice_id = i.id WHERE i.client_id = ? ORDER BY p.payment_date DESC");
+    $stmt = $pdo->prepare("SELECT p.amount, p.created_at as payment_date FROM payments p JOIN invoices i ON p.invoice_id = i.id WHERE i.client_id = ? ORDER BY p.created_at DESC");
     $stmt->execute([$client_id]);
     $payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $stmt = $pdo->prepare("SELECT al.*, u.email as user_email FROM activity_log al LEFT JOIN users u ON al.user_id = u.id WHERE al.entity_type = 'client' AND al.entity_id = ? ORDER BY al.created_at DESC LIMIT 25");
-    $stmt->execute([$client_id]);
-    $client_logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $all_client_logs = [];
+    $stmt = $pdo->prepare("SELECT al.*, u.email as user_email FROM activity_log al LEFT JOIN users u ON al.user_id = u.id WHERE (al.entity_type = 'client' AND al.entity_id = ?) OR al.user_id = (SELECT user_id FROM clients WHERE id = ?) ORDER BY al.created_at DESC LIMIT 50");
+    $stmt->execute([$client_id, $client_id]);
+    $all_client_logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $all_client_logs_stmt = $pdo->prepare("SELECT al.*, u.email as user_email FROM activity_log al LEFT JOIN users u ON al.user_id = u.id WHERE (al.entity_type = 'client' AND al.entity_id = ?) OR al.user_id = (SELECT user_id FROM clients WHERE id = ?) ORDER BY al.created_at DESC LIMIT 50");
-    $all_client_logs_stmt->execute([$client_id, $client_id]);
-    $all_activity = $all_client_logs_stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $projects_exist = false;
+    $projects = [];
     try {
-        $stmt = $pdo->prepare("SELECT * FROM projects WHERE client_id = ? ORDER BY created_at DESC LIMIT 5");
+        $stmt = $pdo->prepare("SELECT * FROM projects WHERE client_id = ? ORDER BY created_at DESC LIMIT 10");
         $stmt->execute([$client_id]);
         $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $projects_exist = true;
-    } catch (\Exception $e) {
-        $projects = [];
-    }
+    } catch (\Exception $e) {}
 
     $devices = [];
     try {
@@ -139,6 +177,8 @@ try {
     $services_total = 0;
     foreach ($active_services as $as) $services_total += (float)($as['price'] ?? 0);
 
+    $credit_balance = (float)($client['credit_balance'] ?? 0);
+
     $next_invoice_date = null;
     if (count($all_invoices) > 0) {
         $last = $all_invoices[0];
@@ -152,6 +192,28 @@ try {
 }
 
 $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'], ' ') !== false ? strtoupper(substr(strstr($client['name'], ' '), 1, 1)) : '');
+$lat = $client['latitude'] ?? '';
+$lng = $client['longitude'] ?? '';
+$has_location = !empty($lat) && !empty($lng);
+if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
+    $city_coords = [
+        'houston' => ['29.7604', '-95.3698'],
+        'dallas' => ['32.7767', '-96.7970'],
+        'austin' => ['30.2672', '-97.7431'],
+        'san antonio' => ['29.4241', '-98.4936'],
+        'bossier city' => ['32.5160', '-93.7321'],
+        'shreveport' => ['32.5252', '-93.7502'],
+        'new york' => ['40.7128', '-74.0060'],
+        'los angeles' => ['34.0522', '-118.2437'],
+        'chicago' => ['41.8781', '-87.6298'],
+    ];
+    $city_lower = strtolower(trim($client['city']));
+    if (isset($city_coords[$city_lower])) {
+        $lat = $city_coords[$city_lower][0];
+        $lng = $city_coords[$city_lower][1];
+        $has_location = true;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -163,18 +225,25 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/css/admin.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>tailwind.config = { theme: { extend: { colors: { primary: '#1a56db', secondary: '#0d1b3e' }, fontFamily: { sans: ['Inter', 'sans-serif'] } } } }</script>
 </head>
 <body class="bg-gray-50 font-sans">
 <div class="flex h-screen overflow-hidden">
     <?php include 'includes/admin-sidebar.php'; ?>
     <div class="flex-1 overflow-y-auto">
-        <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
+
+        <header class="bg-white border-b border-gray-200 sticky top-0 z-30">
             <div class="px-6 py-3 flex items-center justify-between">
                 <div class="flex items-center gap-2 text-sm text-gray-500">
-                    <a href="admin-clients.php" class="hover:text-primary transition">Clients</a>
+                    <a href="admin-clients.php" class="hover:text-primary transition" data-testid="link-clients-breadcrumb">Clients</a>
                     <i class="fas fa-chevron-right text-[10px]"></i>
-                    <span class="text-gray-900 font-medium"><?php echo htmlspecialchars($client['name']); ?></span>
+                    <?php if ($parent_client): ?>
+                    <a href="admin-client-detail.php?id=<?php echo $parent_client['id']; ?>" class="hover:text-primary transition"><?php echo htmlspecialchars($parent_client['name']); ?></a>
+                    <i class="fas fa-chevron-right text-[10px]"></i>
+                    <?php endif; ?>
+                    <span class="text-gray-900 font-medium" data-testid="text-breadcrumb-name"><?php echo htmlspecialchars($client['name']); ?></span>
                 </div>
                 <div class="flex items-center gap-2">
                     <a href="admin-client-edit.php?id=<?php echo $client_id; ?>" class="px-3 py-1.5 bg-primary hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition" data-testid="link-edit-client">
@@ -190,6 +259,8 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                     'payments' => 'Payments',
                     'documents' => 'Documents',
                     'tickets' => 'Tickets',
+                    'network' => 'Network',
+                    'projects' => 'Projects',
                 ];
                 foreach ($tabs as $tk => $tv):
                     $tab_active = ($active_tab === $tk) ? 'border-b-2 border-primary text-primary font-medium' : 'text-gray-500 hover:text-gray-700';
@@ -209,26 +280,32 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
 
             <?php if ($active_tab === 'overview'): ?>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div class="bg-white rounded-lg border border-gray-200 p-4">
-                    <p class="text-xs text-gray-500 mb-1">Account balance</p>
-                    <p class="text-2xl font-bold text-gray-900" data-testid="text-account-balance">$<?php echo number_format((float)$outstanding, 2); ?></p>
+                    <p class="text-xs text-gray-500 mb-1">Account Balance</p>
+                    <p class="text-2xl font-bold text-gray-900" data-testid="text-account-balance">$<?php echo number_format($outstanding, 2); ?></p>
                 </div>
                 <div class="bg-white rounded-lg border border-gray-200 p-4">
-                    <p class="text-xs text-gray-500 mb-1">Cash</p>
-                    <p class="text-2xl font-bold text-gray-900" data-testid="text-cash">$<?php echo number_format((float)$total_paid, 2); ?></p>
+                    <p class="text-xs text-gray-500 mb-1">Cash Received</p>
+                    <p class="text-2xl font-bold text-gray-900" data-testid="text-cash">$<?php echo number_format($total_paid, 2); ?></p>
                 </div>
                 <div class="bg-white rounded-lg border border-gray-200 p-4">
                     <p class="text-xs text-gray-500 mb-1">Outstanding</p>
-                    <p class="text-2xl font-bold <?php echo $outstanding > 0 ? 'text-red-600' : 'text-gray-900'; ?>" data-testid="text-outstanding">$<?php echo number_format((float)$outstanding, 2); ?></p>
+                    <p class="text-2xl font-bold <?php echo $outstanding > 0 ? 'text-red-600' : 'text-green-600'; ?>" data-testid="text-outstanding">$<?php echo number_format($outstanding, 2); ?></p>
+                </div>
+                <div class="bg-white rounded-lg border border-gray-200 p-4">
+                    <p class="text-xs text-gray-500 mb-1">Credit Balance</p>
+                    <p class="text-2xl font-bold text-blue-600" data-testid="text-credit-balance">$<?php echo number_format($credit_balance, 2); ?></p>
                 </div>
             </div>
 
-            <div class="text-xs text-gray-500 mb-6 flex items-center gap-4">
+            <div class="text-xs text-gray-500 mb-6 flex items-center gap-4 flex-wrap">
                 <span><i class="fas fa-calendar-alt mr-1"></i>Expected payment: $<?php echo number_format($services_total, 2); ?> / month</span>
                 <?php if ($next_invoice_date): ?>
                 <span>Next invoicing day: <?php echo $next_invoice_date; ?></span>
                 <?php endif; ?>
+                <span><i class="fas fa-cube mr-1"></i><?php echo count($active_services); ?> active service(s)</span>
+                <span><i class="fas fa-ticket-alt mr-1"></i><?php echo count($open_tickets); ?> open ticket(s)</span>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -237,7 +314,7 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                     <div class="bg-white rounded-lg border border-gray-200">
                         <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
                             <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Services</h2>
-                            <a href="admin-services.php" class="text-primary text-xs hover:underline"><i class="fas fa-plus mr-1"></i></a>
+                            <a href="admin-services.php" class="text-primary text-xs hover:underline"><i class="fas fa-plus mr-1"></i>Add</a>
                         </div>
                         <?php if (empty($services)): ?>
                         <div class="p-6 text-center text-gray-400 text-sm">No services found.</div>
@@ -246,10 +323,14 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                             <?php foreach ($services as $s): ?>
                             <div class="px-5 py-3 flex items-center justify-between" data-testid="row-service-<?php echo $s['id']; ?>">
                                 <div class="flex items-center gap-3">
-                                    <div class="w-1.5 h-8 rounded-full <?php echo $s['status'] === 'active' ? 'bg-green-500' : 'bg-red-400'; ?>"></div>
+                                    <div class="w-1.5 h-8 rounded-full <?php echo $s['status'] === 'active' ? 'bg-green-500' : ($s['status'] === 'suspended' ? 'bg-yellow-500' : 'bg-red-400'); ?>"></div>
                                     <div>
                                         <p class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($s['product_name']); ?></p>
-                                        <p class="text-xs text-gray-500"><?php echo htmlspecialchars(($s['billing_period'] ?? 'monthly') === 'monthly' ? '1 month' : $s['billing_period']); ?> | connected to: <i class="fas fa-user text-blue-400 text-[10px]"></i> <?php echo htmlspecialchars($client['name']); ?></p>
+                                        <p class="text-xs text-gray-500">
+                                            <?php echo htmlspecialchars(($s['billing_period'] ?? 'monthly') === 'monthly' ? '1 month' : $s['billing_period']); ?>
+                                            | <i class="fas fa-user text-blue-400 text-[10px]"></i> <?php echo htmlspecialchars($client['name']); ?>
+                                            | <span class="<?php echo $s['status'] === 'active' ? 'text-green-600' : 'text-red-500'; ?>"><?php echo ucfirst($s['status']); ?></span>
+                                        </p>
                                     </div>
                                 </div>
                                 <div class="text-right">
@@ -258,71 +339,118 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                             </div>
                             <?php endforeach; ?>
                         </div>
+                        <div class="px-5 py-2 bg-gray-50 border-t border-gray-200 flex justify-between text-xs text-gray-600">
+                            <span>Total Monthly</span>
+                            <span class="font-semibold">$<?php echo number_format($services_total, 2); ?></span>
+                        </div>
                         <?php endif; ?>
                     </div>
+
+                    <?php if ($has_location): ?>
+                    <div class="bg-white rounded-lg border border-gray-200">
+                        <div class="px-5 py-3 border-b border-gray-200">
+                            <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Location</h2>
+                        </div>
+                        <div id="client-map" class="h-48 rounded-b-lg" data-testid="map-location"></div>
+                    </div>
+                    <?php endif; ?>
 
                     <div class="bg-white rounded-lg border border-gray-200">
                         <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
                             <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Logs</h2>
-                            <div class="flex items-center gap-1">
-                                <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                            <div class="flex items-center gap-2 text-xs text-gray-400">
+                                <span><?php echo count($all_client_logs); ?> entries</span>
                             </div>
                         </div>
                         <div class="p-4">
-                            <form method="POST" class="flex items-center gap-2 mb-4">
+                            <form method="POST" class="mb-4">
                                 <input type="hidden" name="action" value="add_log_entry">
-                                <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
-                                <input type="text" name="log_text" placeholder="New log entry" class="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-testid="input-log-entry">
-                                <button type="submit" class="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition" data-testid="button-add-log">Submit</button>
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
+                                    <input type="text" name="log_text" placeholder="New log entry..." class="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-testid="input-log-entry">
+                                    <button type="submit" class="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition" data-testid="button-add-log">Submit</button>
+                                </div>
+                                <div class="ml-4 flex items-center gap-2">
+                                    <label class="text-[10px] text-gray-400 uppercase">Tags:</label>
+                                    <select name="log_tags" class="text-xs border border-gray-200 rounded px-2 py-0.5 text-gray-600" data-testid="select-log-tags">
+                                        <option value="">None</option>
+                                        <option value="billing">Billing</option>
+                                        <option value="support">Support</option>
+                                        <option value="sales">Sales</option>
+                                        <option value="technical">Technical</option>
+                                        <option value="onboarding">Onboarding</option>
+                                        <option value="followup">Follow-up</option>
+                                    </select>
+                                </div>
                             </form>
-                            <div class="space-y-3 max-h-72 overflow-y-auto">
-                                <?php if (empty($all_activity)): ?>
+                            <div class="space-y-3 max-h-80 overflow-y-auto" data-testid="log-entries-list">
+                                <?php if (empty($all_client_logs)): ?>
                                 <p class="text-center text-gray-400 text-sm py-4">No activity yet.</p>
                                 <?php else: ?>
-                                <?php foreach (array_slice($all_activity, 0, 15) as $log): ?>
+                                <?php foreach (array_slice($all_client_logs, 0, 20) as $log): ?>
                                 <div class="flex items-start gap-3 text-sm" data-testid="row-log-<?php echo $log['id']; ?>">
                                     <div class="flex-shrink-0 mt-1">
                                         <?php
                                         $log_action = $log['action'] ?? '';
-                                        if (strpos($log_action, 'create') !== false || strpos($log_action, 'added') !== false) {
-                                            echo '<i class="fas fa-plus-circle text-green-500 text-xs"></i>';
-                                        } elseif (strpos($log_action, 'update') !== false || strpos($log_action, 'edit') !== false) {
-                                            echo '<i class="fas fa-edit text-blue-500 text-xs"></i>';
-                                        } elseif (strpos($log_action, 'delete') !== false || strpos($log_action, 'cancel') !== false) {
-                                            echo '<i class="fas fa-times-circle text-red-500 text-xs"></i>';
-                                        } elseif (strpos($log_action, 'login') !== false) {
-                                            echo '<i class="fas fa-sign-in-alt text-indigo-500 text-xs"></i>';
-                                        } elseif (strpos($log_action, 'note') !== false) {
-                                            echo '<i class="fas fa-sticky-note text-yellow-500 text-xs"></i>';
-                                        } else {
-                                            echo '<i class="fas fa-circle text-gray-400 text-xs"></i>';
+                                        $icon_map = [
+                                            'create' => 'fa-plus-circle text-green-500',
+                                            'added' => 'fa-plus-circle text-green-500',
+                                            'update' => 'fa-edit text-blue-500',
+                                            'edit' => 'fa-edit text-blue-500',
+                                            'delete' => 'fa-times-circle text-red-500',
+                                            'cancel' => 'fa-times-circle text-red-500',
+                                            'login' => 'fa-sign-in-alt text-indigo-500',
+                                            'note' => 'fa-sticky-note text-yellow-500',
+                                            'credit' => 'fa-dollar-sign text-green-600',
+                                            'invoice' => 'fa-file-invoice text-blue-400',
+                                            'payment' => 'fa-credit-card text-green-500',
+                                            'ticket' => 'fa-ticket-alt text-purple-500',
+                                        ];
+                                        $icon = 'fa-circle text-gray-400';
+                                        foreach ($icon_map as $key => $ic) {
+                                            if (strpos($log_action, $key) !== false) { $icon = $ic; break; }
                                         }
+                                        echo '<i class="fas ' . $icon . ' text-xs"></i>';
                                         ?>
                                     </div>
                                     <div class="flex-1 min-w-0">
-                                        <div class="flex items-center gap-2">
-                                            <span class="text-xs font-medium text-gray-500"><?php
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <span class="text-xs font-semibold text-gray-600"><?php
                                                 $le = $log['user_email'] ?? '';
                                                 echo htmlspecialchars($le ? explode('@', $le)[0] : 'System');
-                                            ?>:</span>
-                                            <span class="text-xs text-gray-700 truncate"><?php
-                                                $details = $log['details'] ?? '';
-                                                if (is_string($details) && (substr($details, 0, 1) === '"' || substr($details, 0, 1) === '{')) {
-                                                    $decoded = json_decode($details, true);
-                                                    echo htmlspecialchars(is_string($decoded) ? $decoded : ($decoded['message'] ?? $details));
-                                                } else {
-                                                    echo htmlspecialchars($details);
-                                                }
                                             ?></span>
+                                            <?php
+                                            $details = $log['details'] ?? '';
+                                            $log_msg = $details;
+                                            $log_tag_display = '';
+                                            if (is_string($details) && substr($details, 0, 1) === '{') {
+                                                $decoded = json_decode($details, true);
+                                                if ($decoded) {
+                                                    $log_msg = $decoded['message'] ?? $details;
+                                                    $log_tag_display = $decoded['tags'] ?? '';
+                                                }
+                                            } elseif (is_string($details) && substr($details, 0, 1) === '"') {
+                                                $decoded = json_decode($details, true);
+                                                if (is_string($decoded)) $log_msg = $decoded;
+                                            }
+                                            ?>
+                                            <span class="text-xs text-gray-700"><?php echo htmlspecialchars($log_msg); ?></span>
+                                            <?php if ($log_tag_display): ?>
+                                            <span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium"><?php echo htmlspecialchars($log_tag_display); ?></span>
+                                            <?php endif; ?>
                                         </div>
-                                        <span class="text-[10px] text-gray-400"><?php echo htmlspecialchars($log['action'] ?? ''); ?> &middot; <?php echo date('n/j/Y g:i:s a', strtotime($log['created_at'])); ?></span>
+                                        <span class="text-[10px] text-gray-400">
+                                            #<?php echo $log['id']; ?> &middot;
+                                            <?php echo htmlspecialchars($log_action); ?> &middot;
+                                            <?php echo date('n/j/Y g:i:s a', strtotime($log['created_at'])); ?>
+                                        </span>
                                     </div>
                                 </div>
                                 <?php endforeach; ?>
                                 <?php endif; ?>
                             </div>
-                            <?php if (count($all_activity) > 15): ?>
-                            <p class="text-xs text-gray-400 mt-3 text-center">Showing 15 of <?php echo count($all_activity); ?> entries</p>
+                            <?php if (count($all_client_logs) > 20): ?>
+                            <p class="text-xs text-gray-400 mt-3 text-center">Showing 20 of <?php echo count($all_client_logs); ?> entries</p>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -334,7 +462,7 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                     <div class="bg-white rounded-lg border border-gray-200">
                         <div class="p-5">
                             <div class="flex items-start gap-4">
-                                <div class="bg-primary text-white rounded-full h-12 w-12 flex items-center justify-center font-bold text-lg flex-shrink-0" data-testid="text-client-avatar">
+                                <div class="bg-primary text-white rounded-full h-14 w-14 flex items-center justify-center font-bold text-xl flex-shrink-0" data-testid="text-client-avatar">
                                     <?php echo $initials; ?>
                                 </div>
                                 <div class="flex-1">
@@ -343,56 +471,94 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                                         <a href="admin-client-edit.php?id=<?php echo $client_id; ?>" class="text-gray-400 hover:text-gray-600"><i class="fas fa-pencil-alt text-xs"></i></a>
                                     </div>
                                     <div class="flex items-center gap-2 mb-2 flex-wrap">
-                                        <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-semibold uppercase">Active</span>
+                                        <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-semibold uppercase"><?php echo ucfirst($client['status'] ?? 'active'); ?></span>
                                         <?php foreach ($client_tags as $tag): ?>
-                                        <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-medium"><?php echo htmlspecialchars($tag); ?></span>
+                                        <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-medium group inline-flex items-center gap-1" data-testid="tag-<?php echo htmlspecialchars($tag); ?>">
+                                            <?php echo htmlspecialchars($tag); ?>
+                                            <form method="POST" class="inline"><input type="hidden" name="action" value="remove_tag"><input type="hidden" name="tag" value="<?php echo htmlspecialchars($tag); ?>"><button type="submit" class="text-blue-400 hover:text-red-500 hidden group-hover:inline text-[10px]"><i class="fas fa-times"></i></button></form>
+                                        </span>
                                         <?php endforeach; ?>
                                         <form method="POST" class="inline-flex items-center gap-1">
                                             <input type="hidden" name="action" value="add_tag">
-                                            <input type="text" name="tag" placeholder="+ Add tag" class="w-16 px-1 py-0 border-0 border-b border-dashed border-gray-300 text-[10px] text-gray-500 focus:outline-none focus:border-blue-500 bg-transparent" data-testid="input-add-tag">
+                                            <input type="text" name="tag" placeholder="+ Tag" class="w-14 px-1 py-0 border-0 border-b border-dashed border-gray-300 text-[10px] text-gray-500 focus:outline-none focus:border-blue-500 bg-transparent" data-testid="input-add-tag">
                                         </form>
                                     </div>
+
+                                    <?php if ($parent_client): ?>
+                                    <div class="mb-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
+                                        <p class="text-[10px] text-amber-600 uppercase font-semibold mb-0.5">Sub-Account of</p>
+                                        <a href="admin-client-detail.php?id=<?php echo $parent_client['id']; ?>" class="text-sm font-medium text-amber-800 hover:underline" data-testid="link-parent-account">
+                                            <i class="fas fa-building mr-1 text-xs"></i><?php echo htmlspecialchars($parent_client['company'] ?: $parent_client['name']); ?>
+                                        </a>
+                                    </div>
+                                    <?php endif; ?>
+
                                     <div class="grid grid-cols-2 gap-y-2 text-sm mt-3">
                                         <div>
-                                            <span class="text-xs text-gray-400">ID</span>
+                                            <span class="text-[10px] text-gray-400 uppercase">ID</span>
                                             <p class="font-medium text-gray-700" data-testid="text-client-id"><?php echo $client_id; ?></p>
                                         </div>
                                         <?php if ($client['company']): ?>
                                         <div>
-                                            <span class="text-xs text-gray-400">Company</span>
+                                            <span class="text-[10px] text-gray-400 uppercase">Company</span>
                                             <p class="font-medium text-gray-700"><?php echo htmlspecialchars($client['company']); ?></p>
                                         </div>
                                         <?php endif; ?>
                                     </div>
-                                    <div class="mt-3">
-                                        <span class="text-xs text-gray-400">Email</span>
+                                    <div class="mt-2">
+                                        <span class="text-[10px] text-gray-400 uppercase">Email</span>
                                         <p class="text-sm"><a href="mailto:<?php echo htmlspecialchars($client['email']); ?>" class="text-blue-600 hover:underline" data-testid="text-client-email"><?php echo htmlspecialchars($client['email']); ?></a></p>
                                     </div>
                                     <?php if ($client['phone']): ?>
                                     <div class="mt-2">
-                                        <span class="text-xs text-gray-400">Phone</span>
+                                        <span class="text-[10px] text-gray-400 uppercase">Phone</span>
                                         <p class="text-sm text-gray-700"><?php echo htmlspecialchars($client['phone']); ?></p>
                                     </div>
                                     <?php endif; ?>
                                     <?php if ($client['address']): ?>
                                     <div class="mt-2">
-                                        <span class="text-xs text-gray-400">Address</span>
+                                        <span class="text-[10px] text-gray-400 uppercase">Address</span>
                                         <p class="text-sm text-gray-700"><?php echo htmlspecialchars($client['address']); ?><?php if ($client['city'] || $client['state'] || $client['zip']) echo '<br>' . htmlspecialchars(implode(', ', array_filter([$client['city'], $client['state'], $client['zip']]))); ?></p>
                                     </div>
                                     <?php endif; ?>
                                     <?php if ($client_notes): ?>
                                     <div class="mt-3 pt-3 border-t border-gray-100">
-                                        <span class="text-xs text-gray-400">Notes</span>
+                                        <span class="text-[10px] text-gray-400 uppercase">Notes</span>
                                         <p class="text-sm text-gray-600 mt-0.5"><?php echo nl2br(htmlspecialchars($client_notes)); ?></p>
                                     </div>
                                     <?php endif; ?>
-                                    <div class="mt-3 pt-3 border-t border-gray-100">
-                                        <a href="#" class="text-xs text-blue-600 hover:underline">Show more</a>
+                                    <div class="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
+                                        Created: <?php echo date('M d, Y', strtotime($client['created_at'])); ?>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
+
+                    <?php if (!empty($sub_accounts)): ?>
+                    <div class="bg-white rounded-lg border border-gray-200">
+                        <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wide"><i class="fas fa-users text-primary mr-1"></i>Sub-Accounts</h3>
+                            <span class="text-xs text-gray-400"><?php echo count($sub_accounts); ?> account(s)</span>
+                        </div>
+                        <div class="divide-y divide-gray-100">
+                            <?php foreach ($sub_accounts as $sub): ?>
+                            <a href="admin-client-detail.php?id=<?php echo $sub['id']; ?>" class="flex items-center px-5 py-3 hover:bg-gray-50 transition" data-testid="row-sub-account-<?php echo $sub['id']; ?>">
+                                <div class="flex items-center gap-3 flex-1 min-w-0">
+                                    <div class="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-xs font-bold text-gray-600">
+                                        <?php echo strtoupper(substr($sub['name'], 0, 1)); ?>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($sub['name']); ?></p>
+                                        <p class="text-xs text-gray-500"><?php echo htmlspecialchars($sub['email']); ?></p>
+                                    </div>
+                                </div>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-semibold <?php echo ($sub['status'] ?? 'active') === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'; ?>"><?php echo ucfirst($sub['status'] ?? 'active'); ?></span>
+                            </a>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
 
                     <div class="bg-white rounded-lg border border-gray-200">
                         <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
@@ -406,14 +572,14 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                             <table class="w-full text-left text-sm" data-testid="table-invoices-mini">
                                 <thead>
                                     <tr class="text-[10px] text-gray-400 uppercase">
-                                        <th class="px-4 py-2 font-medium">Invoice Number</th>
+                                        <th class="px-4 py-2 font-medium">Invoice #</th>
                                         <th class="px-4 py-2 font-medium">Total</th>
                                         <th class="px-4 py-2 font-medium">Amount Due</th>
                                         <th class="px-4 py-2 font-medium">Due</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100">
-                                    <?php foreach (array_slice($recent_invoices, 0, 5) as $inv): ?>
+                                    <?php foreach ($recent_invoices as $inv): ?>
                                     <tr class="hover:bg-gray-50" data-testid="row-inv-<?php echo $inv['id']; ?>">
                                         <td class="px-4 py-2">
                                             <a href="admin-invoice-detail.php?id=<?php echo $inv['id']; ?>" class="text-blue-600 hover:underline font-medium"><?php echo htmlspecialchars($inv['invoice_number']); ?></a>
@@ -426,8 +592,8 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                                         <td class="px-4 py-2 text-gray-500 text-xs"><?php
                                             $due = strtotime($inv['due_date'] ?? $inv['created_at']);
                                             $diff = $due - time();
-                                            if ($inv['status'] === 'paid') echo 'Paid';
-                                            elseif ($diff < 0) echo '<span class="text-red-600">Overdue</span>';
+                                            if ($inv['status'] === 'paid') echo '<span class="text-green-600">Paid</span>';
+                                            elseif ($diff < 0) echo '<span class="text-red-600 font-medium">Overdue</span>';
                                             else echo 'due in ' . ceil($diff / 86400) . ' days';
                                         ?></td>
                                     </tr>
@@ -446,8 +612,6 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                         <div class="p-4">
                             <?php
                             $last_inv = $recent_invoices[0];
-                            $created = date('n/j/Y', strtotime($last_inv['created_at']));
-                            $due = date('n/j/Y', strtotime($last_inv['due_date'] ?? $last_inv['created_at']));
                             $period_start = date('n/j/Y', strtotime($last_inv['due_date'] ?? $last_inv['created_at']));
                             $period_end = date('n/j/Y', strtotime('+30 days', strtotime($last_inv['due_date'] ?? $last_inv['created_at'])));
                             ?>
@@ -460,11 +624,11 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                             <div class="grid grid-cols-3 gap-3 text-center">
                                 <div>
                                     <p class="text-[10px] text-gray-400 uppercase">Created</p>
-                                    <p class="text-xs font-medium"><?php echo $created; ?></p>
+                                    <p class="text-xs font-medium"><?php echo date('n/j/Y', strtotime($last_inv['created_at'])); ?></p>
                                 </div>
                                 <div>
                                     <p class="text-[10px] text-gray-400 uppercase">Due</p>
-                                    <p class="text-xs font-medium"><?php echo $due; ?></p>
+                                    <p class="text-xs font-medium"><?php echo date('n/j/Y', strtotime($last_inv['due_date'] ?? $last_inv['created_at'])); ?></p>
                                 </div>
                                 <div>
                                     <p class="text-[10px] text-gray-400 uppercase">Amount</p>
@@ -474,6 +638,23 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                         </div>
                     </div>
                     <?php endif; ?>
+
+                    <div class="bg-white rounded-lg border border-gray-200">
+                        <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Credits</h3>
+                        </div>
+                        <div class="p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-sm text-gray-600">Current Balance</span>
+                                <span class="text-lg font-bold text-blue-600" data-testid="text-credit-inline">$<?php echo number_format($credit_balance, 2); ?></span>
+                            </div>
+                            <form method="POST" class="flex items-center gap-2">
+                                <input type="hidden" name="action" value="update_credit">
+                                <input type="number" name="credit_amount" step="0.01" value="<?php echo number_format($credit_balance, 2, '.', ''); ?>" class="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" data-testid="input-credit-amount">
+                                <button type="submit" class="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700" data-testid="button-update-credit">Update</button>
+                            </form>
+                        </div>
+                    </div>
 
                     <div class="bg-white rounded-lg border border-gray-200">
                         <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
@@ -507,21 +688,14 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                         <?php endif; ?>
                     </div>
 
-                    <?php if ($projects_exist): ?>
+                    <?php if (!empty($projects)): ?>
                     <div class="bg-white rounded-lg border border-gray-200">
                         <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
                             <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Projects</h3>
                             <a href="admin-projects.php" class="text-xs text-blue-600 hover:underline">See All</a>
                         </div>
-                        <?php if (empty($projects)): ?>
-                        <div class="p-6 text-center">
-                            <i class="fas fa-project-diagram text-gray-300 text-2xl mb-2"></i>
-                            <p class="text-sm text-gray-500">No projects yet</p>
-                            <p class="text-xs text-gray-400"><a href="admin-projects.php" class="text-blue-600 hover:underline">Create first project</a></p>
-                        </div>
-                        <?php else: ?>
                         <div class="divide-y divide-gray-100">
-                            <?php foreach ($projects as $pj): ?>
+                            <?php foreach (array_slice($projects, 0, 5) as $pj): ?>
                             <a href="admin-project-detail.php?id=<?php echo $pj['id']; ?>" class="flex items-center px-5 py-3 hover:bg-gray-50 transition" data-testid="row-project-<?php echo $pj['id']; ?>">
                                 <div class="flex-1 min-w-0">
                                     <p class="text-sm font-medium text-gray-900 truncate"><?php echo htmlspecialchars($pj['name'] ?? ''); ?></p>
@@ -543,7 +717,6 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                             </a>
                             <?php endforeach; ?>
                         </div>
-                        <?php endif; ?>
                     </div>
                     <?php endif; ?>
 
@@ -560,6 +733,20 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                 <?php if (empty($all_invoices)): ?>
                 <div class="p-8 text-center text-gray-400"><i class="fas fa-file-invoice text-3xl mb-2"></i><p>No invoices found.</p></div>
                 <?php else: ?>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 border-b border-gray-100">
+                    <div class="p-3 bg-green-50 rounded-lg">
+                        <p class="text-xs text-green-600 font-medium">Total Paid</p>
+                        <p class="text-xl font-bold text-green-700">$<?php echo number_format($total_paid, 2); ?></p>
+                    </div>
+                    <div class="p-3 bg-orange-50 rounded-lg">
+                        <p class="text-xs text-orange-600 font-medium">Outstanding</p>
+                        <p class="text-xl font-bold text-orange-700">$<?php echo number_format($outstanding, 2); ?></p>
+                    </div>
+                    <div class="p-3 bg-blue-50 rounded-lg">
+                        <p class="text-xs text-blue-600 font-medium">Credits</p>
+                        <p class="text-xl font-bold text-blue-700">$<?php echo number_format($credit_balance, 2); ?></p>
+                    </div>
+                </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left" data-testid="table-all-invoices">
                         <thead>
@@ -641,7 +828,6 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                                 in_array($ext, ['doc','docx']) => 'fa-file-word text-blue-500',
                                 in_array($ext, ['xls','xlsx']) => 'fa-file-excel text-green-500',
                                 in_array($ext, ['jpg','jpeg','png','gif']) => 'fa-file-image text-purple-500',
-                                in_array($ext, ['zip','rar']) => 'fa-file-archive text-yellow-600',
                                 default => 'fa-file text-gray-400',
                             };
                             ?>
@@ -709,9 +895,123 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
                 <?php endif; ?>
             </div>
 
+            <?php elseif ($active_tab === 'network'): ?>
+
+            <div class="bg-white rounded-lg border border-gray-200">
+                <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-network-wired text-primary mr-2"></i>Network Devices (<?php echo count($devices); ?>)</h2>
+                    <a href="admin-network.php" class="text-xs text-blue-600 hover:underline">Manage in Network Docs</a>
+                </div>
+                <?php if (empty($devices)): ?>
+                <div class="p-8 text-center text-gray-400">
+                    <i class="fas fa-network-wired text-3xl mb-2"></i>
+                    <p>No network devices assigned.</p>
+                    <p class="text-xs mt-1"><a href="admin-network.php" class="text-blue-600 hover:underline">Add devices in Network Docs</a></p>
+                </div>
+                <?php else: ?>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left" data-testid="table-network-devices">
+                        <thead>
+                            <tr class="bg-gray-50 text-xs text-gray-500 uppercase">
+                                <th class="px-5 py-3 font-medium">Hostname</th>
+                                <th class="px-5 py-3 font-medium">IP Address</th>
+                                <th class="px-5 py-3 font-medium">Type</th>
+                                <th class="px-5 py-3 font-medium">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <?php foreach ($devices as $dev): ?>
+                            <tr class="hover:bg-gray-50" data-testid="row-device-<?php echo $dev['id']; ?>">
+                                <td class="px-5 py-3 text-sm font-medium text-gray-900">
+                                    <i class="fas <?php
+                                        echo match($dev['device_type'] ?? '') {
+                                            'router' => 'fa-route text-blue-500',
+                                            'switch' => 'fa-project-diagram text-green-500',
+                                            'access_point','ap' => 'fa-wifi text-purple-500',
+                                            'firewall' => 'fa-shield-alt text-red-500',
+                                            'server' => 'fa-server text-gray-600',
+                                            default => 'fa-hdd text-gray-400',
+                                        };
+                                    ?> mr-2"></i>
+                                    <?php echo htmlspecialchars($dev['hostname'] ?? '—'); ?>
+                                </td>
+                                <td class="px-5 py-3 text-sm text-gray-600 font-mono"><?php echo htmlspecialchars($dev['ip_address'] ?? '—'); ?></td>
+                                <td class="px-5 py-3 text-sm text-gray-600"><?php echo ucfirst(str_replace('_', ' ', $dev['device_type'] ?? '—')); ?></td>
+                                <td class="px-5 py-3">
+                                    <span class="px-2 py-0.5 rounded text-xs font-medium <?php echo ($dev['status'] ?? 'online') === 'online' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; ?>">
+                                        <?php echo ucfirst($dev['status'] ?? 'online'); ?>
+                                    </span>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <?php elseif ($active_tab === 'projects'): ?>
+
+            <div class="bg-white rounded-lg border border-gray-200">
+                <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-project-diagram text-primary mr-2"></i>Projects (<?php echo count($projects); ?>)</h2>
+                    <a href="admin-projects.php" class="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition"><i class="fas fa-plus mr-1"></i>New Project</a>
+                </div>
+                <?php if (empty($projects)): ?>
+                <div class="p-8 text-center text-gray-400">
+                    <i class="fas fa-project-diagram text-3xl mb-2"></i>
+                    <p>No projects assigned.</p>
+                    <p class="text-xs mt-1"><a href="admin-projects.php" class="text-blue-600 hover:underline">Create a project</a></p>
+                </div>
+                <?php else: ?>
+                <div class="divide-y divide-gray-100">
+                    <?php foreach ($projects as $pj): ?>
+                    <a href="admin-project-detail.php?id=<?php echo $pj['id']; ?>" class="flex items-center px-5 py-4 hover:bg-gray-50 transition" data-testid="row-project-<?php echo $pj['id']; ?>">
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($pj['name'] ?? ''); ?></p>
+                            <p class="text-xs text-gray-500 mt-1"><?php echo htmlspecialchars($pj['description'] ?? ''); ?></p>
+                            <div class="flex items-center gap-3 mt-2">
+                                <div class="flex-1 bg-gray-200 rounded-full h-2 max-w-[200px]">
+                                    <div class="bg-primary rounded-full h-2" style="width: <?php echo intval($pj['progress'] ?? 0); ?>%"></div>
+                                </div>
+                                <span class="text-xs text-gray-500"><?php echo intval($pj['progress'] ?? 0); ?>%</span>
+                                <span class="text-xs text-gray-400">Created <?php echo date('M d, Y', strtotime($pj['created_at'])); ?></span>
+                            </div>
+                        </div>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-semibold ml-3 <?php
+                            echo match($pj['status'] ?? '') {
+                                'active','in_progress' => 'bg-blue-100 text-blue-700',
+                                'completed' => 'bg-green-100 text-green-700',
+                                'on_hold' => 'bg-yellow-100 text-yellow-700',
+                                default => 'bg-gray-100 text-gray-700'
+                            };
+                        ?>"><?php echo ucfirst(str_replace('_', ' ', $pj['status'] ?? 'planning')); ?></span>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+
             <?php endif; ?>
         </div>
     </div>
 </div>
+
+<?php if ($active_tab === 'overview' && $has_location): ?>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var lat = parseFloat(<?php echo json_encode($lat); ?>);
+    var lng = parseFloat(<?php echo json_encode($lng); ?>);
+    if (isNaN(lat) || isNaN(lng)) return;
+    var map = L.map('client-map').setView([lat, lng], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+    var popupText = <?php echo json_encode(htmlspecialchars($client['name']) . '<br>' . htmlspecialchars(implode(', ', array_filter([$client['address'] ?? '', $client['city'] ?? '', $client['state'] ?? ''])))); ?>;
+    L.marker([lat, lng]).addTo(map).bindPopup(popupText);
+    setTimeout(function() { map.invalidateSize(); }, 200);
+});
+</script>
+<?php endif; ?>
 </body>
 </html>

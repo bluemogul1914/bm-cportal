@@ -39,6 +39,7 @@ export type User = typeof users.$inferSelect;
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id),
+  parentClientId: integer("parent_client_id"),
   name: varchar("name", { length: 255 }).notNull(),
   email: varchar("email", { length: 255 }).notNull().unique(),
   phone: varchar("phone", { length: 50 }),
@@ -47,6 +48,10 @@ export const clients = pgTable("clients", {
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 50 }),
   zip: varchar("zip", { length: 20 }),
+  notes: text("notes"),
+  latitude: varchar("latitude", { length: 20 }),
+  longitude: varchar("longitude", { length: 20 }),
+  creditBalance: decimal("credit_balance", { precision: 10, scale: 2 }).default("0"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
