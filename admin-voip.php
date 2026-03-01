@@ -34,7 +34,7 @@ function voip_api_call($action, $extra_params = []) {
     $params = array_merge([
         'api_username' => VOIP_API_USERNAME,
         'api_password' => !empty(VOIP_API_PASSWORD) ? VOIP_API_PASSWORD : VOIP_API_TOKEN,
-        'action' => $action,
+        'method' => $action,
     ], $extra_params);
     $url = VOIP_API_URL . '?' . http_build_query($params);
     $ctx = stream_context_create(['http' => ['timeout' => 10, 'ignore_errors' => true]]);
