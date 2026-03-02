@@ -267,6 +267,95 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
         }
     }
 
+    if ($action === 'sync_invoices') {
+        $result = itflow_api_request('invoices', 'read');
+        $contacts_result = itflow_api_request('contacts', 'read');
+
+        if ($result['success'] && isset($result['data'])) {
+            $invoices_data = $result['data']['data'] ?? [];
+            if (!is_array($invoices_data)) $invoices_data = [];
+
+            $contact_email_by_client = [];
+            if ($contacts_result['success'] && isset($contacts_result['data']['data'])) {
+                foreach ($contacts_result['data']['data'] as $ct) {
+                    $cid = $ct['contact_client_id'] ?? '';
+                    if ($cid && !isset($contact_email_by_client[$cid]) && !empty($ct['contact_email'])) {
+                        $contact_email_by_client[$cid] = $ct['contact_email'];
+                    }
+                }
+            }
+
+            $synced = 0;
+            $skipped = 0;
+            $errors = 0;
+
+            foreach ($invoices_data as $itf_inv) {
+                $inv_number = ($itf_inv['invoice_prefix'] ?? 'INV-') . ($itf_inv['invoice_number'] ?? '');
+                $amount = floatval($itf_inv['invoice_amount'] ?? 0);
+                $status_raw = $itf_inv['invoice_status'] ?? 'Draft';
+                $due_date = $itf_inv['invoice_due'] ?? null;
+                $inv_date = $itf_inv['invoice_date'] ?? null;
+                $itf_client_id = $itf_inv['invoice_client_id'] ?? '';
+
+                if (empty($inv_number)) { $skipped++; continue; }
+                if ($amount <= 0) { $skipped++; continue; }
+
+                $status_map = [
+                    'Draft' => 'draft',
+                    'Sent' => 'sent',
+                    'Viewed' => 'sent',
+                    'Paid' => 'paid',
+                    'Partial' => 'sent',
+                    'Overdue' => 'overdue',
+                    'Cancelled' => 'cancelled',
+                ];
+                $status = $status_map[$status_raw] ?? 'sent';
+
+                $paid_date = null;
+                if ($status === 'paid') {
+                    $paid_date = $itf_inv['invoice_updated_at'] ?? $inv_date;
+                    if ($paid_date) $paid_date = date('Y-m-d', strtotime($paid_date));
+                }
+
+                try {
+                    $client_id = null;
+                    $client_email = $contact_email_by_client[$itf_client_id] ?? '';
+                    if ($client_email) {
+                        $cl = $db->prepare("SELECT id FROM clients WHERE email = ?");
+                        $cl->execute([$client_email]);
+                        $client_row = $cl->fetch();
+                        if ($client_row) $client_id = $client_row['id'];
+                    }
+
+                    if (!$client_id) { $skipped++; continue; }
+
+                    $dup = $db->prepare("SELECT id FROM invoices WHERE invoice_number = ? AND client_id = ?");
+                    $dup->execute([$inv_number, $client_id]);
+                    if ($dup->fetch()) {
+                        $db->prepare("UPDATE invoices SET amount = ?, status = ?, due_date = ?, paid_date = ? WHERE invoice_number = ? AND client_id = ?")
+                           ->execute([$amount, $status, $due_date, $paid_date, $inv_number, $client_id]);
+                        $synced++;
+                        continue;
+                    }
+
+                    $db->prepare("INSERT INTO invoices (client_id, invoice_number, amount, status, due_date, paid_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                       ->execute([$client_id, $inv_number, $amount, $status, $due_date, $paid_date, $inv_date ?? date('Y-m-d')]);
+                    $synced++;
+                } catch (Exception $e) {
+                    $errors++;
+                }
+            }
+
+            $total = count($invoices_data);
+            $sync_results = ['type' => 'invoices', 'total' => $total, 'synced' => $synced, 'skipped' => $skipped, 'errors' => $errors];
+            log_sync_action($db, 'itflow_sync_invoices', 'invoice', 'completed', "Synced $synced/$total invoices ($skipped skipped, $errors errors)", $synced);
+            $success_msg = "Invoice sync complete: $synced synced, $skipped skipped, $errors errors out of $total total.";
+        } else {
+            $error_msg = 'Failed to fetch invoices from ITFlow: ' . ($result['error'] ?? 'HTTP ' . $result['http_code']);
+            log_sync_action($db, 'itflow_sync_invoices', 'invoice', 'failed', $error_msg);
+        }
+    }
+
     if ($action === 'sync_automation') {
         $overview = [];
         $resources_to_check = [
@@ -506,6 +595,12 @@ $device_count = $db->query("SELECT COUNT(*) FROM network_devices")->fetchColumn(
                             <input type="hidden" name="action" value="sync_assets">
                             <button type="submit" <?php echo !$itflow_connected ? 'disabled' : ''; ?> class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed" data-testid="button-sync-assets" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Syncing...'; this.disabled=true; this.form.submit();">
                                 <i class="fas fa-laptop"></i> Sync Assets
+                            </button>
+                        </form>
+                        <form method="POST" class="inline" data-testid="form-sync-invoices">
+                            <input type="hidden" name="action" value="sync_invoices">
+                            <button type="submit" <?php echo !$itflow_connected ? 'disabled' : ''; ?> class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed" data-testid="button-sync-invoices" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Syncing...'; this.disabled=true; this.form.submit();">
+                                <i class="fas fa-file-invoice-dollar"></i> Sync Invoices
                             </button>
                         </form>
                         <form method="POST" class="inline" data-testid="form-sync-automation">
