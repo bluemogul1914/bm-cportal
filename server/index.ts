@@ -331,6 +331,12 @@ function handleLogin(req: Request, res: Response) {
   }
   const postData = formParts.join("&");
 
+  console.log("[LOGIN DEBUG] req.body keys:", Object.keys(req.body || {}));
+  console.log("[LOGIN DEBUG] email from body:", req.body?.email);
+  console.log("[LOGIN DEBUG] password length:", req.body?.password?.length);
+  console.log("[LOGIN DEBUG] csrf_token present:", !!req.body?.csrf_token);
+  console.log("[LOGIN DEBUG] session csrfToken present:", !!(req.session as any)?.csrfToken);
+
   const csrfToken = (req.session as any)?.csrfToken || '';
   const csrfInject = csrfToken ? `\n\$_SESSION['csrf_token'] = '${csrfToken.replace(/'/g, "\\'")}';` : '';
 
@@ -341,6 +347,7 @@ register_shutdown_function(function() { echo "\\n__CSRF_TOKEN__:" . (\$_SESSION[
 $_SERVER['REQUEST_METHOD'] = 'POST';
 parse_str('${postData.replace(/'/g, "\\'")}', $_POST);
 $_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
+$_SERVER['REMOTE_ADDR'] = '${(req.ip || req.headers['x-forwarded-for'] || '0.0.0.0').toString().replace(/'/g, "")}';
 require '${filePath.replace(/'/g, "\\'")}';
 `;
 
@@ -361,9 +368,13 @@ require '${filePath.replace(/'/g, "\\'")}';
           console.error("PHP login handler error:", stderr || error.message);
           return res.status(500).json({ success: false, message: "Server error" });
         }
+        console.log("[LOGIN DEBUG] PHP raw stdout length:", stdout.length);
+        if (stderr) console.log("[LOGIN DEBUG] PHP stderr:", stderr);
         stdout = extractCsrfToken(stdout, req);
+        console.log("[LOGIN DEBUG] PHP cleaned stdout:", stdout.substring(0, 500));
         try {
           const json = JSON.parse(stdout);
+          console.log("[LOGIN DEBUG] Parsed JSON success:", json.success, "message:", json.message);
           if (json.success && json.user) {
             (req.session as any).portalUser = {
               user_id: json.user.id,

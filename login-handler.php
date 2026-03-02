@@ -25,6 +25,8 @@ try {
     $password = isset($_POST['password']) ? $_POST['password'] : '';
     $remember = isset($_POST['remember']) && $_POST['remember'] === '1';
     
+    error_log("[LOGIN DEBUG PHP] email='{$email}' password_length=" . strlen($password) . " POST_keys=" . implode(',', array_keys($_POST)));
+    
     if (empty($email) || empty($password)) {
         echo json_encode([
             'success' => false,
@@ -54,6 +56,8 @@ try {
     $stmt->execute(['email' => $email]);
     $user = $stmt->fetch();
     
+    error_log("[LOGIN DEBUG PHP] user_found=" . ($user ? 'YES' : 'NO') . " hash_length=" . strlen($user['password'] ?? ''));
+    
     if (!$user) {
         logMessage('WARNING', 'Login attempt for non-existent user', ['email' => $email]);
         record_failed_login($email, $ip);
@@ -65,7 +69,10 @@ try {
         exit;
     }
     
-    if (!password_verify($password, $user['password'])) {
+    $verify_result = password_verify($password, $user['password']);
+    error_log("[LOGIN DEBUG PHP] password_verify=" . ($verify_result ? 'YES' : 'NO') . " hash_start=" . substr($user['password'], 0, 10));
+    
+    if (!$verify_result) {
         logMessage('WARNING', 'Failed login attempt - wrong password', ['email' => $email]);
         record_failed_login($email, $ip);
         
