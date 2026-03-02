@@ -117,7 +117,7 @@
                         >
                         <span class="ml-2 text-gray-700 text-sm">Remember me</span>
                     </label>
-                    <a href="forgot-password.php" class="text-sm text-blue-mogul-primary hover:text-blue-mogul-accent transition-colors">
+                    <a href="/portal/forgot-password.php" class="text-sm text-blue-mogul-primary hover:text-blue-mogul-accent transition-colors">
                         Forgot password?
                     </a>
                 </div>
