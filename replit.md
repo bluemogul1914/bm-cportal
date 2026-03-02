@@ -48,11 +48,11 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-reports.php` - Revenue trends, charts, analytics
 - `admin-settings.php` - Company info, API keys, SMTP, system info
 - `admin-itflow.php` - ITFlow PSA integration dashboard (connection status, sync capabilities)
-- `admin-uisp.php` - UISP network management integration (devices, service plans)
+- `admin-uisp.php` - UISP network management integration (connection status, device stats with online/offline/warning counts, recent devices table, device type breakdown, capabilities, setup instructions)
 - `admin-voip.php` - VoIP.ms phone integration (CDR lookup, DID management)
-- `admin-nextcloud.php` - Nextcloud file sharing integration (document sync)
-- `admin-stripe.php` - Stripe payment integration (billing overview, recent payments)
-- `admin-audit.php` - Activity audit trail (filterable log of all user actions)
+- `admin-nextcloud.php` - Nextcloud file sharing integration (connection status, document stats, storage usage, recent documents table, document type breakdown, capabilities, setup instructions)
+- `admin-stripe.php` - Stripe payment integration (connection status for keys + webhook, billing summary with revenue/paid/unpaid stats, recent payments table, recent invoices table, monthly revenue chart, webhook config, payment methods)
+- `admin-audit.php` - Activity audit trail (summary stat cards, action breakdown chart, recently active users, filterable log table with color-coded action badges, search, date range, pagination 25/page)
 - `admin-messages.php` - Messaging center (list sent/draft messages, filters by category/status)
 - `admin-message-compose.php` - Compose message (rich editor, categories, recipient selection, placeholders, template load/save, preview, draft save)
 - `admin-message-templates.php` - Message templates CRUD (create/edit/delete reusable templates)
