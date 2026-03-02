@@ -814,6 +814,10 @@ app.get("/portal/logout.php", (req, res) => {
     return res.status(status).json({ message });
   });
 
+  app.get("/", (_req, res) => {
+    res.redirect(302, "/portal");
+  });
+
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
