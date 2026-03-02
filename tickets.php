@@ -17,6 +17,8 @@ $error_msg = '';
 $pdo = getDB();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_ticket') {
+    require_csrf();
+    
     $subject = trim($_POST['subject'] ?? '');
     $description = trim($_POST['description'] ?? '');
     $priority = $_POST['priority'] ?? 'medium';
@@ -230,6 +232,7 @@ try {
             </button>
         </div>
         <form method="POST" action="tickets.php" class="p-6 space-y-4">
+                            <?= csrf_field() ?>
             <input type="hidden" name="action" value="create_ticket">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Subject *</label>

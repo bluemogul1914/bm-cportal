@@ -15,6 +15,8 @@ if (!$project_id) {
 $pdo = getDB();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'update_project') {
@@ -204,6 +206,7 @@ $task_status_icons = ['todo' => 'fa-circle text-gray-400', 'in_progress' => 'fa-
                                                 </div>
                                                 <div class="flex items-center gap-2">
                                                     <form method="POST" class="inline" data-testid="form-task-status-<?php echo $task['id']; ?>">
+                                                        <?= csrf_field() ?>
                                                         <input type="hidden" name="action" value="update_task_status">
                                                         <input type="hidden" name="task_id" value="<?php echo $task['id']; ?>">
                                                         <select name="task_status" onchange="this.form.submit()" class="text-xs border border-gray-300 rounded px-2 py-1" data-testid="select-task-status-<?php echo $task['id']; ?>">
@@ -213,6 +216,7 @@ $task_status_icons = ['todo' => 'fa-circle text-gray-400', 'in_progress' => 'fa-
                                                         </select>
                                                     </form>
                                                     <form method="POST" class="inline" onsubmit="return confirm('Delete this task?')">
+                            <?= csrf_field() ?>
                                                         <input type="hidden" name="action" value="delete_task">
                                                         <input type="hidden" name="task_id" value="<?php echo $task['id']; ?>">
                                                         <button type="submit" class="text-red-400 hover:text-red-600 text-xs" data-testid="button-delete-task-<?php echo $task['id']; ?>"><i class="fas fa-trash"></i></button>
@@ -232,6 +236,7 @@ $task_status_icons = ['todo' => 'fa-circle text-gray-400', 'in_progress' => 'fa-
                         </div>
                         <div class="p-5">
                             <form method="POST" class="mb-4" data-testid="form-add-note">
+                            <?= csrf_field() ?>
                                 <input type="hidden" name="action" value="add_note">
                                 <textarea name="note" required rows="2" placeholder="Add a note..." class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 mb-2" data-testid="input-note"></textarea>
                                 <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md text-sm font-medium" data-testid="button-add-note"><i class="fas fa-plus mr-1"></i>Add Note</button>
@@ -260,6 +265,7 @@ $task_status_icons = ['todo' => 'fa-circle text-gray-400', 'in_progress' => 'fa-
                             <h2 class="text-sm font-semibold text-gray-900">Project Details</h2>
                         </div>
                         <form method="POST" class="p-5 space-y-3" data-testid="form-update-project">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="update_project">
                             <div>
                                 <label class="block text-xs font-medium text-gray-500 mb-1">Name</label>
@@ -361,6 +367,7 @@ $task_status_icons = ['todo' => 'fa-circle text-gray-400', 'in_progress' => 'fa-
             <button onclick="document.getElementById('taskModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
         </div>
         <form method="POST" class="p-6 space-y-4" data-testid="form-add-task">
+                            <?= csrf_field() ?>
             <input type="hidden" name="action" value="add_task">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Task Title *</label>

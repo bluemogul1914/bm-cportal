@@ -17,6 +17,8 @@ $error_msg = '';
 $pdo = getDB();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_invoice') {
+    require_csrf();
+    
     $client_id = intval($_POST['client_id'] ?? 0);
     $amount = floatval($_POST['amount'] ?? 0);
     $due_date = $_POST['due_date'] ?? '';
@@ -104,6 +106,7 @@ try {
                     <h2 class="text-lg font-semibold text-gray-900">Invoice Details</h2>
                 </div>
                 <form method="POST" action="admin-invoice-add.php" class="p-6 space-y-5">
+                            <?= csrf_field() ?>
                     <input type="hidden" name="action" value="create_invoice">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Client *</label>

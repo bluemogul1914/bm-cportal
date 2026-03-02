@@ -145,10 +145,16 @@ An online PHP code editor and execution environment built with React + Express, 
 
 ## Security
 
+- **CSRF Protection**: All POST forms include `csrf_field()` hidden inputs; validated by `require_csrf()` which dies on failure; tokens persist across Express-PHP bridge via `buildSessionPhpCode()` and `extractCsrfToken()`
+- **Login Rate Limiting**: `check_rate_limit()` blocks after 5 failed attempts in 15 minutes; failed logins logged via `record_failed_login()`
+- **Session Regeneration**: `session_regenerate_id(true)` called after successful login
+- **Security Headers**: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy, Content-Security-Policy (all set via `set_security_headers()` in config.php)
+- **Root Redirect**: `/` redirects to `/portal` (login page)
 - PHP execution uses `disable_functions` to block shell/file/network operations
 - Rate limiting: 20 requests per minute per IP
 - 10-second execution timeout and 64MB memory limit
 - All API keys/secrets stored via Replit Secrets
+- Production mode: `display_errors = 0` in config.php
 
 ## Integrations
 

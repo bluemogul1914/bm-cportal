@@ -11,6 +11,8 @@ require_once 'includes/email.php';
 
 $test_email_result = null;
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['section'] ?? '') === 'test_email') {
+    require_csrf();
+    
     $test_to = trim($_POST['test_email_to'] ?? '');
     if (!empty($test_to)) {
         $test_email_result = send_test_email($test_to);
@@ -18,6 +20,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['section'] ?? '') =
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
     $section = $_POST['section'] ?? '';
 
     try {
@@ -159,6 +162,7 @@ function getSetting($key, $default = '') {
                     <div class="bg-white rounded-lg border border-gray-200 p-6">
                         <h2 class="text-lg font-semibold text-gray-900 mb-6">Company Information</h2>
                         <form method="POST">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="section" value="company">
 
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -191,6 +195,7 @@ function getSetting($key, $default = '') {
                     <div class="bg-white rounded-lg border border-gray-200 p-6 mb-6">
                         <h2 class="text-lg font-semibold text-gray-900 mb-6">API Keys & Credentials</h2>
                         <form method="POST">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="section" value="api">
 
                             <div class="mb-8">
@@ -258,6 +263,7 @@ function getSetting($key, $default = '') {
                     <div class="bg-white rounded-lg border border-gray-200 p-6">
                         <h2 class="text-lg font-semibold text-gray-900 mb-6">Email Configuration</h2>
                         <form method="POST">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="section" value="email">
 
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -318,6 +324,7 @@ function getSetting($key, $default = '') {
                                 <?php endif; ?>
                             <?php endif; ?>
                             <form method="POST" class="flex items-end gap-4">
+                            <?= csrf_field() ?>
                                 <input type="hidden" name="section" value="test_email">
                                 <div class="flex-1">
                                     <label class="block text-sm font-medium text-gray-700 mb-2">Recipient Email</label>

@@ -1,3 +1,4 @@
+<?php require_once __DIR__ . '/config.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -60,6 +61,7 @@
 
             <!-- Login Form -->
             <form id="login-form" method="POST" action="/portal/login-handler.php">
+                            <?= csrf_field() ?>
                 
                 <!-- Email Field -->
                 <div class="mb-6">
@@ -173,19 +175,6 @@
                 </a>
             </div>
 
-        </div>
-
-        <!-- Demo Credentials (Remove in production) -->
-        <div class="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4 mb-6">
-            <div class="flex items-start">
-                <i class="fas fa-info-circle text-yellow-600 mt-1 mr-3"></i>
-                <div>
-                    <p class="text-sm font-semibold text-yellow-800 mb-1">Demo Login Credentials:</p>
-                    <p class="text-xs text-yellow-700">Email: <code class="bg-yellow-100 px-2 py-1 rounded">admin@bluemogul.biz</code></p>
-                    <p class="text-xs text-yellow-700">Password: <code class="bg-yellow-100 px-2 py-1 rounded">admin123</code></p>
-                    <p class="text-xs text-yellow-600 mt-2">&#9888; Change password after first login!</p>
-                </div>
-            </div>
         </div>
 
         <!-- Contact Info -->

@@ -15,6 +15,8 @@ $error_msg = '';
 $pdo = getDB();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'update_profile') {
@@ -149,6 +151,7 @@ try {
                     <h2 class="text-lg font-semibold text-gray-900">Personal Information</h2>
                 </div>
                 <form method="POST" action="profile.php" class="p-6 space-y-4">
+                            <?= csrf_field() ?>
                     <input type="hidden" name="action" value="update_profile">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -199,6 +202,7 @@ try {
                     <h2 class="text-lg font-semibold text-gray-900">Change Password</h2>
                 </div>
                 <form method="POST" action="profile.php" class="p-6 space-y-4">
+                            <?= csrf_field() ?>
                     <input type="hidden" name="action" value="change_password">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Current Password</label>

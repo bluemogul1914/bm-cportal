@@ -64,6 +64,8 @@ function voip_api_call($action, $extra_params = []) {
 
 $test_connection_result = null;
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'test_connection') {
+    require_csrf();
+    
     $active_tab = 'config';
     $tc_user = VOIP_API_USERNAME;
     $tc_pass = !empty(VOIP_API_PASSWORD) ? VOIP_API_PASSWORD : VOIP_API_TOKEN;
@@ -85,6 +87,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') ==
 }
 
 if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
     $action = $_POST['action'] ?? '';
 
     if ($action === 'update_did') {
@@ -742,6 +745,7 @@ $tabs = [
                         <p class="text-xs text-gray-500 mt-1"><?php echo htmlspecialchars($ed['description'] ?? 'No description'); ?></p>
                     </div>
                     <form method="POST" class="p-6">
+                            <?= csrf_field() ?>
                         <input type="hidden" name="action" value="update_did">
                         <input type="hidden" name="did" value="<?php echo htmlspecialchars($ed['did']); ?>">
 
@@ -996,6 +1000,7 @@ $tabs = [
                     <h3 class="text-sm font-semibold text-red-700 mb-3"><i class="fas fa-exclamation-triangle mr-1"></i>Cancel DID</h3>
                     <p class="text-xs text-gray-600 mb-3">Cancelling this DID will release the number at the end of the current billing period.</p>
                     <form method="POST" class="flex items-end gap-3">
+                            <?= csrf_field() ?>
                         <input type="hidden" name="action" value="cancel_did">
                         <input type="hidden" name="did" value="<?php echo htmlspecialchars($ed['did']); ?>">
                         <div class="flex-1">
@@ -1129,6 +1134,7 @@ $tabs = [
 
                     <div id="create-sa-form" class="hidden border-b border-gray-100 bg-purple-50 p-6">
                         <form method="POST">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="create_subaccount">
                             <h3 class="text-sm font-semibold text-gray-900 mb-3"><i class="fas fa-user-plus text-purple-500 mr-1"></i>New Sub-Account</h3>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
@@ -1237,7 +1243,8 @@ $tabs = [
                                         </td>
                                         <td class="px-4 py-3 text-center">
                                             <button onclick="openEditSa('<?php echo htmlspecialchars($sa_id); ?>', '<?php echo htmlspecialchars(addslashes($sa_username)); ?>', '<?php echo htmlspecialchars(addslashes($sa['description'] ?? '')); ?>', '<?php echo htmlspecialchars(addslashes($sa['callerid_number'] ?? '')); ?>', '<?php echo ($sa['lock_international'] ?? '') === 'yes' ? '1' : '0'; ?>')" class="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2" data-testid="button-edit-sa-<?php echo htmlspecialchars($sa_id); ?>"><i class="fas fa-edit mr-1"></i>Edit</button>
-                                            <form method="POST" class="inline" onsubmit="return confirm('Delete sub-account <?php echo htmlspecialchars(addslashes($sa_username)); ?>? This cannot be undone.');">
+                                            <form method="POST" class="inline" onsubmit="return confirm('Delete sub-account <?php echo htmlspecialchars(addslashes($sa_username)); ?>
+                            <?= csrf_field() ?>? This cannot be undone.');">
                                                 <input type="hidden" name="action" value="delete_subaccount">
                                                 <input type="hidden" name="sa_id" value="<?php echo htmlspecialchars($sa_id); ?>">
                                                 <button type="submit" class="text-red-500 hover:text-red-700 text-xs font-medium" data-testid="button-delete-sa-<?php echo htmlspecialchars($sa_id); ?>"><i class="fas fa-trash-alt mr-1"></i>Delete</button>
@@ -1258,6 +1265,7 @@ $tabs = [
                             <button onclick="closeEditSa()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
                         </div>
                         <form method="POST" class="p-6">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="update_subaccount">
                             <input type="hidden" name="sa_id" id="edit-sa-id">
                             <div class="mb-4">
@@ -1447,6 +1455,7 @@ $tabs = [
                     <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
                         <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-plug text-green-500 mr-2"></i>Test Connection</h2>
                         <form method="POST">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="test_connection">
                             <button type="submit" class="px-4 py-2 bg-primary hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" data-testid="button-test-connection"><i class="fas fa-bolt mr-1"></i>Test Connection</button>
                         </form>

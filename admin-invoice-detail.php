@@ -23,6 +23,8 @@ $error_msg = '';
 $pdo = getDB();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
+    require_csrf();
+    
     if ($_POST['action'] === 'mark_paid') {
         try {
             $stmt = $pdo->prepare("UPDATE invoices SET status = 'paid', paid_date = CURRENT_DATE WHERE id = ?");
@@ -117,6 +119,7 @@ try {
                 <div class="flex items-center gap-2">
                     <?php if ($invoice['status'] === 'unpaid'): ?>
                         <form method="POST" action="admin-invoice-detail.php?id=<?php echo $invoice_id; ?>" class="inline">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="mark_paid">
                             <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md font-medium text-sm transition" data-testid="button-mark-paid">
                                 <i class="fas fa-check mr-2"></i>Mark as Paid
@@ -124,6 +127,7 @@ try {
                         </form>
                     <?php else: ?>
                         <form method="POST" action="admin-invoice-detail.php?id=<?php echo $invoice_id; ?>" class="inline">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="mark_unpaid">
                             <button type="submit" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md font-medium text-sm transition" data-testid="button-mark-unpaid">
                                 <i class="fas fa-undo mr-2"></i>Mark as Unpaid

@@ -67,6 +67,8 @@ function log_sync_action($db, $action, $entity_type, $status, $details, $count =
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'test_connection') {
@@ -580,36 +582,42 @@ $device_count = $db->query("SELECT COUNT(*) FROM network_devices")->fetchColumn(
                     <?php endif; ?>
                     <div class="flex flex-wrap gap-3">
                         <form method="POST" class="inline" data-testid="form-sync-clients">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="sync_clients">
                             <button type="submit" <?php echo !$itflow_connected ? 'disabled' : ''; ?> class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed" data-testid="button-sync-clients" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Syncing...'; this.disabled=true; this.form.submit();">
                                 <i class="fas fa-users"></i> Sync Clients
                             </button>
                         </form>
                         <form method="POST" class="inline" data-testid="form-sync-tickets">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="sync_tickets">
                             <button type="submit" <?php echo !$itflow_connected ? 'disabled' : ''; ?> class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed" data-testid="button-sync-tickets" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Syncing...'; this.disabled=true; this.form.submit();">
                                 <i class="fas fa-ticket-alt"></i> Sync Tickets
                             </button>
                         </form>
                         <form method="POST" class="inline" data-testid="form-sync-assets">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="sync_assets">
                             <button type="submit" <?php echo !$itflow_connected ? 'disabled' : ''; ?> class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed" data-testid="button-sync-assets" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Syncing...'; this.disabled=true; this.form.submit();">
                                 <i class="fas fa-laptop"></i> Sync Assets
                             </button>
                         </form>
                         <form method="POST" class="inline" data-testid="form-sync-invoices">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="sync_invoices">
                             <button type="submit" <?php echo !$itflow_connected ? 'disabled' : ''; ?> class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed" data-testid="button-sync-invoices" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Syncing...'; this.disabled=true; this.form.submit();">
                                 <i class="fas fa-file-invoice-dollar"></i> Sync Invoices
                             </button>
                         </form>
                         <form method="POST" class="inline" data-testid="form-sync-automation">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="sync_automation">
                             <button type="submit" <?php echo !$itflow_connected ? 'disabled' : ''; ?> class="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed" data-testid="button-sync-automation" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Loading...'; this.disabled=true; this.form.submit();">
                                 <i class="fas fa-database"></i> Data Overview
                             </button>
                         </form>
                         <form method="POST" class="inline" data-testid="form-test-connection">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="test_connection">
                             <button type="submit" <?php echo !$itflow_connected ? 'disabled' : ''; ?> class="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition disabled:opacity-50 disabled:cursor-not-allowed" data-testid="button-test-connection" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Testing...'; this.disabled=true; this.form.submit();">
                                 <i class="fas fa-plug"></i> Test Connection

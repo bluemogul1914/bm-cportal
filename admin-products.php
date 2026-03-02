@@ -13,6 +13,8 @@ $is_admin = true;
 $pdo = getDB();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'create_product') {
@@ -262,6 +264,7 @@ if ($edit_id) {
                                                     <i class="fas fa-edit"></i>
                                                 </a>
                                                 <form method="POST" style="display:inline">
+                            <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="toggle_active">
                                                     <input type="hidden" name="id" value="<?php echo $product['id']; ?>">
                                                     <button type="submit" class="text-gray-400 hover:text-gray-600 text-sm" title="<?php echo $product['active'] ? 'Deactivate' : 'Activate'; ?>" data-testid="button-toggle-<?php echo $product['id']; ?>">
@@ -288,6 +291,7 @@ if ($edit_id) {
             <button onclick="document.getElementById('add-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
         </div>
         <form method="POST" class="p-6 space-y-4">
+                            <?= csrf_field() ?>
             <input type="hidden" name="action" value="create_product">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Name *</label>
@@ -353,6 +357,7 @@ if ($edit_id) {
             <a href="admin-products.php" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></a>
         </div>
         <form method="POST" class="p-6 space-y-4">
+                            <?= csrf_field() ?>
             <input type="hidden" name="action" value="update_product">
             <input type="hidden" name="id" value="<?php echo $edit_product['id']; ?>">
             <div>

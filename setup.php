@@ -29,6 +29,7 @@ require_once 'config.php';
 <?php
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['setup'])) {
+    require_csrf();
     echo '<div class="space-y-4">';
     
     try {
@@ -164,6 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['setup'])) {
     </div>
     
     <form method="POST" class="text-center">
+                            <?= csrf_field() ?>
         <button type="submit" name="setup" value="1" 
                 class="bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition shadow-lg">
             Start Database Setup

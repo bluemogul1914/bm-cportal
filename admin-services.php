@@ -13,6 +13,8 @@ $is_admin = true;
 $pdo = getDB();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'create_subscription') {
@@ -248,12 +250,14 @@ $success = $_GET['success'] ?? '';
                                             <div class="flex items-center justify-end gap-1">
                                                 <?php if ($sub['status'] === 'active'): ?>
                                                     <form method="POST" style="display:inline">
+                            <?= csrf_field() ?>
                                                         <input type="hidden" name="action" value="update_status">
                                                         <input type="hidden" name="id" value="<?php echo $sub['id']; ?>">
                                                         <input type="hidden" name="status" value="suspended">
                                                         <button type="submit" class="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 hover:bg-yellow-200 rounded transition" data-testid="button-suspend-<?php echo $sub['id']; ?>">Suspend</button>
                                                     </form>
                                                     <form method="POST" style="display:inline">
+                            <?= csrf_field() ?>
                                                         <input type="hidden" name="action" value="update_status">
                                                         <input type="hidden" name="id" value="<?php echo $sub['id']; ?>">
                                                         <input type="hidden" name="status" value="cancelled">
@@ -261,6 +265,7 @@ $success = $_GET['success'] ?? '';
                                                     </form>
                                                 <?php elseif ($sub['status'] === 'suspended'): ?>
                                                     <form method="POST" style="display:inline">
+                            <?= csrf_field() ?>
                                                         <input type="hidden" name="action" value="update_status">
                                                         <input type="hidden" name="id" value="<?php echo $sub['id']; ?>">
                                                         <input type="hidden" name="status" value="active">
@@ -268,6 +273,7 @@ $success = $_GET['success'] ?? '';
                                                     </form>
                                                 <?php elseif ($sub['status'] === 'cancelled'): ?>
                                                     <form method="POST" style="display:inline">
+                            <?= csrf_field() ?>
                                                         <input type="hidden" name="action" value="update_status">
                                                         <input type="hidden" name="id" value="<?php echo $sub['id']; ?>">
                                                         <input type="hidden" name="status" value="active">
@@ -294,6 +300,7 @@ $success = $_GET['success'] ?? '';
             <button onclick="document.getElementById('add-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
         </div>
         <form method="POST" class="p-6 space-y-4">
+                            <?= csrf_field() ?>
             <input type="hidden" name="action" value="create_subscription">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Client *</label>

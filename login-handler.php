@@ -14,6 +14,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Invalid security token. Please refresh the page and try again.']);
+    exit;
+}
+
 try {
     $email = isset($_POST['email']) ? sanitize($_POST['email']) : '';
     $password = isset($_POST['password']) ? $_POST['password'] : '';
@@ -23,6 +29,15 @@ try {
         echo json_encode([
             'success' => false,
             'message' => 'Please enter both email and password'
+        ]);
+        exit;
+    }
+    
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    if (!check_rate_limit($email)) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Too many login attempts. Please try again in 15 minutes.'
         ]);
         exit;
     }
@@ -41,6 +56,7 @@ try {
     
     if (!$user) {
         logMessage('WARNING', 'Login attempt for non-existent user', ['email' => $email]);
+        record_failed_login($email, $ip);
         
         echo json_encode([
             'success' => false,
@@ -51,6 +67,7 @@ try {
     
     if (!password_verify($password, $user['password'])) {
         logMessage('WARNING', 'Failed login attempt - wrong password', ['email' => $email]);
+        record_failed_login($email, $ip);
         
         echo json_encode([
             'success' => false,

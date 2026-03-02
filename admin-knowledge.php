@@ -14,6 +14,8 @@ $success_msg = '';
 $error_msg = '';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'create_article') {
@@ -152,6 +154,7 @@ foreach ($articles as $a) {
                     <a href="admin-knowledge.php" class="text-sm text-gray-500 hover:text-gray-700"><i class="fas fa-times mr-1"></i>Cancel</a>
                 </div>
                 <form method="POST" class="p-6">
+                            <?= csrf_field() ?>
                     <input type="hidden" name="action" value="<?php echo $edit_article ? 'update_article' : 'create_article'; ?>">
                     <?php if ($edit_article): ?><input type="hidden" name="article_id" value="<?php echo $edit_article['id']; ?>"><?php endif; ?>
 
@@ -260,6 +263,7 @@ foreach ($articles as $a) {
                             <div class="flex items-center gap-2">
                                 <a href="?edit=<?php echo $article['id']; ?>" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition"><i class="fas fa-edit mr-1"></i>Edit</a>
                                 <form method="POST" class="inline">
+                            <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="toggle_publish">
                                     <input type="hidden" name="article_id" value="<?php echo $article['id']; ?>">
                                     <button type="submit" class="px-3 py-1.5 <?php echo $article['is_published'] ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-700' : 'bg-green-100 hover:bg-green-200 text-green-700'; ?> text-xs font-medium rounded-lg transition">
@@ -267,6 +271,7 @@ foreach ($articles as $a) {
                                     </button>
                                 </form>
                                 <form method="POST" class="inline" onsubmit="return confirm('Delete this article?');">
+                            <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="delete_article">
                                     <input type="hidden" name="article_id" value="<?php echo $article['id']; ?>">
                                     <button type="submit" class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-medium rounded-lg transition"><i class="fas fa-trash-alt mr-1"></i>Delete</button>

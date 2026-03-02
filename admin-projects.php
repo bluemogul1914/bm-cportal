@@ -8,6 +8,8 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
 $user_name = $_SESSION['user_name'] ?? 'Admin';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
     $pdo = getDB();
 
@@ -296,6 +298,7 @@ try {
             <button onclick="document.getElementById('createModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600" data-testid="button-close-modal"><i class="fas fa-times"></i></button>
         </div>
         <form method="POST" class="p-6 space-y-4" data-testid="form-create-project">
+                            <?= csrf_field() ?>
             <input type="hidden" name="action" value="create_project">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Project Name *</label>

@@ -55,6 +55,8 @@ try {
     $notif_count = count($notifications);
 
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'mark_notifications_read') {
+    require_csrf();
+    
         $pdo->prepare("UPDATE notifications SET is_read = true WHERE user_id = ?")->execute([$user_id]);
         portal_redirect('dashboard.php');
     }
@@ -123,6 +125,7 @@ try {
                                         <h3 class="font-semibold text-gray-900 text-sm">Notifications</h3>
                                         <?php if ($notif_count > 0): ?>
                                             <form method="POST" class="inline">
+                            <?= csrf_field() ?>
                                                 <input type="hidden" name="action" value="mark_notifications_read">
                                                 <button type="submit" class="text-xs text-blue-600 hover:text-blue-800">Mark all read</button>
                                             </form>

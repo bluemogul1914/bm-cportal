@@ -21,6 +21,8 @@ $error_msg = '';
 $success_msg = '';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'add_log_entry') {
@@ -364,6 +366,7 @@ if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
                         </div>
                         <div class="p-4">
                             <form method="POST" class="mb-4">
+                            <?= csrf_field() ?>
                                 <input type="hidden" name="action" value="add_log_entry">
                                 <div class="flex items-start gap-2 mb-2">
                                     <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0 mt-3"></div>
@@ -475,10 +478,12 @@ if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
                                         <?php foreach ($client_tags as $tag): ?>
                                         <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-medium group inline-flex items-center gap-1" data-testid="tag-<?php echo htmlspecialchars($tag); ?>">
                                             <?php echo htmlspecialchars($tag); ?>
-                                            <form method="POST" class="inline"><input type="hidden" name="action" value="remove_tag"><input type="hidden" name="tag" value="<?php echo htmlspecialchars($tag); ?>"><button type="submit" class="text-blue-400 hover:text-red-500 hidden group-hover:inline text-[10px]"><i class="fas fa-times"></i></button></form>
+                                            <form method="POST" class="inline">
+                            <?= csrf_field() ?><input type="hidden" name="action" value="remove_tag"><input type="hidden" name="tag" value="<?php echo htmlspecialchars($tag); ?>"><button type="submit" class="text-blue-400 hover:text-red-500 hidden group-hover:inline text-[10px]"><i class="fas fa-times"></i></button></form>
                                         </span>
                                         <?php endforeach; ?>
                                         <form method="POST" class="inline-flex items-center gap-1">
+                            <?= csrf_field() ?>
                                             <input type="hidden" name="action" value="add_tag">
                                             <input type="text" name="tag" placeholder="+ Tag" class="w-14 px-1 py-0 border-0 border-b border-dashed border-gray-300 text-[10px] text-gray-500 focus:outline-none focus:border-blue-500 bg-transparent" data-testid="input-add-tag">
                                         </form>
@@ -649,6 +654,7 @@ if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
                                 <span class="text-lg font-bold text-blue-600" data-testid="text-credit-inline">$<?php echo number_format($credit_balance, 2); ?></span>
                             </div>
                             <form method="POST" class="flex items-center gap-2">
+                            <?= csrf_field() ?>
                                 <input type="hidden" name="action" value="update_credit">
                                 <input type="number" name="credit_amount" step="0.01" value="<?php echo number_format($credit_balance, 2, '.', ''); ?>" class="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" data-testid="input-credit-amount">
                                 <button type="submit" class="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700" data-testid="button-update-credit">Update</button>

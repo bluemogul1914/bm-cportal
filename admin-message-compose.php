@@ -46,6 +46,8 @@ $placeholders = [
 ];
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
     $subject = trim($_POST['subject'] ?? '');
     $body = $_POST['body'] ?? '';
@@ -227,6 +229,7 @@ $categories = [
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div class="lg:col-span-2">
                     <form method="POST" id="compose-form">
+                            <?= csrf_field() ?>
                         <input type="hidden" name="action" id="form-action" value="send">
 
                         <div class="bg-white rounded-lg border border-gray-200 p-6 mb-6">

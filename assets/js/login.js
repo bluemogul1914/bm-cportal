@@ -47,10 +47,12 @@ document.addEventListener('DOMContentLoaded', function() {
             setLoadingState(true);
             
             try {
+                const csrfInput = loginForm.querySelector('input[name="csrf_token"]');
                 const params = new URLSearchParams();
                 params.append('email', email);
                 params.append('password', password);
                 params.append('remember', remember ? '1' : '0');
+                if (csrfInput) params.append('csrf_token', csrfInput.value);
                 
                 const response = await fetch('/portal/login-handler.php', {
                     method: 'POST',

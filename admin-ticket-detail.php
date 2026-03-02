@@ -23,6 +23,8 @@ $error_msg = '';
 $pdo = getDB();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
+    require_csrf();
+    
     $action = $_POST['action'];
 
     if ($action === 'add_reply') {
@@ -186,6 +188,7 @@ try {
                             </div>
                         </div>
                         <form method="POST" action="admin-ticket-detail.php?id=<?php echo $ticket_id; ?>" class="p-6">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="add_reply">
                             <input type="hidden" name="is_internal" id="is_internal" value="">
                             <textarea name="comment" rows="4" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-4" placeholder="Type your reply..." data-testid="textarea-reply"></textarea>
@@ -204,6 +207,7 @@ try {
                             <h3 class="font-semibold text-gray-900">Ticket Details</h3>
                         </div>
                         <form method="POST" action="admin-ticket-detail.php?id=<?php echo $ticket_id; ?>" class="p-6 space-y-4">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="update_ticket">
                             <div>
                                 <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Status</label>

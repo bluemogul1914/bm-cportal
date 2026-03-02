@@ -21,6 +21,8 @@ $client = $stmt->fetch(PDO::FETCH_ASSOC);
 $client_id = $client ? $client['id'] : $user_id;
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'upload') {
@@ -190,6 +192,7 @@ try {
                                 </div>
                                 <div class="flex items-center gap-2 ml-4">
                                     <form method="POST" action="documents.php" onsubmit="return confirm('Delete this document?');" class="inline">
+                            <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="doc_id" value="<?php echo $doc['id']; ?>">
                                         <button type="submit" class="text-red-400 hover:text-red-600 p-2 transition" title="Delete" data-testid="button-delete-<?php echo $doc['id']; ?>">
@@ -215,6 +218,7 @@ try {
             </button>
         </div>
         <form method="POST" action="documents.php" class="p-6 space-y-4">
+                            <?= csrf_field() ?>
             <input type="hidden" name="action" value="upload">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Document Name *</label>

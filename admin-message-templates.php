@@ -22,6 +22,8 @@ $categories = [
 ];
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'create' || $action === 'update') {
@@ -131,6 +133,7 @@ if ($edit_id > 0) {
             <div id="template-form" class="bg-white rounded-lg border border-gray-200 p-6 mb-6 <?php echo ($edit_tpl || isset($_GET['new'])) ? '' : 'hidden'; ?>">
                 <h2 class="text-lg font-semibold text-gray-900 mb-4" id="form-title"><?php echo $edit_tpl ? 'Edit Template' : 'Create Template'; ?></h2>
                 <form method="POST">
+                            <?= csrf_field() ?>
                     <input type="hidden" name="action" value="<?php echo $edit_tpl ? 'update' : 'create'; ?>">
                     <?php if ($edit_tpl): ?>
                         <input type="hidden" name="template_id" value="<?php echo $edit_tpl['id']; ?>">
@@ -216,6 +219,7 @@ if ($edit_id > 0) {
                                             <i class="fas fa-edit"></i>
                                         </a>
                                         <form method="POST" class="inline" onsubmit="return confirm('Delete this template?');">
+                            <?= csrf_field() ?>
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="template_id" value="<?php echo $tpl['id']; ?>">
                                             <button type="submit" class="text-red-500 hover:text-red-700 text-sm" title="Delete">

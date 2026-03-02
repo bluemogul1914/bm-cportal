@@ -20,6 +20,8 @@ $error_msg = '';
 $pdo = getDB();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_client') {
+    require_csrf();
+    
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
@@ -121,6 +123,7 @@ if (preg_match('/\[TAGS:(.*?)\]/', $client_notes_raw, $m)) {
             <?php endif; ?>
 
             <form method="POST" action="admin-client-edit.php?id=<?php echo $client_id; ?>" class="space-y-6">
+                            <?= csrf_field() ?>
                 <input type="hidden" name="action" value="update_client">
 
                 <div class="bg-white rounded-lg border border-gray-200">

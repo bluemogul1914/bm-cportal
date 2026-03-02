@@ -84,6 +84,8 @@ $all_permissions = [
 ];
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
     
     if ($action === 'update_role') {
@@ -355,6 +357,7 @@ foreach ($users as $u) {
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <form method="POST" class="flex items-center space-x-2" data-testid="form-change-role-<?php echo $u['id']; ?>">
+                                            <?= csrf_field() ?>
                                             <input type="hidden" name="action" value="update_role">
                                             <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
                                             <select name="role" class="text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:ring-blue-500 focus:border-blue-500" data-testid="select-role-<?php echo $u['id']; ?>" <?php echo $is_self ? 'disabled' : ''; ?>>
@@ -371,6 +374,7 @@ foreach ($users as $u) {
                                         <?php if (!$is_self): ?>
                                             <?php if (($u['status'] ?? 'active') === 'active'): ?>
                                                 <form method="POST" class="inline" onsubmit="return confirm('Deactivate this user? They will no longer be able to log in.')">
+                            <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="update_status">
                                                     <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
                                                     <input type="hidden" name="status" value="inactive">
@@ -380,6 +384,7 @@ foreach ($users as $u) {
                                                 </form>
                                             <?php else: ?>
                                                 <form method="POST" class="inline">
+                            <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="update_status">
                                                     <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
                                                     <input type="hidden" name="status" value="active">
@@ -414,6 +419,7 @@ foreach ($users as $u) {
             </div>
         </div>
         <form method="POST" class="p-6 space-y-4" data-testid="form-create-user">
+                            <?= csrf_field() ?>
             <input type="hidden" name="action" value="create_user">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>

@@ -26,6 +26,8 @@ $client = $stmt->fetch(PDO::FETCH_ASSOC);
 $client_id = $client ? $client['id'] : $user_id;
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
+    require_csrf();
+    
     if ($_POST['action'] === 'add_comment') {
         $comment = trim($_POST['comment'] ?? '');
         if (!empty($comment)) {
@@ -172,6 +174,7 @@ try {
                             <h3 class="font-semibold text-gray-900">Add Reply</h3>
                         </div>
                         <form method="POST" action="ticket-detail.php?id=<?php echo $ticket_id; ?>" class="p-6">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="add_comment">
                             <textarea name="comment" rows="4" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-4" placeholder="Type your reply..." data-testid="textarea-reply"></textarea>
                             <div class="flex justify-end">

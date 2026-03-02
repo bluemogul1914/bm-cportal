@@ -13,6 +13,8 @@ $success_msg = '';
 $error_msg = '';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'delete') {
+    require_csrf();
+    
     $msg_id = intval($_POST['message_id'] ?? 0);
     try {
         $pdo->prepare("DELETE FROM messages WHERE id = ?")->execute([$msg_id]);
@@ -228,6 +230,7 @@ $categories = [
                                                     </a>
                                                 <?php endif; ?>
                                                 <form method="POST" class="inline" onsubmit="return confirm('Delete this message?');">
+                            <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="delete">
                                                     <input type="hidden" name="message_id" value="<?php echo $msg['id']; ?>">
                                                     <button type="submit" class="text-red-500 hover:text-red-700 text-sm" title="Delete" data-testid="button-delete-<?php echo $msg['id']; ?>">

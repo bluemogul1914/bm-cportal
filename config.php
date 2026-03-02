@@ -228,10 +228,83 @@ function sanitize($data) {
 }
 
 // ============================================
+// SECURITY: CSRF PROTECTION
+// ============================================
+
+function csrf_token() {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+function csrf_field() {
+    return '<input type="hidden" name="csrf_token" value="' . htmlspecialchars(csrf_token()) . '">';
+}
+
+function verify_csrf($token) {
+    if (empty($_SESSION['csrf_token']) || empty($token)) {
+        return false;
+    }
+    return hash_equals($_SESSION['csrf_token'], $token);
+}
+
+function require_csrf() {
+    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+        logMessage('WARNING', 'CSRF token validation failed', [
+            'uri' => $_SERVER['REQUEST_URI'] ?? 'unknown',
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'
+        ]);
+        http_response_code(403);
+        die('<div style="font-family:Inter,sans-serif;text-align:center;padding:60px;color:#991b1b;"><h2>Security Error</h2><p>Invalid security token. Please go back and refresh the page.</p><a href="javascript:history.back()" style="color:#1a56db;">Go Back</a></div>');
+    }
+}
+
+// ============================================
+// SECURITY: LOGIN RATE LIMITING
+// ============================================
+
+function check_rate_limit($identifier, $max_attempts = 5, $window_seconds = 900) {
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT COUNT(*) as attempts 
+        FROM activity_log 
+        WHERE action = 'login_failed' 
+        AND details LIKE ? 
+        AND created_at > NOW() - INTERVAL '{$window_seconds} seconds'
+    ");
+    $stmt->execute(['%' . $identifier . '%']);
+    $row = $stmt->fetch();
+    return ($row['attempts'] ?? 0) < $max_attempts;
+}
+
+function record_failed_login($email, $ip) {
+    $db = getDB();
+    $db->prepare("INSERT INTO activity_log (user_id, action, entity_type, details, ip_address) VALUES (NULL, ?, ?, ?, ?)")
+       ->execute(['login_failed', 'auth', "Failed login for: {$email}", $ip]);
+}
+
+// ============================================
+// SECURITY: HEADERS
+// ============================================
+
+function set_security_headers() {
+    if (php_sapi_name() !== 'cli' && !headers_sent()) {
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: SAMEORIGIN');
+        header('X-XSS-Protection: 1; mode=block');
+        header('Referrer-Policy: strict-origin-when-cross-origin');
+        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.tailwindcss.com https://js.stripe.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.tailwindcss.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://api.stripe.com; frame-src https://js.stripe.com;");
+    }
+}
+
+set_security_headers();
+
+// ============================================
 // ERROR HANDLING
 // ============================================
 error_reporting(E_ALL);
-ini_set('display_errors', 1); // Set to 0 in production
+ini_set('display_errors', 0);
 
 set_error_handler(function($errno, $errstr, $errfile, $errline) {
     logMessage('ERROR', "$errstr in $errfile on line $errline");

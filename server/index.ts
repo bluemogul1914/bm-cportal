@@ -155,9 +155,11 @@ const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashb
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
-  if (!sess) return "";
-  const escaped = JSON.stringify(sess).replace(/'/g, "\\'");
-  return `
+  const csrfToken = (req.session as any)?.csrfToken;
+  let code = "";
+  if (sess) {
+    const escaped = JSON.stringify(sess).replace(/'/g, "\\'");
+    code += `
 $_sessionData = json_decode('${escaped}', true);
 if ($_sessionData) {
     $_SESSION['user_id'] = $_sessionData['user_id'];
@@ -170,9 +172,25 @@ if ($_sessionData) {
     $_SESSION['last_activity'] = $_sessionData['last_activity'];
 }
 `;
+  }
+  if (csrfToken) {
+    code += `\n\$_SESSION['csrf_token'] = '${csrfToken.replace(/'/g, "\\'")}';`;
+  }
+  code += `\nregister_shutdown_function(function() { echo "\\n__CSRF_TOKEN__:" . (\$_SESSION['csrf_token'] ?? ''); });`;
+  return code;
 }
 
-function handlePhpResponse(stdout: string, res: Response) {
+function extractCsrfToken(stdout: string, req: Request): string {
+  const csrfMatch = stdout.match(/\n__CSRF_TOKEN__:([a-f0-9]+)$/);
+  if (csrfMatch) {
+    (req.session as any).csrfToken = csrfMatch[1];
+    return stdout.replace(/\n__CSRF_TOKEN__:[a-f0-9]+$/, '');
+  }
+  return stdout.replace(/\n__CSRF_TOKEN__:$/, '');
+}
+
+function handlePhpResponse(stdout: string, req: Request, res: Response) {
+  stdout = extractCsrfToken(stdout, req);
   const redirectMatch = stdout.match(/^__REDIRECT__:(.+)$/m);
   if (redirectMatch) {
     let location = redirectMatch[1].trim();
@@ -212,7 +230,7 @@ require '${filePath.replace(/'/g, "\\'")}';
           console.error(`PHP execution error:`, stderr || error.message);
           return res.status(500).send("Server error");
         }
-        handlePhpResponse(stdout, res);
+        handlePhpResponse(stdout, req, res);
       }
     );
   });
@@ -291,11 +309,12 @@ require '${filePath.replace(/'/g, "\\'")}';
           console.error(`PHP POST error (${phpFile}):`, stderr || error.message);
           return res.status(500).send("Server error");
         }
+        stdout = extractCsrfToken(stdout, req);
         try {
           const json = JSON.parse(stdout);
           res.json(json);
         } catch {
-          handlePhpResponse(stdout, res);
+          handlePhpResponse(stdout, req, res);
         }
       }
     );
@@ -311,8 +330,13 @@ function handleLogin(req: Request, res: Response) {
   }
   const postData = formParts.join("&");
 
+  const csrfToken = (req.session as any)?.csrfToken || '';
+  const csrfInject = csrfToken ? `\n\$_SESSION['csrf_token'] = '${csrfToken.replace(/'/g, "\\'")}';` : '';
+
   const phpCode = `<?php
 session_start();
+${csrfInject}
+register_shutdown_function(function() { echo "\\n__CSRF_TOKEN__:" . (\$_SESSION['csrf_token'] ?? ''); });
 $_SERVER['REQUEST_METHOD'] = 'POST';
 parse_str('${postData.replace(/'/g, "\\'")}', $_POST);
 $_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
@@ -336,6 +360,7 @@ require '${filePath.replace(/'/g, "\\'")}';
           console.error("PHP login handler error:", stderr || error.message);
           return res.status(500).json({ success: false, message: "Server error" });
         }
+        stdout = extractCsrfToken(stdout, req);
         try {
           const json = JSON.parse(stdout);
           if (json.success && json.user) {

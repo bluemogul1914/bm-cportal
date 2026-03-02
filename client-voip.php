@@ -63,6 +63,8 @@ function voip_client_api($action, $extra_params = []) {
 }
 
 if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'update_account') {
@@ -482,6 +484,7 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
                 </div>
                 <?php else: ?>
                 <form method="POST" class="p-6" data-testid="form-account-detail">
+                            <?= csrf_field() ?>
                     <input type="hidden" name="action" value="update_account">
                     <input type="hidden" name="account" value="<?php echo htmlspecialchars($edit_account); ?>">
 
@@ -705,6 +708,7 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
                                             <td class="px-4 py-2.5 text-sm text-gray-500"><?php echo htmlspecialchars($cf['note'] ?? ''); ?></td>
                                             <td class="px-4 py-2.5">
                                                 <form method="POST" class="inline" onsubmit="return confirm('Delete this filter?')">
+                            <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="delete_callerid_filter">
                                                     <input type="hidden" name="filter_id" value="<?php echo htmlspecialchars($cf['filtering'] ?? ''); ?>">
                                                     <button type="submit" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded text-xs font-medium transition" data-testid="button-delete-filter-<?php echo htmlspecialchars($cf['filtering'] ?? ''); ?>"><i class="fas fa-trash mr-1"></i>Delete</button>
@@ -722,6 +726,7 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
                         <div id="add-filter-section" class="hidden">
                             <div class="bg-green-600 text-white px-4 py-2 rounded-t-lg text-sm font-medium"><i class="fas fa-plus mr-1"></i>Add a new Caller ID Filtering</div>
                             <form method="POST" class="border border-gray-200 border-t-0 rounded-b-lg p-6" data-testid="form-add-filter">
+                            <?= csrf_field() ?>
                                 <input type="hidden" name="action" value="create_callerid_filter">
 
                                 <h4 class="text-sm font-semibold text-gray-800 mb-3">Select Type of Filter</h4>
@@ -831,6 +836,7 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
                                         <td class="px-4 py-2.5 text-sm"><?php echo htmlspecialchars($fw['pause'] ?? '0'); ?></td>
                                         <td class="px-4 py-2.5">
                                             <form method="POST" class="inline" onsubmit="return confirm('Delete this forwarding entry?')">
+                            <?= csrf_field() ?>
                                                 <input type="hidden" name="action" value="delete_forwarding">
                                                 <input type="hidden" name="forwarding_id" value="<?php echo htmlspecialchars($fw['forwarding'] ?? ''); ?>">
                                                 <button type="submit" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded text-xs font-medium transition" data-testid="button-delete-fwd-<?php echo htmlspecialchars($fw['forwarding'] ?? ''); ?>"><i class="fas fa-trash mr-1"></i>Delete</button>
@@ -848,6 +854,7 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
                     <div id="add-fwd-section" class="hidden">
                         <div class="bg-green-600 text-white px-4 py-2 rounded-t-lg text-sm font-medium"><i class="fas fa-plus mr-1"></i>Add New Call Forwarding</div>
                         <form method="POST" class="border border-gray-200 border-t-0 rounded-b-lg p-6" data-testid="form-add-fwd">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="create_forwarding">
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                 <div>
@@ -933,6 +940,7 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
                                         <td class="px-4 py-2.5 text-sm"><?php echo htmlspecialchars($cb['callerid'] ?? ''); ?></td>
                                         <td class="px-4 py-2.5">
                                             <form method="POST" class="inline" onsubmit="return confirm('Delete this callback?')">
+                            <?= csrf_field() ?>
                                                 <input type="hidden" name="action" value="delete_callback">
                                                 <input type="hidden" name="callback_id" value="<?php echo htmlspecialchars($cb['callback'] ?? ''); ?>">
                                                 <button type="submit" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded text-xs font-medium transition" data-testid="button-delete-cb-<?php echo htmlspecialchars($cb['callback'] ?? ''); ?>"><i class="fas fa-trash mr-1"></i>Delete</button>
@@ -950,6 +958,7 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
                     <div id="add-cb-section" class="hidden">
                         <div class="bg-green-600 text-white px-4 py-2 rounded-t-lg text-sm font-medium"><i class="fas fa-plus mr-1"></i>Add New Callback</div>
                         <form method="POST" class="border border-gray-200 border-t-0 rounded-b-lg p-6" data-testid="form-add-callback">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="create_callback">
                             <h4 class="text-sm font-semibold text-gray-800 mb-4">Callback</h4>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -1065,6 +1074,7 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
                                             <div class="flex flex-wrap gap-1">
                                                 <span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs font-medium"><i class="fas fa-voicemail mr-1"></i>Voicemail</span>
                                                 <form method="POST" class="inline" onsubmit="return confirm('Delete this voicemail box?')">
+                            <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="delete_voicemail">
                                                     <input type="hidden" name="voicemail_id" value="<?php echo htmlspecialchars($vm['mailbox'] ?? ''); ?>">
                                                     <button type="submit" class="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded text-xs font-medium transition" data-testid="button-delete-vm-<?php echo htmlspecialchars($vm['mailbox'] ?? ''); ?>"><i class="fas fa-trash mr-1"></i>Delete</button>
@@ -1083,6 +1093,7 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
                     <div id="add-vm-section" class="hidden">
                         <div class="bg-green-600 text-white px-4 py-2 rounded-t-lg text-sm font-medium"><i class="fas fa-plus mr-1"></i>Add new Voicemail</div>
                         <form method="POST" class="border border-gray-200 border-t-0 rounded-b-lg p-6" data-testid="form-add-voicemail">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="create_voicemail">
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                 <div>
@@ -1150,6 +1161,7 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
                         <h3 class="text-base font-semibold text-gray-800 mb-3">Local Numbers in United States</h3>
                         <div class="bg-primary text-white px-4 py-2 rounded-t-lg text-sm font-medium">Search Criteria</div>
                         <form method="POST" class="border border-gray-200 border-t-0 rounded-b-lg p-4" data-testid="form-search-did-us">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="order_did_search">
                             <div class="flex items-center gap-3 mb-3">
                                 <button type="button" class="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded transition">Browse DID's by State</button>
@@ -1172,6 +1184,7 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
                         <h3 class="text-base font-semibold text-gray-800 mb-3">Local Numbers in Canada</h3>
                         <div class="bg-red-600 text-white px-4 py-2 rounded-t-lg text-sm font-medium">Search Criteria</div>
                         <form method="POST" class="border border-gray-200 border-t-0 rounded-b-lg p-4" data-testid="form-search-did-ca">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="order_did_canada">
                             <div class="mb-3">
                                 <label class="block text-xs font-medium text-gray-700 mb-1">Select Province</label>

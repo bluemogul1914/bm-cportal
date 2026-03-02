@@ -12,6 +12,8 @@ $is_admin = true;
 $pdo = getDB();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'toggle_agent') {
@@ -596,6 +598,7 @@ if ($view_agent) {
                 <div class="bg-white rounded-lg border border-gray-200 p-6">
                     <h3 class="font-semibold text-gray-900 mb-3"><i class="fas fa-clock text-gray-400 mr-2"></i>Schedule</h3>
                     <form method="POST" class="flex items-center gap-2">
+                            <?= csrf_field() ?>
                         <input type="hidden" name="action" value="update_schedule">
                         <input type="hidden" name="id" value="<?php echo $db['id']; ?>">
                         <code class="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm font-mono"><?php echo htmlspecialchars($db['schedule']); ?></code>
@@ -608,6 +611,7 @@ if ($view_agent) {
                     <h3 class="font-semibold text-gray-900 mb-3"><i class="fas fa-play text-gray-400 mr-2"></i>Quick Actions</h3>
                     <div class="flex gap-2">
                         <form method="POST" class="flex-1">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="run_agent">
                             <input type="hidden" name="agent_name" value="<?php echo htmlspecialchars($view_agent); ?>">
                             <button type="submit" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition" data-testid="button-run-agent">
@@ -615,6 +619,7 @@ if ($view_agent) {
                             </button>
                         </form>
                         <form method="POST">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="toggle_agent">
                             <input type="hidden" name="id" value="<?php echo $db['id']; ?>">
                             <button type="submit" class="px-4 py-2 <?php echo $db['enabled'] ? 'bg-red-100 hover:bg-red-200 text-red-700' : 'bg-green-100 hover:bg-green-200 text-green-700'; ?> rounded-lg text-sm font-medium transition" data-testid="button-toggle-agent">
@@ -767,6 +772,7 @@ if ($view_agent) {
                     <div class="p-6">
                         <pre class="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm font-mono text-gray-700 overflow-x-auto"><?php echo json_encode($config, JSON_PRETTY_PRINT); ?></pre>
                         <form method="POST" id="config-form" class="hidden mt-4">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="update_config">
                             <input type="hidden" name="id" value="<?php echo $db['id']; ?>">
                             <textarea name="config_json" rows="6" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500"><?php echo htmlspecialchars(json_encode($config, JSON_PRETTY_PRINT)); ?></textarea>
@@ -836,6 +842,7 @@ if ($view_agent) {
                             <i class="fas fa-magic mr-1"></i>Automation
                         </a>
                         <form method="POST" style="display:inline">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="action" value="run_agent">
                             <input type="hidden" name="agent_name" value="master_orchestrator">
                             <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition" data-testid="button-run-all">

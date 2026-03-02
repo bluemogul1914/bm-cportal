@@ -17,6 +17,8 @@ $client_id = intval($_GET['client_id'] ?? 0);
 $view = $_GET['view'] ?? 'devices';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
     $action = $_POST['action'] ?? '';
 
     if ($action === 'add_device') {
@@ -204,6 +206,7 @@ $warning_devices = $pdo->query("SELECT COUNT(*) FROM network_devices WHERE statu
 
                             <div id="add-device-form" class="hidden border-b border-gray-100 bg-gray-50 p-6">
                                 <form method="POST">
+                            <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="add_device">
                                     <input type="hidden" name="client_id" value="<?php echo $client_id; ?>">
                                     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
@@ -315,6 +318,7 @@ $warning_devices = $pdo->query("SELECT COUNT(*) FROM network_devices WHERE statu
                                                 <td class="px-4 py-3 text-xs text-gray-500"><?php echo $dev['last_seen'] ? date('M d, g:i A', strtotime($dev['last_seen'])) : 'Never'; ?></td>
                                                 <td class="px-4 py-3">
                                                     <form method="POST" onsubmit="return confirm('Remove this device?');">
+                            <?= csrf_field() ?>
                                                         <input type="hidden" name="action" value="delete_device">
                                                         <input type="hidden" name="device_id" value="<?php echo $dev['id']; ?>">
                                                         <button type="submit" class="text-gray-400 hover:text-red-600 transition" title="Delete"><i class="fas fa-trash-alt text-xs"></i></button>
@@ -342,6 +346,7 @@ $warning_devices = $pdo->query("SELECT COUNT(*) FROM network_devices WHERE statu
 
                             <div id="add-cred-form" class="hidden border-b border-gray-100 bg-gray-50 p-6">
                                 <form method="POST">
+                            <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="add_credential">
                                     <input type="hidden" name="client_id" value="<?php echo $client_id; ?>">
                                     <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
@@ -404,6 +409,7 @@ $warning_devices = $pdo->query("SELECT COUNT(*) FROM network_devices WHERE statu
                                                 <?php endif; ?>
                                             </div>
                                             <form method="POST" onsubmit="return confirm('Delete this credential?');">
+                            <?= csrf_field() ?>
                                                 <input type="hidden" name="action" value="delete_credential">
                                                 <input type="hidden" name="credential_id" value="<?php echo $cred['id']; ?>">
                                                 <button type="submit" class="text-gray-400 hover:text-red-600 transition" title="Delete"><i class="fas fa-trash-alt text-xs"></i></button>
