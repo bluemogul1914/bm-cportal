@@ -20,9 +20,9 @@ $sync_results = null;
 $test_result = null;
 $sync_logs = [];
 
-function itflow_api_request($endpoint, $params = []) {
+function itflow_api_request($resource, $action = 'read', $params = []) {
     $params['api_key'] = ITFLOW_API_KEY;
-    $url = rtrim(ITFLOW_URL, '/') . '/api/v1/' . ltrim($endpoint, '/');
+    $url = rtrim(ITFLOW_URL, '/') . '/api/v1/' . ltrim($resource, '/') . '/' . $action . '.php';
 
     $ch = curl_init();
     curl_setopt_array($ch, [
@@ -31,6 +31,7 @@ function itflow_api_request($endpoint, $params = []) {
         CURLOPT_TIMEOUT => 30,
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_HTTPHEADER => ['Accept: application/json'],
+        CURLOPT_FOLLOWLOCATION => true,
     ]);
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -69,7 +70,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'test_connection') {
-        $result = itflow_api_request('clients', ['page' => 1, 'per_page' => 1]);
+        $result = itflow_api_request('clients', 'read');
         if ($result['success']) {
             $test_result = ['status' => 'success', 'message' => 'Connection successful! API responded with HTTP ' . $result['http_code']];
             log_sync_action($db, 'itflow_test', 'integration', 'success', 'ITFlow API connection test passed');
@@ -83,25 +84,36 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
     }
 
     if ($action === 'sync_clients') {
-        $result = itflow_api_request('clients');
-        if ($result['success'] && isset($result['data'])) {
-            $clients_data = $result['data']['data'] ?? $result['data'];
-            if (!is_array($clients_data)) $clients_data = [];
+        $clients_result = itflow_api_request('clients', 'read');
+        $contacts_result = itflow_api_request('contacts', 'read');
+
+        if ($clients_result['success'] && $contacts_result['success']) {
+            $itf_clients = $clients_result['data']['data'] ?? [];
+            $itf_contacts = $contacts_result['data']['data'] ?? [];
+            if (!is_array($itf_clients)) $itf_clients = [];
+            if (!is_array($itf_contacts)) $itf_contacts = [];
+
+            $client_map = [];
+            foreach ($itf_clients as $c) {
+                $client_map[$c['client_id'] ?? ''] = $c['client_name'] ?? '';
+            }
 
             $synced = 0;
             $skipped = 0;
             $errors = 0;
 
-            foreach ($clients_data as $itf_client) {
-                $name = $itf_client['client_name'] ?? $itf_client['name'] ?? '';
-                $email = $itf_client['client_email'] ?? $itf_client['email'] ?? '';
-                $phone = $itf_client['client_phone'] ?? $itf_client['phone'] ?? '';
-                $company = $itf_client['client_name'] ?? $itf_client['company'] ?? '';
+            foreach ($itf_contacts as $contact) {
+                $name = $contact['contact_name'] ?? '';
+                $email = $contact['contact_email'] ?? '';
+                $phone = $contact['contact_phone'] ?? $contact['contact_mobile'] ?? '';
+                $itf_client_id = $contact['contact_client_id'] ?? '';
+                $company = $client_map[$itf_client_id] ?? '';
 
                 if (empty($email)) { $skipped++; continue; }
 
                 try {
-                    $existing = $db->prepare("SELECT id FROM clients WHERE email = ?")->execute([$email]);
+                    $existing = $db->prepare("SELECT id FROM clients WHERE email = ?");
+                    $existing->execute([$email]);
                     $exists = $existing->fetch();
 
                     if ($exists) {
@@ -110,8 +122,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
                         $synced++;
                     } else {
                         $temp_pass = password_hash(bin2hex(random_bytes(8)), PASSWORD_DEFAULT);
-                        $db->prepare("INSERT INTO users (username, email, password_hash, is_admin) VALUES (?, ?, ?, false)")
-                           ->execute([$name ?: $email, $email, $temp_pass]);
+                        $db->prepare("INSERT INTO users (email, password, name, is_admin) VALUES (?, ?, ?, false)")
+                           ->execute([$email, $temp_pass, $name ?: $email]);
                         $user_id = $db->lastInsertId();
 
                         $db->prepare("INSERT INTO clients (user_id, name, email, phone, company, status) VALUES (?, ?, ?, ?, ?, 'active')")
@@ -123,39 +135,50 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
                 }
             }
 
-            $total = count($clients_data);
+            $total = count($itf_contacts);
             $sync_results = ['type' => 'clients', 'total' => $total, 'synced' => $synced, 'skipped' => $skipped, 'errors' => $errors];
-            log_sync_action($db, 'itflow_sync_clients', 'client', 'completed', "Synced $synced/$total clients ($skipped skipped, $errors errors)", $synced);
-            $success_msg = "Client sync complete: $synced synced, $skipped skipped, $errors errors out of $total total.";
+            log_sync_action($db, 'itflow_sync_clients', 'client', 'completed', "Synced $synced/$total contacts from " . count($itf_clients) . " ITFlow clients ($skipped skipped, $errors errors)", $synced);
+            $success_msg = "Client sync complete: $synced synced, $skipped skipped, $errors errors out of $total contacts.";
         } else {
-            $error_msg = 'Failed to fetch clients from ITFlow: ' . ($result['error'] ?? 'HTTP ' . $result['http_code']);
+            $err = !$clients_result['success'] ? ($clients_result['error'] ?? 'HTTP ' . $clients_result['http_code']) : ($contacts_result['error'] ?? 'HTTP ' . $contacts_result['http_code']);
+            $error_msg = 'Failed to fetch data from ITFlow: ' . $err;
             log_sync_action($db, 'itflow_sync_clients', 'client', 'failed', $error_msg);
         }
     }
 
     if ($action === 'sync_tickets') {
-        $result = itflow_api_request('tickets');
+        $result = itflow_api_request('tickets', 'read');
+        $contacts_result = itflow_api_request('contacts', 'read');
+
         if ($result['success'] && isset($result['data'])) {
-            $tickets_data = $result['data']['data'] ?? $result['data'];
+            $tickets_data = $result['data']['data'] ?? [];
             if (!is_array($tickets_data)) $tickets_data = [];
+
+            $contact_email_by_client = [];
+            if ($contacts_result['success'] && isset($contacts_result['data']['data'])) {
+                foreach ($contacts_result['data']['data'] as $ct) {
+                    $cid = $ct['contact_client_id'] ?? '';
+                    if ($cid && !isset($contact_email_by_client[$cid]) && !empty($ct['contact_email'])) {
+                        $contact_email_by_client[$cid] = $ct['contact_email'];
+                    }
+                }
+            }
 
             $synced = 0;
             $skipped = 0;
             $errors = 0;
 
             foreach ($tickets_data as $itf_ticket) {
-                $subject = $itf_ticket['ticket_subject'] ?? $itf_ticket['subject'] ?? '';
-                $body = $itf_ticket['ticket_details'] ?? $itf_ticket['body'] ?? $itf_ticket['description'] ?? '';
-                $status_raw = $itf_ticket['ticket_status'] ?? $itf_ticket['status'] ?? 'open';
-                $priority_raw = $itf_ticket['ticket_priority'] ?? $itf_ticket['priority'] ?? 'medium';
-                $client_email = $itf_ticket['client_email'] ?? $itf_ticket['contact_email'] ?? '';
-                $itf_id = $itf_ticket['ticket_id'] ?? $itf_ticket['id'] ?? '';
+                $subject = $itf_ticket['ticket_subject'] ?? '';
+                $body = strip_tags($itf_ticket['ticket_details'] ?? '');
+                $status_raw = $itf_ticket['ticket_status'] ?? '1';
+                $priority_raw = $itf_ticket['ticket_priority'] ?? 'Medium';
+                $itf_client_id = $itf_ticket['ticket_client_id'] ?? '';
 
                 if (empty($subject)) { $skipped++; continue; }
 
-                $status_map = ['Open' => 'open', 'Working' => 'in_progress', 'In Progress' => 'in_progress', 'Closed' => 'closed', 'Resolved' => 'closed'];
-                $status = $status_map[$status_raw] ?? strtolower($status_raw);
-                if (!in_array($status, ['open', 'in_progress', 'closed'])) $status = 'open';
+                $status_map = ['1' => 'open', '2' => 'in_progress', '3' => 'in_progress', '4' => 'closed', '5' => 'closed'];
+                $status = $status_map[$status_raw] ?? 'open';
 
                 $priority_map = ['Low' => 'low', 'Medium' => 'medium', 'High' => 'high', 'Critical' => 'urgent', 'Urgent' => 'urgent'];
                 $priority = $priority_map[$priority_raw] ?? strtolower($priority_raw);
@@ -163,15 +186,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
 
                 try {
                     $client_id = null;
+                    $client_email = $contact_email_by_client[$itf_client_id] ?? '';
                     if ($client_email) {
-                        $cl = $db->prepare("SELECT id FROM clients WHERE email = ?")->execute([$client_email]);
+                        $cl = $db->prepare("SELECT id FROM clients WHERE email = ?");
+                        $cl->execute([$client_email]);
                         $client_row = $cl->fetch();
                         if ($client_row) $client_id = $client_row['id'];
                     }
 
                     if (!$client_id) { $skipped++; continue; }
 
-                    $dup = $db->prepare("SELECT id FROM tickets WHERE subject = ? AND client_id = ?")->execute([$subject, $client_id]);
+                    $dup = $db->prepare("SELECT id FROM tickets WHERE subject = ? AND client_id = ?");
+                    $dup->execute([$subject, $client_id]);
                     if ($dup->fetch()) {
                         $skipped++;
                         continue;
@@ -196,7 +222,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
     }
 
     if ($action === 'sync_assets') {
-        $result = itflow_api_request('assets');
+        $result = itflow_api_request('assets', 'read');
         if ($result['success'] && isset($result['data'])) {
             $assets_data = $result['data']['data'] ?? $result['data'];
             if (!is_array($assets_data)) $assets_data = [];
@@ -242,36 +268,47 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
     }
 
     if ($action === 'sync_automation') {
-        $workflows = [];
-        $endpoints_to_check = [
-            ['endpoint' => 'recurring_tickets', 'label' => 'Recurring Tickets'],
-            ['endpoint' => 'scheduled_tasks', 'label' => 'Scheduled Tasks'],
-            ['endpoint' => 'automations', 'label' => 'Automations'],
+        $overview = [];
+        $resources_to_check = [
+            ['resource' => 'invoices', 'label' => 'Invoices', 'name_field' => 'invoice_number', 'status_field' => 'invoice_status', 'date_field' => 'invoice_date'],
+            ['resource' => 'contacts', 'label' => 'Contacts', 'name_field' => 'contact_name', 'status_field' => null, 'date_field' => 'contact_created_at'],
+            ['resource' => 'documents', 'label' => 'Documents', 'name_field' => 'document_name', 'status_field' => null, 'date_field' => 'document_created_at'],
+            ['resource' => 'domains', 'label' => 'Domains', 'name_field' => 'domain_name', 'status_field' => 'domain_expire', 'date_field' => 'domain_expire'],
+            ['resource' => 'certificates', 'label' => 'Certificates', 'name_field' => 'certificate_domain', 'status_field' => 'certificate_expire', 'date_field' => 'certificate_expire'],
+            ['resource' => 'networks', 'label' => 'Networks', 'name_field' => 'network_name', 'status_field' => null, 'date_field' => null],
+            ['resource' => 'credentials', 'label' => 'Credentials', 'name_field' => 'credential_name', 'status_field' => null, 'date_field' => null],
+            ['resource' => 'vendors', 'label' => 'Vendors', 'name_field' => 'vendor_name', 'status_field' => null, 'date_field' => null],
         ];
 
-        $total_rules = 0;
-        foreach ($endpoints_to_check as $ep) {
-            $result = itflow_api_request($ep['endpoint']);
+        $total_items = 0;
+        foreach ($resources_to_check as $res) {
+            $result = itflow_api_request($res['resource'], 'read');
+            $count = 0;
+            $items_list = [];
             if ($result['success'] && isset($result['data'])) {
                 $items = $result['data']['data'] ?? $result['data'];
                 if (is_array($items)) {
-                    foreach ($items as $item) {
-                        $workflows[] = [
-                            'type' => $ep['label'],
-                            'name' => $item['name'] ?? $item['subject'] ?? $item['ticket_subject'] ?? 'Unnamed',
-                            'frequency' => $item['frequency'] ?? $item['recurrence'] ?? $item['schedule'] ?? 'N/A',
-                            'status' => $item['status'] ?? $item['active'] ?? 'active',
-                            'last_run' => $item['last_run'] ?? $item['updated_at'] ?? 'N/A',
+                    $count = count($items);
+                    foreach (array_slice($items, 0, 5) as $item) {
+                        $items_list[] = [
+                            'name' => $item[$res['name_field']] ?? $item['name'] ?? 'N/A',
+                            'status' => $res['status_field'] ? ($item[$res['status_field']] ?? 'N/A') : 'Active',
+                            'date' => $res['date_field'] ? ($item[$res['date_field']] ?? 'N/A') : 'N/A',
                         ];
-                        $total_rules++;
                     }
                 }
             }
+            $overview[] = [
+                'type' => $res['label'],
+                'count' => $count,
+                'items' => $items_list,
+            ];
+            $total_items += $count;
         }
 
-        $sync_results = ['type' => 'automation', 'total' => $total_rules, 'synced' => $total_rules, 'skipped' => 0, 'errors' => 0, 'workflows' => $workflows];
-        log_sync_action($db, 'itflow_sync_automation', 'automation', 'completed', "Fetched $total_rules automation rules from ITFlow", $total_rules);
-        $success_msg = "Automation sync complete: Found $total_rules automation rules.";
+        $sync_results = ['type' => 'automation', 'total' => $total_items, 'synced' => $total_items, 'skipped' => 0, 'errors' => 0, 'overview' => $overview];
+        log_sync_action($db, 'itflow_sync_automation', 'automation', 'completed', "ITFlow data overview: $total_items total items across " . count($resources_to_check) . " resources", $total_items);
+        $success_msg = "Data overview complete: Found $total_items items across " . count($resources_to_check) . " ITFlow resources.";
     }
 }
 
@@ -355,33 +392,35 @@ $device_count = $db->query("SELECT COUNT(*) FROM network_devices")->fetchColumn(
                             </div>
                         </div>
 
-                        <?php if ($sync_results['type'] === 'automation' && !empty($sync_results['workflows'])): ?>
-                            <div class="mt-4 border border-gray-200 rounded-lg overflow-hidden">
+                        <?php if ($sync_results['type'] === 'automation' && !empty($sync_results['overview'])): ?>
+                            <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                                <?php foreach ($sync_results['overview'] as $ov): ?>
+                                    <div class="p-3 border border-gray-200 rounded-lg text-center">
+                                        <p class="text-xl font-bold text-gray-900"><?php echo $ov['count']; ?></p>
+                                        <p class="text-xs text-gray-500 mt-1"><?php echo htmlspecialchars($ov['type']); ?></p>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <div class="border border-gray-200 rounded-lg overflow-hidden">
                                 <table class="w-full text-sm">
                                     <thead class="bg-gray-50">
                                         <tr>
-                                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Type</th>
+                                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Resource</th>
                                             <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Name</th>
-                                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Frequency</th>
                                             <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
-                                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Last Run</th>
+                                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Date</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-100">
-                                        <?php foreach ($sync_results['workflows'] as $wf): ?>
-                                            <tr>
-                                                <td class="px-4 py-2.5"><span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-medium"><?php echo htmlspecialchars($wf['type']); ?></span></td>
-                                                <td class="px-4 py-2.5 font-medium text-gray-900"><?php echo htmlspecialchars($wf['name']); ?></td>
-                                                <td class="px-4 py-2.5 text-gray-600"><?php echo htmlspecialchars($wf['frequency']); ?></td>
-                                                <td class="px-4 py-2.5">
-                                                    <?php $st = strtolower($wf['status']); ?>
-                                                    <span class="px-2 py-0.5 rounded text-xs font-medium <?php echo ($st === 'active' || $st === '1') ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'; ?>">
-                                                        <?php echo ($st === 'active' || $st === '1') ? 'Active' : ucfirst($wf['status']); ?>
-                                                    </span>
-                                                </td>
-                                                <td class="px-4 py-2.5 text-gray-500 text-xs"><?php echo htmlspecialchars($wf['last_run']); ?></td>
-                                            </tr>
-                                        <?php endforeach; ?>
+                                        <?php foreach ($sync_results['overview'] as $ov):
+                                            foreach ($ov['items'] as $item): ?>
+                                                <tr>
+                                                    <td class="px-4 py-2.5"><span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-medium"><?php echo htmlspecialchars($ov['type']); ?></span></td>
+                                                    <td class="px-4 py-2.5 font-medium text-gray-900"><?php echo htmlspecialchars($item['name']); ?></td>
+                                                    <td class="px-4 py-2.5 text-gray-600 text-xs"><?php echo htmlspecialchars($item['status']); ?></td>
+                                                    <td class="px-4 py-2.5 text-gray-500 text-xs"><?php echo htmlspecialchars($item['date']); ?></td>
+                                                </tr>
+                                        <?php endforeach; endforeach; ?>
                                     </tbody>
                                 </table>
                             </div>
@@ -471,8 +510,8 @@ $device_count = $db->query("SELECT COUNT(*) FROM network_devices")->fetchColumn(
                         </form>
                         <form method="POST" class="inline" data-testid="form-sync-automation">
                             <input type="hidden" name="action" value="sync_automation">
-                            <button type="submit" <?php echo !$itflow_connected ? 'disabled' : ''; ?> class="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed" data-testid="button-sync-automation" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Syncing...'; this.disabled=true; this.form.submit();">
-                                <i class="fas fa-robot"></i> Sync Automation
+                            <button type="submit" <?php echo !$itflow_connected ? 'disabled' : ''; ?> class="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed" data-testid="button-sync-automation" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Loading...'; this.disabled=true; this.form.submit();">
+                                <i class="fas fa-database"></i> Data Overview
                             </button>
                         </form>
                         <form method="POST" class="inline" data-testid="form-test-connection">
