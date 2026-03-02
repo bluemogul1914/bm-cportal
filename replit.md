@@ -53,6 +53,9 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-nextcloud.php` - Nextcloud file sharing integration (document sync)
 - `admin-stripe.php` - Stripe payment integration (billing overview, recent payments)
 - `admin-audit.php` - Activity audit trail (filterable log of all user actions)
+- `admin-messages.php` - Messaging center (list sent/draft messages, filters by category/status)
+- `admin-message-compose.php` - Compose message (rich editor, categories, recipient selection, placeholders, template load/save, preview, draft save)
+- `admin-message-templates.php` - Message templates CRUD (create/edit/delete reusable templates)
 - `admin-roles.php` - Roles & Access Control (RBAC: super-admin, admin, sales, IT support, billing, user)
 - `admin-projects.php` - Project management list (create, filter, status/type/priority, progress tracking)
 - `admin-project-detail.php` - Individual project view with task board, notes, timeline, status management
@@ -71,7 +74,11 @@ An online PHP code editor and execution environment built with React + Express, 
 - Auto-notifications wired into: ticket creation (tickets.php), admin ticket replies (admin-ticket-detail.php), invoice creation (admin-invoice-add.php), invoice paid (admin-invoice-detail.php), document uploads (documents.php)
 - Notification helpers: `notify_ticket_created()`, `notify_ticket_reply()`, `notify_invoice_created()`, `notify_invoice_paid()`, `notify_document_uploaded()`
 - Test email feature available in Admin Settings > Email tab
-- Uses raw SMTP sockets (fsockopen) with STARTTLS/SSL support — PHP `mail()` is disabled in sandbox
+- Uses raw SMTP sockets (stream_socket_client) with STARTTLS/SSL support — PHP `mail()` is disabled in sandbox
+- Admin messaging center: news blasts, alerts, promotions, network outage notifications
+- Message templates: reusable templates with placeholders for client data
+- Placeholders: `{{ client.name }}`, `{{ client.email }}`, `{{ client.company }}`, `{{ client.id }}`, `{{ company.name }}`, `{{ date.today }}`, etc.
+- DB tables: `messages` (sent/draft messages), `message_templates` (reusable templates)
 
 ### Branding
 - Colors: Primary #1a56db, Secondary #0d1b3e, Accent #3b82f6
