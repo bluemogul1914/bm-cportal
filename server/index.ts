@@ -1161,6 +1161,59 @@ async function bootstrapPortalDatabase() {
       console.log("Created admin user: admin@bluemogul.biz");
     }
 
+    const productCount = await webhookPool.query("SELECT COUNT(*) as cnt FROM products");
+    if (parseInt(productCount.rows[0].cnt) === 0) {
+      const products = [
+        ["Essential IT Support", "Managed IT", "Tier 1", 149.00, "monthly", "8/5 Support, Basic Network Monitoring, Email Support, Patch Management, Monthly Reports, Up to 10 devices", '[\"8/5 Support\", \"Basic Network Monitoring\", \"Email Support\", \"Patch Management\", \"Monthly Reports\", \"Up to 10 devices\"]'],
+        ["Business IT Support", "Managed IT", "Tier 2", 249.00, "monthly", "24/7 Support, Full Infrastructure Monitoring, Phone & Email Support, Remote Desktop Support, Security Patches, Weekly Reports, Up to 25 devices", '[\"24/7 Support\", \"Full Infrastructure Monitoring\", \"Phone & Email Support\", \"Remote Desktop Support\", \"Security Patches\", \"Weekly Reports\", \"Up to 25 devices\"]'],
+        ["Professional IT Support", "Managed IT", "Tier 3", 449.00, "monthly", "Dedicated Engineer, White Glove Service, Priority Support Queue, 2-Hour Response Time, Proactive Maintenance, Quarterly Business Reviews, Up to 50 devices", '[\"Dedicated Engineer\", \"White Glove Service\", \"Priority Support Queue\", \"2-Hour Response Time\", \"Proactive Maintenance\", \"Quarterly Business Reviews\", \"Up to 50 devices\"]'],
+        ["Enterprise MSP Complete", "Managed IT", "Tier 4", 749.00, "monthly", "Unlimited Support, On-Site Visits Included, Strategic IT Planning, vCIO Services, Security Audits, Disaster Recovery Planning, Unlimited devices", '[\"Unlimited Support\", \"On-Site Visits Included\", \"Strategic IT Planning\", \"vCIO Services\", \"Security Audits\", \"Disaster Recovery Planning\", \"Unlimited devices\"]'],
+        ["VoIP Starter Pack", "VoIP", "Tier 1", 49.00, "monthly", "5 Extensions, Voicemail to Email, Call Forwarding, Basic Auto-Attendant, Mobile App, Unlimited Domestic Calling", '[\"5 Extensions\", \"Voicemail to Email\", \"Call Forwarding\", \"Basic Auto-Attendant\", \"Mobile App\", \"Unlimited Domestic Calling\"]'],
+        ["VoIP Business", "VoIP", "Tier 2", 89.00, "monthly", "15 Extensions, Call Recording, Advanced IVR, Conference Bridge, Call Analytics, Ring Groups, Music on Hold", '[\"15 Extensions\", \"Call Recording\", \"Advanced IVR\", \"Conference Bridge (25 participants)\", \"Call Analytics\", \"Ring Groups\", \"Music on Hold\"]'],
+        ["VoIP Professional", "VoIP", "Tier 3", 149.00, "monthly", "50 Extensions, Advanced Call Analytics, CRM Integration, Queue Management, Call Center Features, Dedicated Support, SLA Guarantee", '[\"50 Extensions\", \"Advanced Call Analytics\", \"CRM Integration (Salesforce, HubSpot)\", \"Queue Management\", \"Call Center Features\", \"Dedicated Support\", \"SLA Guarantee\"]'],
+        ["VoIP Enterprise", "VoIP", "Tier 4", 299.00, "monthly", "Unlimited Extensions, White-Label Portal, Custom IVR Flows, Multi-Site Support, Advanced Reporting, API Access, 99.99% SLA", '[\"Unlimited Extensions\", \"White-Label Portal\", \"Custom IVR Flows\", \"Multi-Site Support\", \"Advanced Reporting\", \"API Access\", \"99.99% SLA\"]'],
+        ["Residential Fiber 100", "Internet", "Tier 1", 49.00, "monthly", "100 Mbps Download, 100 Mbps Upload, Unlimited Data, Free Installation, Wi-Fi Router Included", '[\"100 Mbps Download\", \"100 Mbps Upload\", \"Unlimited Data\", \"Free Installation\", \"Wi-Fi Router Included\"]'],
+        ["Residential Fiber 500", "Internet", "Tier 2", 69.00, "monthly", "500 Mbps Download, 500 Mbps Upload, Unlimited Data, Free Installation, Wi-Fi 6 Router, Priority Support", '[\"500 Mbps Download\", \"500 Mbps Upload\", \"Unlimited Data\", \"Free Installation\", \"Wi-Fi 6 Router\", \"Priority Support\"]'],
+        ["Residential Fiber Gig", "Internet", "Tier 3", 89.00, "monthly", "1 Gbps Download, 1 Gbps Upload, Unlimited Data, Free Installation, Wi-Fi 6E Router, Priority Support, Static IP", '[\"1 Gbps Download\", \"1 Gbps Upload\", \"Unlimited Data\", \"Free Installation\", \"Wi-Fi 6E Router\", \"Priority Support\", \"Static IP\"]'],
+        ["Business Fiber 500", "Internet", "Tier 2", 149.00, "monthly", "500 Mbps Symmetric, SLA Guarantee, Static IP Block (/29), 24/7 Business Support, Managed Router", '[\"500 Mbps Symmetric\", \"SLA Guarantee\", \"Static IP Block (/29)\", \"24/7 Business Support\", \"Managed Router\"]'],
+        ["Business Fiber Gig", "Internet", "Tier 3", 249.00, "monthly", "1 Gbps Symmetric, 99.9% SLA, Static IP Block (/28), 24/7 Priority Support, Managed Firewall, VLAN Support", '[\"1 Gbps Symmetric\", \"99.9% SLA\", \"Static IP Block (/28)\", \"24/7 Priority Support\", \"Managed Firewall\", \"VLAN Support\"]'],
+        ["Enterprise Fiber 10G", "Internet", "Tier 4", 599.00, "monthly", "10 Gbps Symmetric, 99.99% SLA, Static IP Block (/27), Dedicated Account Manager, Redundant Paths, BGP Support", '[\"10 Gbps Symmetric\", \"99.99% SLA\", \"Static IP Block (/27)\", \"Dedicated Account Manager\", \"Redundant Paths\", \"BGP Support\"]'],
+        ["Fixed Wireless 50", "Internet", "Tier 1", 39.00, "monthly", "50 Mbps Download, 10 Mbps Upload, Free Installation, Equipment Included, Best Effort", '[\"50 Mbps Download\", \"10 Mbps Upload\", \"Free Installation\", \"Equipment Included\", \"Best Effort\"]'],
+        ["Fixed Wireless 100", "Internet", "Tier 2", 59.00, "monthly", "100 Mbps Download, 25 Mbps Upload, Free Installation, Equipment Included, Priority Traffic", '[\"100 Mbps Download\", \"25 Mbps Upload\", \"Free Installation\", \"Equipment Included\", \"Priority Traffic\"]'],
+        ["Endpoint Protection Basic", "Security", "Tier 1", 5.00, "monthly", "Antivirus, Malware Protection, Web Filtering, Per Device", '[\"Antivirus\", \"Malware Protection\", \"Web Filtering\", \"Per Device\"]'],
+        ["Endpoint Protection Advanced", "Security", "Tier 2", 10.00, "monthly", "EDR, Threat Hunting, Ransomware Protection, Patch Management, Per Device", '[\"EDR\", \"Threat Hunting\", \"Ransomware Protection\", \"Patch Management\", \"Per Device\"]'],
+        ["Managed Firewall", "Security", "Tier 1", 99.00, "monthly", "Hardware Firewall, IDS/IPS, VPN, Content Filtering, 24/7 Monitoring", '[\"Hardware Firewall\", \"IDS/IPS\", \"VPN\", \"Content Filtering\", \"24/7 Monitoring\"]'],
+        ["Security Operations Center", "Security", "Tier 3", 299.00, "monthly", "24/7 SOC Monitoring, SIEM, Incident Response, Threat Intelligence, Compliance Reporting", '[\"24/7 SOC Monitoring\", \"SIEM\", \"Incident Response\", \"Threat Intelligence\", \"Compliance Reporting\"]'],
+        ["Microsoft 365 Basic", "Cloud", "Tier 1", 8.00, "monthly", "Exchange Online, 50GB Mailbox, OneDrive 1TB, Teams, Per User", '[\"Exchange Online\", \"50GB Mailbox\", \"OneDrive 1TB\", \"Teams\", \"Per User\"]'],
+        ["Microsoft 365 Business", "Cloud", "Tier 2", 15.00, "monthly", "Full Office Suite, 1TB OneDrive, SharePoint, Teams Premium, Per User", '[\"Full Office Suite\", \"1TB OneDrive\", \"SharePoint\", \"Teams Premium\", \"Per User\"]'],
+        ["Cloud Backup Standard", "Cloud", "Tier 1", 0.10, "per-gb-monthly", "Automated Daily Backups, 30-Day Retention, AES-256 Encryption, Per GB", '[\"Automated Daily Backups\", \"30-Day Retention\", \"AES-256 Encryption\", \"Per GB\"]'],
+        ["Cloud Backup Premium", "Cloud", "Tier 2", 0.20, "per-gb-monthly", "Continuous Backup, 1-Year Retention, Geo-Redundant, Instant Recovery, Per GB", '[\"Continuous Backup\", \"1-Year Retention\", \"Geo-Redundant\", \"Instant Recovery\", \"Per GB\"]'],
+        ["Hosted Server - Small", "Cloud", "Tier 1", 99.00, "monthly", "2 vCPU, 4GB RAM, 100GB SSD, Managed OS, Monitoring", '[\"2 vCPU\", \"4GB RAM\", \"100GB SSD\", \"Managed OS\", \"Monitoring\"]'],
+        ["Hosted Server - Medium", "Cloud", "Tier 2", 199.00, "monthly", "4 vCPU, 8GB RAM, 250GB SSD, Managed OS, Monitoring, Backups", '[\"4 vCPU\", \"8GB RAM\", \"250GB SSD\", \"Managed OS\", \"Monitoring\", \"Backups\"]'],
+        ["Hosted Server - Large", "Cloud", "Tier 3", 399.00, "monthly", "8 vCPU, 16GB RAM, 500GB SSD, Managed OS, HA, Monitoring, Backups", '[\"8 vCPU\", \"16GB RAM\", \"500GB SSD\", \"Managed OS\", \"HA\", \"Monitoring\", \"Backups\"]'],
+        ["Network Assessment", "Professional Services", null, 500.00, "one-time", "Full network audit with recommendations report", '[\"Network Audit\", \"Security Assessment\", \"Recommendations Report\", \"Executive Summary\"]'],
+        ["IT Consulting", "Professional Services", null, 175.00, "per-hour", "Expert IT consulting and planning", '[\"Expert Consultation\", \"Strategic Planning\", \"Documentation\", \"Recommendations\"]'],
+        ["Custom IT Training", "Training", null, 1200.00, "per-day", "Full-day custom training for your team", '[\"Full-Day Training\", \"Custom Curriculum\", \"Hands-on Labs\", \"Certificate of Completion\"]'],
+        ["Additional Static IP", "Add-on", null, 5.00, "monthly", "Additional static IP address", '[\"1 Static IP Address\"]'],
+        ["Additional VoIP Extension", "Add-on", null, 8.00, "monthly", "Additional VoIP extension line", '[\"1 VoIP Extension\", \"Voicemail\", \"Call Features\"]'],
+        ["Priority Support Upgrade", "Add-on", null, 99.00, "monthly", "Upgrade to priority support queue", '[\"Priority Queue\", \"1-Hour Response Time\", \"Dedicated Support Line\"]'],
+        ["Backup & Disaster Recovery", "Add-on", null, 0.50, "per-gb-monthly", "Cloud backup and disaster recovery, minimum 100GB", '[\"Cloud Backup\", \"Disaster Recovery\", \"Automated Scheduling\", \"Min 100GB\"]'],
+        ["Website Hosting", "Add-on", null, 25.00, "monthly", "Managed website hosting per site", '[\"Managed Hosting\", \"SSL Certificate\", \"Daily Backups\", \"CDN Included\"]'],
+        ["Email Hosting", "Add-on", null, 6.00, "monthly", "Professional email hosting per mailbox", '[\"Professional Email\", \"50GB Mailbox\", \"Spam Filtering\", \"Mobile Access\"]'],
+        ["DDoS Protection", "Add-on", null, 149.00, "monthly", "Advanced DDoS protection service", '[\"DDoS Mitigation\", \"Traffic Scrubbing\", \"Real-time Monitoring\", \"Incident Response\"]'],
+        ["On-Site Visit", "Professional Services", null, 175.00, "per-visit", "On-site technical support, 2-hour minimum", '[\"2-Hour Minimum\", \"On-Site Support\", \"Travel Included\"]'],
+        ["Emergency On-Site", "Professional Services", null, 350.00, "per-visit", "Same-day emergency on-site support", '[\"Same-Day Response\", \"Emergency Support\", \"Travel Included\", \"After-Hours Available\"]'],
+        ["Custom Integration Development", "Professional Services", null, 150.00, "per-hour", "Custom integration development, 10-hour minimum", '[\"Custom Development\", \"API Integrations\", \"Documentation\", \"10-Hour Minimum\"]'],
+      ];
+      for (const p of products) {
+        await webhookPool.query(
+          "INSERT INTO products (name, category, tier, price, billing_period, description, features) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (name) DO NOTHING",
+          p
+        );
+      }
+      console.log(`Seeded ${products.length} products into database`);
+    }
+
     console.log("Portal database bootstrap complete");
   } catch (err) {
     console.error("Portal database bootstrap error:", err);
