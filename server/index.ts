@@ -331,12 +331,6 @@ function handleLogin(req: Request, res: Response) {
   }
   const postData = formParts.join("&");
 
-  console.log("[LOGIN DEBUG] req.body keys:", Object.keys(req.body || {}));
-  console.log("[LOGIN DEBUG] email from body:", req.body?.email);
-  console.log("[LOGIN DEBUG] password length:", req.body?.password?.length);
-  console.log("[LOGIN DEBUG] csrf_token present:", !!req.body?.csrf_token);
-  console.log("[LOGIN DEBUG] session csrfToken present:", !!(req.session as any)?.csrfToken);
-
   const csrfToken = (req.session as any)?.csrfToken || '';
   const csrfInject = csrfToken ? `\n\$_SESSION['csrf_token'] = '${csrfToken.replace(/'/g, "\\'")}';` : '';
 
@@ -368,13 +362,10 @@ require '${filePath.replace(/'/g, "\\'")}';
           console.error("PHP login handler error:", stderr || error.message);
           return res.status(500).json({ success: false, message: "Server error" });
         }
-        console.log("[LOGIN DEBUG] PHP raw stdout length:", stdout.length);
-        if (stderr) console.log("[LOGIN DEBUG] PHP stderr:", stderr);
+        if (stderr && stderr.includes('ERROR')) console.error("[LOGIN] PHP error:", stderr);
         stdout = extractCsrfToken(stdout, req);
-        console.log("[LOGIN DEBUG] PHP cleaned stdout:", stdout.substring(0, 500));
         try {
           const json = JSON.parse(stdout);
-          console.log("[LOGIN DEBUG] Parsed JSON success:", json.success, "message:", json.message);
           if (json.success && json.user) {
             (req.session as any).portalUser = {
               user_id: json.user.id,
@@ -833,7 +824,351 @@ app.get("/portal/logout.php", (req, res) => {
   });
 });
 
+async function bootstrapPortalDatabase() {
+  try {
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        name VARCHAR(255) DEFAULT '',
+        is_admin BOOLEAN DEFAULT FALSE,
+        role VARCHAR(50) DEFAULT 'user',
+        status VARCHAR(20) DEFAULT 'active',
+        phone VARCHAR(50),
+        company VARCHAR(255),
+        address TEXT,
+        city VARCHAR(100),
+        state VARCHAR(50),
+        zip VARCHAR(20),
+        remember_token VARCHAR(255),
+        remember_token_expires TIMESTAMP,
+        last_login TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS activity_log (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER,
+        action VARCHAR(100),
+        entity_type VARCHAR(50),
+        entity_id INTEGER,
+        details TEXT,
+        ip_address VARCHAR(45),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS clients (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        name VARCHAR(255),
+        email VARCHAR(255),
+        phone VARCHAR(50),
+        company VARCHAR(255),
+        address TEXT,
+        city VARCHAR(100),
+        state VARCHAR(50),
+        zip VARCHAR(20),
+        status VARCHAR(20) DEFAULT 'active',
+        credit_balance DECIMAL(10,2) DEFAULT 0,
+        notes TEXT,
+        parent_id INTEGER,
+        latitude DECIMAL(10,7),
+        longitude DECIMAL(10,7),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS products (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) UNIQUE NOT NULL,
+        category VARCHAR(100),
+        tier VARCHAR(50),
+        price DECIMAL(10,2) DEFAULT 0,
+        billing_period VARCHAR(20) DEFAULT 'monthly',
+        description TEXT,
+        features TEXT,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS tickets (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER,
+        user_id INTEGER,
+        subject VARCHAR(255),
+        description TEXT,
+        status VARCHAR(20) DEFAULT 'open',
+        priority VARCHAR(20) DEFAULT 'medium',
+        assigned_to INTEGER,
+        source VARCHAR(50) DEFAULT 'portal',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS ticket_comments (
+        id SERIAL PRIMARY KEY,
+        ticket_id INTEGER REFERENCES tickets(id),
+        user_id INTEGER,
+        comment TEXT,
+        is_internal BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER,
+        invoice_number VARCHAR(50),
+        amount DECIMAL(10,2) DEFAULT 0,
+        tax DECIMAL(10,2) DEFAULT 0,
+        total DECIMAL(10,2) DEFAULT 0,
+        status VARCHAR(20) DEFAULT 'unpaid',
+        due_date DATE,
+        notes TEXT,
+        items JSONB DEFAULT '[]',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS payments (
+        id SERIAL PRIMARY KEY,
+        invoice_id INTEGER,
+        client_id INTEGER,
+        amount DECIMAL(10,2) DEFAULT 0,
+        payment_method VARCHAR(50),
+        transaction_id VARCHAR(255),
+        status VARCHAR(20) DEFAULT 'completed',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS subscriptions (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER,
+        product_id INTEGER,
+        status VARCHAR(20) DEFAULT 'active',
+        price DECIMAL(10,2) DEFAULT 0,
+        billing_period VARCHAR(20) DEFAULT 'monthly',
+        start_date DATE,
+        next_billing DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS documents (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER,
+        user_id INTEGER,
+        filename VARCHAR(255),
+        original_name VARCHAR(255),
+        file_size INTEGER DEFAULT 0,
+        file_type VARCHAR(50),
+        category VARCHAR(50) DEFAULT 'general',
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS network_devices (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER,
+        hostname VARCHAR(255),
+        device_type VARCHAR(50),
+        manufacturer VARCHAR(100),
+        model VARCHAR(100),
+        serial_number VARCHAR(100),
+        ip_address VARCHAR(45),
+        mac_address VARCHAR(17),
+        os_name VARCHAR(100),
+        os_version VARCHAR(50),
+        cpu VARCHAR(100),
+        ram_gb INTEGER,
+        disk_gb INTEGER,
+        status VARCHAR(20) DEFAULT 'online',
+        notes TEXT,
+        last_seen TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS network_credentials (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER,
+        service_name VARCHAR(255),
+        credential_type VARCHAR(50),
+        username VARCHAR(255),
+        password_encrypted TEXT,
+        url VARCHAR(500),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_articles (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255),
+        slug VARCHAR(255),
+        content TEXT,
+        category VARCHAR(100),
+        tags TEXT,
+        status VARCHAR(20) DEFAULT 'draft',
+        author_id INTEGER,
+        views INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER,
+        title VARCHAR(255),
+        message TEXT,
+        type VARCHAR(50) DEFAULT 'info',
+        entity_type VARCHAR(50),
+        entity_id INTEGER,
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255),
+        client_id INTEGER,
+        project_type VARCHAR(50),
+        status VARCHAR(20) DEFAULT 'planning',
+        priority VARCHAR(20) DEFAULT 'medium',
+        description TEXT,
+        start_date DATE,
+        due_date DATE,
+        progress INTEGER DEFAULT 0,
+        budget DECIMAL(10,2),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS project_tasks (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER REFERENCES projects(id),
+        title VARCHAR(255),
+        description TEXT,
+        status VARCHAR(20) DEFAULT 'pending',
+        assigned_to INTEGER,
+        due_date DATE,
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS project_notes (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER REFERENCES projects(id),
+        user_id INTEGER,
+        note TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        id SERIAL PRIMARY KEY,
+        setting_key VARCHAR(100) UNIQUE NOT NULL,
+        setting_value TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS agent_config (
+        id SERIAL PRIMARY KEY,
+        agent_key VARCHAR(50) UNIQUE NOT NULL,
+        agent_name VARCHAR(100),
+        codename VARCHAR(100),
+        description TEXT,
+        category VARCHAR(50),
+        tools TEXT,
+        time_saved_hrs DECIMAL(5,1) DEFAULT 0,
+        revenue_monthly DECIMAL(10,2) DEFAULT 0,
+        n8n_webhook_url TEXT,
+        is_enabled BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS agent_metrics (
+        id SERIAL PRIMARY KEY,
+        agent_key VARCHAR(50) UNIQUE NOT NULL,
+        runs_total INTEGER DEFAULT 0,
+        runs_today INTEGER DEFAULT 0,
+        errors_total INTEGER DEFAULT 0,
+        saves_week_hrs DECIMAL(5,1) DEFAULT 0,
+        online BOOLEAN DEFAULT FALSE,
+        last_status VARCHAR(20) DEFAULT 'idle',
+        last_run_at TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS agent_logs (
+        id SERIAL PRIMARY KEY,
+        agent_key VARCHAR(50),
+        action VARCHAR(100),
+        status VARCHAR(20),
+        message TEXT,
+        execution_time INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id SERIAL PRIMARY KEY,
+        subject VARCHAR(255),
+        body TEXT,
+        category VARCHAR(50),
+        status VARCHAR(20) DEFAULT 'draft',
+        recipients JSONB DEFAULT '[]',
+        sent_at TIMESTAMP,
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS message_templates (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255),
+        subject VARCHAR(255),
+        body TEXT,
+        category VARCHAR(50),
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    const adminCheck = await webhookPool.query("SELECT id FROM users WHERE email = 'admin@bluemogul.biz' LIMIT 1");
+    if (adminCheck.rows.length === 0) {
+      const { execSync } = await import("child_process");
+      const hash = execSync(`php -r "echo password_hash('admin123', PASSWORD_BCRYPT);"`, { encoding: "utf-8" }).trim();
+      await webhookPool.query(
+        "INSERT INTO users (email, password, name, is_admin, role, status) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (email) DO NOTHING",
+        ["admin@bluemogul.biz", hash, "Admin", true, "super-admin", "active"]
+      );
+      console.log("Created admin user: admin@bluemogul.biz");
+    }
+
+    console.log("Portal database bootstrap complete");
+  } catch (err) {
+    console.error("Portal database bootstrap error:", err);
+  }
+}
+
 (async () => {
+  await bootstrapPortalDatabase();
   await seed().catch((err) => console.error("Seed failed:", err));
   await initStripe();
   await registerRoutes(httpServer, app);

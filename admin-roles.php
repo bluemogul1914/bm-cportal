@@ -11,7 +11,7 @@ $pdo = getDB();
 $success_msg = '';
 $error_msg = '';
 
-$roles = [
+$staff_roles = [
     'super-admin' => [
         'label' => 'Super Admin',
         'color' => 'red',
@@ -47,14 +47,23 @@ $roles = [
         'description' => 'Access to invoices, payments, billing, and financial reports only.',
         'permissions' => ['dashboard', 'clients', 'invoices', 'billing', 'services', 'reports']
     ],
-    'user' => [
-        'label' => 'User',
-        'color' => 'gray',
-        'icon' => 'fa-user',
-        'description' => 'Standard client portal access only. No admin panel access.',
-        'permissions' => ['client_dashboard', 'client_tickets', 'client_billing', 'client_services', 'client_documents', 'client_profile']
-    ]
+    'wholesaler' => [
+        'label' => 'Wholesaler',
+        'color' => 'indigo',
+        'icon' => 'fa-warehouse',
+        'description' => 'Wholesale partner access. Can view products, pricing, bulk orders, and partner reports.',
+        'permissions' => ['dashboard', 'products', 'services', 'invoices', 'billing', 'reports']
+    ],
+    'dealer' => [
+        'label' => 'Dealer',
+        'color' => 'teal',
+        'icon' => 'fa-store',
+        'description' => 'Authorized dealer access. Can manage their own clients, orders, and commissions.',
+        'permissions' => ['dashboard', 'clients', 'products', 'services', 'invoices', 'billing']
+    ],
 ];
+
+$roles = $staff_roles;
 
 $all_permissions = [
     'dashboard' => 'Admin Dashboard',
@@ -92,11 +101,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $target_user_id = intval($_POST['user_id'] ?? 0);
         $new_role = $_POST['role'] ?? '';
         
-        if ($target_user_id && array_key_exists($new_role, $roles)) {
-            if ($target_user_id === $_SESSION['user_id'] && $new_role === 'user') {
-                $error_msg = 'You cannot demote yourself to a non-admin role.';
+        if ($target_user_id && array_key_exists($new_role, $staff_roles)) {
+            if ($target_user_id === $_SESSION['user_id']) {
+                $error_msg = 'You cannot change your own role.';
             } else {
-                $is_admin_role = in_array($new_role, ['super-admin', 'admin', 'sales', 'it-support', 'billing']);
+                $is_admin_role = in_array($new_role, ['super-admin', 'admin', 'sales', 'it-support', 'billing', 'wholesaler', 'dealer']);
                 $stmt = $pdo->prepare("UPDATE users SET role = ?, is_admin = ? WHERE id = ?");
                 $stmt->execute([$new_role, $is_admin_role ? true : false, $target_user_id]);
                 $success_msg = 'User role updated successfully.';
@@ -143,7 +152,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             if ($check->fetch()) {
                 $error_msg = 'A user with that email already exists.';
             } else {
-                $is_admin_role = in_array($new_role_val, ['super-admin', 'admin', 'sales', 'it-support', 'billing']);
+                $is_admin_role = in_array($new_role_val, ['super-admin', 'admin', 'sales', 'it-support', 'billing', 'wholesaler', 'dealer']);
                 $hashed = password_hash($new_password, PASSWORD_DEFAULT);
                 $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role, is_admin, status) VALUES (?, ?, ?, ?, ?, 'active')");
                 $stmt->execute([$new_name, $new_email, $hashed, $new_role_val, $is_admin_role ? true : false]);
@@ -156,7 +165,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     }
 }
 
-$stmt = $pdo->query("SELECT id, name, email, role, status, is_admin, last_login, created_at FROM users ORDER BY CASE role WHEN 'super-admin' THEN 1 WHEN 'admin' THEN 2 WHEN 'sales' THEN 3 WHEN 'it-support' THEN 4 WHEN 'billing' THEN 5 ELSE 6 END, name");
+$staff_role_keys = array_keys($staff_roles);
+$placeholders = implode(',', array_fill(0, count($staff_role_keys), '?'));
+$stmt = $pdo->prepare("SELECT id, name, email, role, status, is_admin, last_login, created_at FROM users WHERE role IN ({$placeholders}) OR is_admin = TRUE ORDER BY CASE role WHEN 'super-admin' THEN 1 WHEN 'admin' THEN 2 WHEN 'sales' THEN 3 WHEN 'it-support' THEN 4 WHEN 'billing' THEN 5 WHEN 'wholesaler' THEN 6 WHEN 'dealer' THEN 7 ELSE 8 END, name");
+$stmt->execute($staff_role_keys);
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $role_counts = [];
@@ -196,7 +208,7 @@ foreach ($users as $u) {
                 <div class="flex items-center justify-between">
                     <div>
                         <h1 class="text-2xl font-semibold text-gray-900" data-testid="page-title">Roles & Access Control</h1>
-                        <p class="text-sm text-gray-600 mt-1">Manage user roles and permissions across the portal</p>
+                        <p class="text-sm text-gray-600 mt-1">Manage staff, wholesaler, and dealer roles and permissions. Client accounts are managed under <a href="admin-clients.php" class="text-blue-600 hover:underline">Clients</a>.</p>
                     </div>
                     <button onclick="document.getElementById('create-user-modal').classList.remove('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition" data-testid="button-create-user">
                         <i class="fas fa-user-plus mr-2"></i>Create User
@@ -221,7 +233,7 @@ foreach ($users as $u) {
                 </div>
             <?php endif; ?>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4 mb-8">
                 <?php foreach ($roles as $role_key => $role_info): ?>
                     <?php
                     $count = $role_counts[$role_key] ?? 0;
@@ -232,6 +244,8 @@ foreach ($users as $u) {
                         'blue' => 'bg-blue-100 text-blue-700 border-blue-200',
                         'yellow' => 'bg-yellow-100 text-yellow-700 border-yellow-200',
                         'gray' => 'bg-gray-100 text-gray-700 border-gray-200',
+                        'indigo' => 'bg-indigo-100 text-indigo-700 border-indigo-200',
+                        'teal' => 'bg-teal-100 text-teal-700 border-teal-200',
                     ];
                     $colorClass = $colors[$role_info['color']] ?? $colors['gray'];
                     ?>
@@ -287,8 +301,8 @@ foreach ($users as $u) {
                 <div class="p-6 border-b border-gray-200">
                     <div class="flex items-center justify-between">
                         <div>
-                            <h2 class="text-lg font-semibold text-gray-900">User Accounts</h2>
-                            <p class="text-sm text-gray-600 mt-1"><?php echo count($users); ?> total users</p>
+                            <h2 class="text-lg font-semibold text-gray-900">Staff & Partner Accounts</h2>
+                            <p class="text-sm text-gray-600 mt-1"><?php echo count($users); ?> staff/partner accounts (client accounts managed under <a href="admin-clients.php" class="text-blue-600 hover:underline">Clients</a>)</p>
                         </div>
                     </div>
                 </div>
@@ -308,7 +322,8 @@ foreach ($users as $u) {
                             <?php foreach ($users as $u): ?>
                                 <?php
                                 $r = $u['role'] ?? 'user';
-                                $role_def = $roles[$r] ?? $roles['user'];
+                                $unknown_role = ['label' => ucfirst($r), 'color' => 'gray', 'icon' => 'fa-question-circle', 'description' => 'Unknown role', 'permissions' => []];
+                                $role_def = $roles[$r] ?? $unknown_role;
                                 $badge_colors = [
                                     'red' => 'bg-red-100 text-red-700',
                                     'purple' => 'bg-purple-100 text-purple-700',
@@ -316,6 +331,8 @@ foreach ($users as $u) {
                                     'blue' => 'bg-blue-100 text-blue-700',
                                     'yellow' => 'bg-yellow-100 text-yellow-700',
                                     'gray' => 'bg-gray-100 text-gray-700',
+                                    'indigo' => 'bg-indigo-100 text-indigo-700',
+                                    'teal' => 'bg-teal-100 text-teal-700',
                                 ];
                                 $badge = $badge_colors[$role_def['color']] ?? 'bg-gray-100 text-gray-700';
                                 $is_self = ($u['id'] == $_SESSION['user_id']);

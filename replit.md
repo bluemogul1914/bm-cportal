@@ -56,7 +56,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-messages.php` - Messaging center (list sent/draft messages, filters by category/status)
 - `admin-message-compose.php` - Compose message (rich editor, categories, recipient selection, placeholders, template load/save, preview, draft save)
 - `admin-message-templates.php` - Message templates CRUD (create/edit/delete reusable templates)
-- `admin-roles.php` - Roles & Access Control (RBAC: super-admin, admin, sales, IT support, billing, user)
+- `admin-roles.php` - Roles & Access Control (RBAC: super-admin, admin, sales, IT support, billing, wholesaler, dealer — staff/partner only; client 'user' role excluded, managed under Clients)
 - `admin-projects.php` - Project management list (create, filter, status/type/priority, progress tracking)
 - `admin-project-detail.php` - Individual project view with task board, notes, timeline, status management
 
