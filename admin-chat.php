@@ -145,7 +145,7 @@ foreach ($rooms as $key => $r) {
                         </div>
                     </div>
                     <div class="flex items-center gap-2 text-xs text-gray-400">
-                        <span id="typing-indicator" class="hidden text-blue-500"><i class="fas fa-ellipsis-h animate-pulse mr-1"></i>Loading...</span>
+                        <span id="nc-sync-status" class="hidden"><i class="fas fa-cloud text-blue-400 mr-1"></i>Synced to Nextcloud Talk</span>
                         <span id="connection-status"><i class="fas fa-circle text-green-400 text-[8px] mr-1"></i>Connected</span>
                     </div>
                 </div>
@@ -222,6 +222,15 @@ chatForm.addEventListener('submit', async function(e) {
             body: JSON.stringify({ room: ROOM, message: msg })
         });
         if (!resp.ok) throw new Error('Failed to send');
+        const data = await resp.json();
+        if (data.nc_sent) {
+            const ncStatus = document.getElementById('nc-sync-status');
+            ncStatus.classList.remove('hidden');
+            ncStatus.innerHTML = '<i class="fas fa-cloud-upload-alt text-green-500 mr-1"></i>Sent to Nextcloud Talk';
+            setTimeout(() => {
+                ncStatus.innerHTML = '<i class="fas fa-cloud text-blue-400 mr-1"></i>Synced to Nextcloud Talk';
+            }, 3000);
+        }
         fetchMessages();
     } catch (err) {
         console.error('Send error:', err);
@@ -249,18 +258,23 @@ function escapeHtml(text) {
 function appendMessage(msg) {
     const isMe = msg.user_id === CURRENT_USER_ID;
     const isPending = msg._pending;
+    const isNc = msg.is_nc;
     const initial = (msg.user_name || 'U')[0].toUpperCase();
-    const avatarColor = msg.is_admin ? 'bg-blue-600' : 'bg-gray-500';
+    const avatarColor = isNc ? 'bg-purple-600' : (msg.is_admin ? 'bg-blue-600' : 'bg-gray-500');
+    const badge = isNc
+        ? '<span class="px-1 py-0.5 bg-purple-100 text-purple-600 rounded text-[10px] font-medium"><i class="fas fa-cloud text-[8px] mr-0.5"></i>Nextcloud</span>'
+        : (msg.is_admin ? '<span class="px-1 py-0.5 bg-blue-100 text-blue-600 rounded text-[10px] font-medium">Staff</span>' : '<span class="px-1 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] font-medium">Client</span>');
+    const bubbleClass = isMe ? 'bg-blue-600 text-white' : (isNc ? 'bg-purple-50 text-gray-900 border border-purple-200' : 'bg-gray-100 text-gray-900');
     const html = `
         <div class="flex items-start gap-3 ${isMe ? 'flex-row-reverse' : ''} ${isPending ? 'opacity-60' : ''}" data-msg-id="${msg.id}">
             <div class="${avatarColor} text-white rounded-full h-8 w-8 flex items-center justify-center font-semibold text-sm flex-shrink-0">${initial}</div>
             <div class="max-w-[70%] ${isMe ? 'items-end' : 'items-start'} flex flex-col">
                 <div class="flex items-center gap-2 mb-0.5 ${isMe ? 'flex-row-reverse' : ''}">
                     <span class="text-xs font-medium ${isMe ? 'text-blue-600' : 'text-gray-700'}">${escapeHtml(msg.user_name)}</span>
-                    ${msg.is_admin ? '<span class="px-1 py-0.5 bg-blue-100 text-blue-600 rounded text-[10px] font-medium">Staff</span>' : '<span class="px-1 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] font-medium">Client</span>'}
+                    ${badge}
                     <span class="text-[10px] text-gray-400">${formatTime(msg.created_at)}</span>
                 </div>
-                <div class="${isMe ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'} rounded-2xl ${isMe ? 'rounded-tr-sm' : 'rounded-tl-sm'} px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(msg.message)}</div>
+                <div class="${bubbleClass} rounded-2xl ${isMe ? 'rounded-tr-sm' : 'rounded-tl-sm'} px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(msg.message)}</div>
             </div>
         </div>
     `;
@@ -291,6 +305,39 @@ function insertDateSeparator(dateStr) {
     messagesContainer.insertAdjacentHTML('beforeend', html);
 }
 
+let ncMessagesLoaded = false;
+let knownNcIds = new Set();
+
+async function fetchNcMessages() {
+    try {
+        const resp = await fetch(`/api/chat/nc-messages?room=${ROOM}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (data.nc_connected) {
+            const ncStatus = document.getElementById('nc-sync-status');
+            ncStatus.classList.remove('hidden');
+        }
+        if (data.messages && data.messages.length > 0) {
+            data.messages.forEach(msg => {
+                if (knownNcIds.has(msg.nc_id)) return;
+                knownNcIds.add(msg.nc_id);
+                if (msg.message.startsWith('[Portal -')) return;
+                appendMessage({
+                    id: 'nc-' + msg.nc_id,
+                    user_id: -1,
+                    user_name: msg.user_name,
+                    is_admin: false,
+                    is_nc: true,
+                    message: msg.message,
+                    created_at: msg.created_at
+                });
+            });
+        }
+    } catch (err) {
+        console.error('NC fetch error:', err);
+    }
+}
+
 async function fetchMessages() {
     if (isLoading) return;
     isLoading = true;
@@ -300,6 +347,8 @@ async function fetchMessages() {
         const data = await resp.json();
         if (loadingDiv) loadingDiv.remove();
         if (data.messages && data.messages.length > 0) {
+            const emptyState = messagesContainer.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
             let lastDate = null;
             data.messages.forEach(msg => {
                 const msgDate = new Date(msg.created_at).toDateString();
@@ -312,9 +361,13 @@ async function fetchMessages() {
             });
         } else if (lastMessageId === 0) {
             if (loadingDiv) loadingDiv.remove();
-            if (!messagesContainer.querySelector('.empty-state')) {
+            if (!messagesContainer.querySelector('.empty-state') && !messagesContainer.querySelector('[data-msg-id]')) {
                 messagesContainer.innerHTML = '<div class="empty-state flex flex-col items-center justify-center py-16 text-center"><div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4"><i class="fas fa-comments text-gray-400 text-2xl"></i></div><p class="text-gray-500 font-medium">No messages yet</p><p class="text-sm text-gray-400 mt-1">Be the first to send a message in this channel!</p></div>';
             }
+        }
+        if (!ncMessagesLoaded) {
+            ncMessagesLoaded = true;
+            fetchNcMessages();
         }
     } catch (err) {
         console.error('Fetch error:', err);
@@ -324,6 +377,7 @@ async function fetchMessages() {
 
 fetchMessages();
 pollInterval = setInterval(fetchMessages, 3000);
+setInterval(fetchNcMessages, 15000);
 
 messageInput.focus();
 </script>

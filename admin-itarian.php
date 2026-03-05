@@ -86,7 +86,7 @@ function itarian_api_post($path, $body = []) {
         return ['error' => $curl_error, 'http_code' => 0];
     }
     if ($http_code >= 300 && $http_code < 400) {
-        return ['error' => "HTTP {$http_code} Redirect — API base URL may be incorrect. Tried: {$url}", 'http_code' => $http_code];
+        return ['error' => "HTTP {$http_code} Redirect — ITarian's API endpoint ({$url}) is redirecting instead of responding. This typically means the API subdomain has changed or is temporarily unavailable on ITarian's end. Try updating ITARIAN_API_URL in your environment secrets, or check ITarian's documentation for the current API endpoint.", 'http_code' => $http_code];
     }
     if ($http_code < 200 || $http_code >= 300) {
         $body_resp = json_decode($response, true);

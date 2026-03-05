@@ -398,6 +398,49 @@ app.use("/uploads", express.static(join(projectRoot, "uploads")));
 // Chat API — Portal chat rooms
 // ═══════════════════════════════════════════════════════════════
 
+async function nextcloudTalkRequest(method: string, path: string, body?: any) {
+  const ncUrl = process.env.NEXTCLOUD_URL || "";
+  const ncUser = process.env.NEXTCLOUD_USER || "";
+  const ncPass = process.env.NEXTCLOUD_PASSWORD || "";
+  if (!ncUrl || !ncUser || !ncPass) return null;
+  const url = `${ncUrl.replace(/\/$/, "")}/ocs/v2.php/apps/spreed/api/v1${path}`;
+  const auth = Buffer.from(`${ncUser}:${ncPass}`).toString("base64");
+  const headers: Record<string, string> = {
+    "Authorization": `Basic ${auth}`,
+    "OCS-APIRequest": "true",
+    "Accept": "application/json",
+  };
+  const opts: any = { method, headers, timeout: 10000 };
+  if (body) {
+    headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(body);
+  }
+  try {
+    const resp = await fetch(url, opts);
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch { return null; }
+}
+
+let ncRoomTokenCache: Record<string, string> = {};
+let ncRoomCacheTime = 0;
+
+async function resolveNcRoomToken(roomName: string): Promise<string | null> {
+  const now = Date.now();
+  if (now - ncRoomCacheTime > 300000) {
+    const data = await nextcloudTalkRequest("GET", "/../v4/room");
+    if (data?.ocs?.data) {
+      ncRoomTokenCache = {};
+      for (const r of data.ocs.data) {
+        const name = (r.displayName || r.name || "").toLowerCase();
+        ncRoomTokenCache[name] = r.token;
+      }
+      ncRoomCacheTime = now;
+    }
+  }
+  return ncRoomTokenCache[roomName.toLowerCase()] || null;
+}
+
 app.get("/api/chat/messages", async (req, res) => {
   const sess = (req.session as any)?.portalUser;
   if (!sess?.userId) return res.status(401).json({ error: "Not authenticated" });
@@ -414,6 +457,31 @@ app.get("/api/chat/messages", async (req, res) => {
   }
 });
 
+app.get("/api/chat/nc-messages", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.userId) return res.status(401).json({ error: "Not authenticated" });
+  const room = (req.query.room as string) || "general";
+  try {
+    const token = await resolveNcRoomToken(room);
+    if (!token) return res.json({ messages: [], nc_connected: false });
+    const lookBack = parseInt(req.query.lookBackSeconds as string) || 3600;
+    const data = await nextcloudTalkRequest("GET", `/chat/${token}?lookIntoFuture=0&limit=100`);
+    if (!data?.ocs?.data) return res.json({ messages: [], nc_connected: true });
+    const msgs = data.ocs.data
+      .filter((m: any) => m.messageType === "comment")
+      .map((m: any) => ({
+        nc_id: m.id,
+        user_name: m.actorDisplayName || m.actorId,
+        message: m.message,
+        created_at: new Date(m.timestamp * 1000).toISOString(),
+        is_nc: true,
+      }));
+    res.json({ messages: msgs, nc_connected: true });
+  } catch (e: any) {
+    res.json({ messages: [], nc_connected: false, error: e.message });
+  }
+});
+
 app.post("/api/chat/messages", async (req, res) => {
   const sess = (req.session as any)?.portalUser;
   if (!sess?.userId) return res.status(401).json({ error: "Not authenticated" });
@@ -424,10 +492,42 @@ app.post("/api/chat/messages", async (req, res) => {
       "INSERT INTO chat_messages (room, user_id, user_name, is_admin, message) VALUES ($1, $2, $3, $4, $5) RETURNING *",
       [room, sess.userId, sess.userName || "User", sess.isAdmin || false, message.trim()]
     );
-    res.json({ message: result.rows[0] });
+    const token = await resolveNcRoomToken(room);
+    let nc_sent = false;
+    if (token) {
+      const ncResult = await nextcloudTalkRequest("POST", `/chat/${token}`, { message: `[Portal - ${sess.userName || "User"}] ${message.trim()}` });
+      nc_sent = !!ncResult;
+    }
+    res.json({ message: result.rows[0], nc_sent });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
+});
+
+app.get("/api/monitoring/health", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.userId) return res.status(401).json({ error: "Not authenticated" });
+  const results: Record<string, any> = {};
+  const checks = [
+    { name: "uptime_kuma", url: process.env.UPTIME_KUMA_URL || "", envKey: "UPTIME_KUMA_URL" },
+    { name: "grafana", url: process.env.GRAFANA_URL || "", envKey: "GRAFANA_URL" },
+  ];
+  await Promise.all(checks.map(async (check) => {
+    if (!check.url) {
+      results[check.name] = { configured: false, reachable: false };
+      return;
+    }
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const resp = await fetch(check.url, { signal: controller.signal, redirect: "follow" });
+      clearTimeout(timeout);
+      results[check.name] = { configured: true, reachable: resp.ok || resp.status < 500, status: resp.status, url: check.url };
+    } catch (e: any) {
+      results[check.name] = { configured: true, reachable: false, error: e.message, url: check.url };
+    }
+  }));
+  res.json(results);
 });
 
 function validateWebhookAuth(req: Request, res: Response): boolean {
