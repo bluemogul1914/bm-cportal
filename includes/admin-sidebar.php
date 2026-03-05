@@ -64,6 +64,11 @@
         <div class="mt-8">
             <p class="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Integrations</p>
             <div class="space-y-1">
+                <a href="admin-itarian.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-itarian.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-itarian">
+                    <i class="fas fa-desktop w-5"></i>
+                    <span>ITarian RMM</span>
+                </a>
+
                 <a href="admin-itflow.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-itflow.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                     <i class="fas fa-ticket-alt w-5"></i>
                     <span>ITFlow</span>

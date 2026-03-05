@@ -7,7 +7,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - **Frontend**: React with Tailwind CSS, shadcn/ui components, wouter routing
 - **Backend**: Express.js with PHP code execution via child_process
 - **Database**: PostgreSQL with Drizzle ORM
-- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, documents, payments, activity_log, agent_logs, agent_config, agent_metrics, system_settings, network_devices, network_credentials, knowledge_articles, notifications, projects, project_tasks, project_notes, vultr_instances, snippets + Stripe schema
+- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, documents, payments, activity_log, agent_logs, agent_config, agent_metrics, system_settings, network_devices, network_credentials, knowledge_articles, notifications, projects, project_tasks, project_notes, vultr_instances, itarian_endpoints, itarian_alerts, snippets + Stripe schema
 - **Runtime**: PHP 8.2 installed via Nix for server-side code execution
 - **Payments**: Stripe integration via Replit connector (OAuth-managed)
 
@@ -33,12 +33,13 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-dashboard.php` - Business metrics, MRR, churn, activity
 - `admin-clients.php` - Client list with search/filter
 - `admin-client-detail.php` - Full CRM-style client profile: overview with 4 financial cards, services with status bars, location map (Leaflet/OpenStreetMap), activity logs with timestamps/ID#/tags, client profile card with avatar/tags, invoices mini-table, next invoice preview, credits management, active tickets, projects; tabs for Invoices (with billing summary), Payments, Documents, Tickets, Network (devices), Cloud (Vultr instances assigned to client with specs/bandwidth/cost, unassign action), Projects; master/sub-account hierarchy display
+- `admin-client-add.php` - Create new client with full form (info, parent account, location, credits, notes)
 - `admin-client-edit.php` - Edit client: info, parent account (master/sub-account), lat/lng location, credit balance, notes
 - `admin-tickets.php` - Ticket management with triage
 - `admin-ticket-detail.php` - Reply (public/internal), status/priority/assignee changes
 - `admin-invoices.php` - Invoice management
-- `admin-invoice-add.php` - Create new invoices
-- `admin-invoice-detail.php` - Invoice detail with payment history, mark paid/unpaid
+- `admin-invoice-add.php` - Create invoices with ITFlow-style line items (Item/Description/Qty/Unit Price/Tax/Amount), product autocomplete, subtotal/tax/total, customer footer
+- `admin-invoice-detail.php` - Invoice detail with line items display, payment history, mark paid/unpaid, Stripe payment link, email invoice, customer footer
 - `admin-products.php` - Product catalog management (CRUD, toggle active/inactive)
 - `admin-services.php` - Subscription management (assign products to clients, suspend/cancel)
 - `admin-network.php` - Network Documentation: per-client device inventory, credentials vault
@@ -57,6 +58,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-message-compose.php` - Compose message (rich editor, categories, recipient selection, placeholders, template load/save, preview, draft save)
 - `admin-message-templates.php` - Message templates CRUD (create/edit/delete reusable templates)
 - `admin-vultr.php` - Vultr Cloud integration (live API: account info, instance management, bandwidth monitoring, client assignment for billing, cost breakdown per client, sync button, deploy new server wizard with type/region/plan/OS selection)
+- `admin-itarian.php` - ITarian RMM integration (endpoint management, patch management, alert monitoring, device sync, OS breakdown, client assignment)
 - `admin-roles.php` - Roles & Access Control (RBAC: super-admin, admin, sales, IT support, billing, wholesaler, dealer — staff/partner only; client 'user' role excluded, managed under Clients)
 - `admin-projects.php` - Project management list (create, filter, status/type/priority, progress tracking)
 - `admin-project-detail.php` - Individual project view with task board, notes, timeline, status management

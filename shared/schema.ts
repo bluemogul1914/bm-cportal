@@ -115,10 +115,15 @@ export const invoices = pgTable("invoices", {
   subscriptionId: integer("subscription_id").references(() => subscriptions.id),
   invoiceNumber: varchar("invoice_number", { length: 50 }).notNull().unique(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  tax: decimal("tax", { precision: 10, scale: 2 }).default("0"),
+  total: decimal("total", { precision: 10, scale: 2 }).default("0"),
   status: varchar("status", { length: 50 }).default("unpaid"),
   dueDate: date("due_date"),
   paidDate: date("paid_date"),
   stripeInvoiceId: varchar("stripe_invoice_id", { length: 255 }),
+  items: jsonb("items").default([]),
+  notes: text("notes"),
+  footer: text("footer"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

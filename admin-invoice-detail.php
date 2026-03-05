@@ -326,6 +326,13 @@ $total = $has_line_items ? ($subtotal + $tax_total) : floatval($invoice['amount'
                                 <p class="text-sm text-gray-700 whitespace-pre-wrap" data-testid="text-invoice-notes"><?php echo htmlspecialchars($invoice['notes']); ?></p>
                             </div>
                             <?php endif; ?>
+
+                            <?php if (!empty($invoice['footer'])): ?>
+                            <div class="border-t border-gray-200 pt-6 mt-4">
+                                <h3 class="text-xs font-semibold text-gray-500 uppercase mb-2">Invoice Footer</h3>
+                                <p class="text-sm text-gray-600 whitespace-pre-wrap italic" data-testid="text-invoice-footer"><?php echo htmlspecialchars($invoice['footer']); ?></p>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>

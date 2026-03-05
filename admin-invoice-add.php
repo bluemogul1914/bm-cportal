@@ -22,6 +22,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
     $invoice_date = $_POST['invoice_date'] ?? date('Y-m-d');
     $due_date = $_POST['due_date'] ?? '';
     $notes = trim($_POST['notes'] ?? '');
+    $footer = trim($_POST['footer'] ?? '');
     $items_json = $_POST['items_json'] ?? '[]';
 
     $items = json_decode($items_json, true);
@@ -52,12 +53,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
         $total = round($subtotal + $tax_amount, 2);
 
         try {
-            $stmt = $pdo->prepare("SELECT COALESCE(MAX(CAST(REPLACE(invoice_number, 'INV-', '') AS INTEGER)), 0) + 1 as next_num FROM invoices WHERE invoice_number LIKE 'INV-%'");
+            $stmt = $pdo->prepare("SELECT COALESCE(MAX(CAST(REPLACE(invoice_number, 'INV-', '') AS INTEGER)), 0) + 1 as next_num FROM invoices WHERE invoice_number ~ '^INV-[0-9]+$'");
             $stmt->execute();
             $next = $stmt->fetch(PDO::FETCH_ASSOC)['next_num'];
             $invoice_number = 'INV-' . str_pad($next, 5, '0', STR_PAD_LEFT);
 
-            $stmt = $pdo->prepare("INSERT INTO invoices (client_id, invoice_number, amount, tax, total, status, due_date, notes, items, created_at) VALUES (?, ?, ?, ?, ?, 'unpaid', ?, ?, ?::jsonb, NOW())");
+            $stmt = $pdo->prepare("INSERT INTO invoices (client_id, invoice_number, amount, tax, total, status, due_date, notes, footer, items, created_at) VALUES (?, ?, ?, ?, ?, 'unpaid', ?, ?, ?, ?::jsonb, NOW())");
             $stmt->execute([
                 $client_id,
                 $invoice_number,
@@ -66,6 +67,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
                 $total,
                 !empty($due_date) ? $due_date : null,
                 !empty($notes) ? $notes : null,
+                !empty($footer) ? $footer : null,
                 json_encode($items)
             ]);
             $new_invoice_id = $pdo->lastInsertId();
@@ -227,7 +229,17 @@ try {
                         <h2 class="text-lg font-semibold text-gray-900">Notes</h2>
                     </div>
                     <div class="p-6">
-                        <textarea name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Optional invoice notes..." data-testid="textarea-notes"></textarea>
+                        <textarea name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Optional internal invoice notes..." data-testid="textarea-notes"></textarea>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg border border-gray-200 mb-6">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h2 class="text-lg font-semibold text-gray-900">Invoice Footer</h2>
+                        <p class="text-sm text-gray-500 mt-1">This message will appear at the bottom of the customer-facing invoice.</p>
+                    </div>
+                    <div class="p-6">
+                        <textarea name="footer" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Thank you for your business! Payment is due within 30 days..." data-testid="textarea-footer"></textarea>
                     </div>
                 </div>
 
@@ -354,12 +366,9 @@ function showProductSuggestions(idx) {
     const sugDiv = document.getElementById('suggestions-' + idx);
     const query = input.value.toLowerCase().trim();
 
-    if (query.length === 0) {
-        sugDiv.classList.add('hidden');
-        return;
-    }
-
-    const matches = products.filter(p => p.name.toLowerCase().includes(query));
+    const matches = query.length === 0
+        ? products.slice(0, 20)
+        : products.filter(p => p.name.toLowerCase().includes(query));
     if (matches.length === 0) {
         sugDiv.classList.add('hidden');
         return;
