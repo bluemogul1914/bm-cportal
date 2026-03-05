@@ -20,7 +20,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `billing.php` - Invoice list with filters, payment history, outstanding balance
 - `pay-invoice.php` - Stripe Checkout payment flow for invoices
 - `payment-success.php` - Post-payment confirmation (supports demo mode)
-- `services.php` - Active subscriptions with costs and details
+- `services.php` - Active subscriptions with costs and details, cloud services (Vultr instances) section
 - `products.php` - Product catalog browsing with category filters and "Request Service" flow
 - `documents.php` - Document management with categories, upload, delete
 - `profile.php` - Profile editing and password change
@@ -32,7 +32,7 @@ An online PHP code editor and execution environment built with React + Express, 
 ### Admin Portal Pages
 - `admin-dashboard.php` - Business metrics, MRR, churn, activity
 - `admin-clients.php` - Client list with search/filter
-- `admin-client-detail.php` - Full CRM-style client profile: overview with 4 financial cards, services with status bars, location map (Leaflet/OpenStreetMap), activity logs with timestamps/ID#/tags, client profile card with avatar/tags, invoices mini-table, next invoice preview, credits management, active tickets, projects; tabs for Invoices (with billing summary), Payments, Documents, Tickets, Network (devices), Projects; master/sub-account hierarchy display
+- `admin-client-detail.php` - Full CRM-style client profile: overview with 4 financial cards, services with status bars, location map (Leaflet/OpenStreetMap), activity logs with timestamps/ID#/tags, client profile card with avatar/tags, invoices mini-table, next invoice preview, credits management, active tickets, projects; tabs for Invoices (with billing summary), Payments, Documents, Tickets, Network (devices), Cloud (Vultr instances assigned to client with specs/bandwidth/cost, unassign action), Projects; master/sub-account hierarchy display
 - `admin-client-edit.php` - Edit client: info, parent account (master/sub-account), lat/lng location, credit balance, notes
 - `admin-tickets.php` - Ticket management with triage
 - `admin-ticket-detail.php` - Reply (public/internal), status/priority/assignee changes
@@ -56,7 +56,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-messages.php` - Messaging center (list sent/draft messages, filters by category/status)
 - `admin-message-compose.php` - Compose message (rich editor, categories, recipient selection, placeholders, template load/save, preview, draft save)
 - `admin-message-templates.php` - Message templates CRUD (create/edit/delete reusable templates)
-- `admin-vultr.php` - Vultr Cloud integration (live API: account info, instance management, bandwidth monitoring, client assignment for billing, cost breakdown per client, auto-sync on page load, instance detail cards)
+- `admin-vultr.php` - Vultr Cloud integration (live API: account info, instance management, bandwidth monitoring, client assignment for billing, cost breakdown per client, sync button, deploy new server wizard with type/region/plan/OS selection)
 - `admin-roles.php` - Roles & Access Control (RBAC: super-admin, admin, sales, IT support, billing, wholesaler, dealer — staff/partner only; client 'user' role excluded, managed under Clients)
 - `admin-projects.php` - Project management list (create, filter, status/type/priority, progress tracking)
 - `admin-project-detail.php` - Individual project view with task board, notes, timeline, status management

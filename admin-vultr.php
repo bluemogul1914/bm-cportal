@@ -16,6 +16,36 @@ $pdo = getDB();
 $success_msg = '';
 $error_msg = '';
 
+function vultr_api_post($endpoint, $data) {
+    $url = VULTR_API_URL . $endpoint;
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . VULTR_API_KEY,
+            'Content-Type: application/json',
+        ],
+    ]);
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_error = curl_error($ch);
+    curl_close($ch);
+
+    if ($curl_error) {
+        return ['error' => $curl_error, 'http_code' => 0];
+    }
+    if ($http_code < 200 || $http_code >= 300) {
+        $body = json_decode($response, true);
+        $msg = $body['error'] ?? "HTTP $http_code";
+        return ['error' => $msg, 'http_code' => $http_code];
+    }
+    return json_decode($response, true) ?: ['success' => true];
+}
+
 function vultr_api_get($endpoint) {
     $url = VULTR_API_URL . $endpoint;
     $ch = curl_init();
@@ -137,6 +167,56 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
     }
 
+    if ($action === 'deploy_instance' && $vultr_connected) {
+        $deploy_region = trim($_POST['deploy_region'] ?? '');
+        $deploy_plan = trim($_POST['deploy_plan'] ?? '');
+        $deploy_os_id = intval($_POST['deploy_os_id'] ?? 0);
+        $deploy_label = trim($_POST['deploy_label'] ?? '');
+        $deploy_hostname = trim($_POST['deploy_hostname'] ?? '');
+        $deploy_client_id = intval($_POST['deploy_client_id'] ?? 0);
+
+        if (empty($deploy_region) || empty($deploy_plan) || $deploy_os_id <= 0) {
+            $error_msg = 'Please select a region, plan, and operating system.';
+        } else {
+            $deploy_data = [
+                'region' => $deploy_region,
+                'plan' => $deploy_plan,
+                'os_id' => $deploy_os_id,
+            ];
+            if (!empty($deploy_label)) $deploy_data['label'] = $deploy_label;
+            if (!empty($deploy_hostname)) $deploy_data['hostname'] = $deploy_hostname;
+
+            $deploy_result = vultr_api_post('/instances', $deploy_data);
+
+            if (isset($deploy_result['error'])) {
+                $error_msg = 'Deploy failed: ' . $deploy_result['error'];
+            } else {
+                $new_instance = $deploy_result['instance'] ?? $deploy_result;
+                $new_id = $new_instance['id'] ?? 'unknown';
+                $success_msg = "Instance deployed successfully! Vultr ID: {$new_id}. Syncing instances...";
+
+                $sync_result = vultr_sync_instances($pdo);
+                if (!$sync_result['error']) {
+                    $success_msg .= " Synced {$sync_result['count']} instances.";
+                }
+
+                if ($deploy_client_id > 0 && $new_id !== 'unknown') {
+                    $check = $pdo->prepare("SELECT id FROM clients WHERE id = ?");
+                    $check->execute([$deploy_client_id]);
+                    if (!$check->fetch()) $deploy_client_id = 0;
+                }
+                if ($deploy_client_id > 0 && $new_id !== 'unknown') {
+                    $stmt = $pdo->prepare("UPDATE vultr_instances SET client_id = ? WHERE vultr_id = ?");
+                    $stmt->execute([$deploy_client_id, $new_id]);
+                    $success_msg .= " Assigned to client.";
+                }
+
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
+                    ->execute([$_SESSION['user_id'], 'vultr_deploy', 'vultr_instance', 0, "Deployed new instance: {$deploy_label} (Region: {$deploy_region}, Plan: {$deploy_plan})", $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+            }
+        }
+    }
+
     if ($action === 'sync_instances' && $vultr_connected) {
         $sync_result = vultr_sync_instances($pdo);
         if ($sync_result['error']) {
@@ -238,6 +318,9 @@ arsort($cost_by_client);
                 </div>
                 <div class="flex items-center gap-3">
                     <?php if ($vultr_connected): ?>
+                        <button type="button" onclick="toggleDeployPanel()" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition" data-testid="button-deploy-new">
+                            <i class="fas fa-plus mr-1"></i>Deploy New Server
+                        </button>
                         <form method="POST" class="inline">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="sync_instances">
@@ -274,6 +357,176 @@ arsort($cost_by_client);
                 <div class="mb-6 bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg flex items-center" data-testid="alert-api-error">
                     <i class="fas fa-exclamation-triangle mr-3"></i><span>Vultr API Error: <?php echo htmlspecialchars($api_error); ?></span>
                 </div>
+            <?php endif; ?>
+
+            <?php if ($vultr_connected): ?>
+            <div id="deploy-panel" class="mb-6 bg-white rounded-lg border border-gray-200" style="display: none;" data-testid="panel-deploy">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-wrap">
+                    <h2 class="text-lg font-semibold text-gray-900" data-testid="text-deploy-title"><i class="fas fa-rocket text-green-500 mr-2"></i>Deploy New Server</h2>
+                    <button type="button" onclick="toggleDeployPanel()" class="text-gray-400 hover:text-gray-600 text-sm" data-testid="button-close-deploy"><i class="fas fa-times mr-1"></i>Close</button>
+                </div>
+                <form method="POST" id="deploy-form" data-testid="form-deploy">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="deploy_instance">
+                    <div class="p-6 space-y-6">
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-3">Server Type</label>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="select-server-type">
+                                <button type="button" onclick="selectServerType('vc2')" id="type-vc2" class="server-type-card border-2 border-blue-500 bg-blue-50 rounded-lg p-4 text-center transition hover:shadow-md" data-testid="button-type-shared">
+                                    <i class="fas fa-server text-blue-500 text-2xl mb-2"></i>
+                                    <p class="text-sm font-semibold text-gray-900">Shared CPU</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Starting $2.50/mo</p>
+                                </button>
+                                <button type="button" onclick="selectServerType('vdc')" id="type-vdc" class="server-type-card border-2 border-gray-200 bg-white rounded-lg p-4 text-center transition hover:shadow-md" data-testid="button-type-dedicated">
+                                    <i class="fas fa-microchip text-indigo-500 text-2xl mb-2"></i>
+                                    <p class="text-sm font-semibold text-gray-900">Dedicated CPU</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Starting $30/mo</p>
+                                </button>
+                                <button type="button" onclick="selectServerType('vcg')" id="type-vcg" class="server-type-card border-2 border-gray-200 bg-white rounded-lg p-4 text-center transition hover:shadow-md" data-testid="button-type-gpu">
+                                    <i class="fas fa-bolt text-yellow-500 text-2xl mb-2"></i>
+                                    <p class="text-sm font-semibold text-gray-900">Cloud GPU</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Starting $90/mo</p>
+                                </button>
+                                <button type="button" onclick="selectServerType('vbm')" id="type-vbm" class="server-type-card border-2 border-gray-200 bg-white rounded-lg p-4 text-center transition hover:shadow-md" data-testid="button-type-baremetal">
+                                    <i class="fas fa-hdd text-gray-600 text-2xl mb-2"></i>
+                                    <p class="text-sm font-semibold text-gray-900">Bare Metal</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Starting $120/mo</p>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label for="deploy_region" class="block text-sm font-semibold text-gray-700 mb-2">Region / Location</label>
+                                <select name="deploy_region" id="deploy_region" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500" data-testid="select-region" required>
+                                    <option value="">-- Select Region --</option>
+                                    <optgroup label="North America">
+                                        <option value="atl">Atlanta (ATL)</option>
+                                        <option value="ord">Chicago (ORD)</option>
+                                        <option value="dfw">Dallas (DFW)</option>
+                                        <option value="hnl">Honolulu (HNL)</option>
+                                        <option value="lax">Los Angeles (LAX)</option>
+                                        <option value="mia">Miami (MIA)</option>
+                                        <option value="ewr">New York / New Jersey (EWR)</option>
+                                        <option value="sea">Seattle (SEA)</option>
+                                        <option value="sjc">Silicon Valley (SJC)</option>
+                                        <option value="yto">Toronto (YTO)</option>
+                                        <option value="mex">Mexico City (MEX)</option>
+                                    </optgroup>
+                                    <optgroup label="Europe">
+                                        <option value="ams">Amsterdam (AMS)</option>
+                                        <option value="lhr">London (LHR)</option>
+                                        <option value="fra">Frankfurt (FRA)</option>
+                                        <option value="cdg">Paris (CDG)</option>
+                                        <option value="waw">Warsaw (WAW)</option>
+                                        <option value="mad">Madrid (MAD)</option>
+                                        <option value="sto">Stockholm (STO)</option>
+                                    </optgroup>
+                                    <optgroup label="Asia Pacific">
+                                        <option value="nrt">Tokyo (NRT)</option>
+                                        <option value="itm">Osaka (ITM)</option>
+                                        <option value="icn">Seoul (ICN)</option>
+                                        <option value="sgp">Singapore (SGP)</option>
+                                        <option value="bom">Mumbai (BOM)</option>
+                                        <option value="del">Delhi (DEL)</option>
+                                        <option value="blr">Bangalore (BLR)</option>
+                                        <option value="syd">Sydney (SYD)</option>
+                                        <option value="mel">Melbourne (MEL)</option>
+                                    </optgroup>
+                                    <optgroup label="South America">
+                                        <option value="sao">Sao Paulo (SAO)</option>
+                                        <option value="scl">Santiago (SCL)</option>
+                                    </optgroup>
+                                    <optgroup label="Africa">
+                                        <option value="jnb">Johannesburg (JNB)</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label for="deploy_os_id" class="block text-sm font-semibold text-gray-700 mb-2">Operating System</label>
+                                <select name="deploy_os_id" id="deploy_os_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500" data-testid="select-os" required>
+                                    <option value="">-- Select OS --</option>
+                                    <optgroup label="Ubuntu">
+                                        <option value="2284">Ubuntu 24.04 LTS (x64)</option>
+                                        <option value="1743">Ubuntu 22.04 LTS (x64)</option>
+                                    </optgroup>
+                                    <optgroup label="Debian">
+                                        <option value="2136">Debian 12 (x64)</option>
+                                        <option value="477">Debian 11 (x64)</option>
+                                    </optgroup>
+                                    <optgroup label="CentOS / RHEL">
+                                        <option value="1868">CentOS Stream 9 (x64)</option>
+                                        <option value="1869">Rocky Linux 9 (x64)</option>
+                                        <option value="1870">AlmaLinux 9 (x64)</option>
+                                    </optgroup>
+                                    <optgroup label="Fedora">
+                                        <option value="2187">Fedora 40 (x64)</option>
+                                    </optgroup>
+                                    <optgroup label="Windows">
+                                        <option value="1401">Windows Server 2022 Standard</option>
+                                        <option value="1402">Windows Server 2019 Standard</option>
+                                    </optgroup>
+                                    <optgroup label="BSD">
+                                        <option value="2076">FreeBSD 14 (x64)</option>
+                                        <option value="2077">OpenBSD 7.5 (x64)</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Plan</label>
+                            <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                                <table class="w-full text-sm" id="plans-table" data-testid="table-plans">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase"></th>
+                                            <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Plan</th>
+                                            <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">vCPU</th>
+                                            <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Memory</th>
+                                            <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Storage</th>
+                                            <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Bandwidth</th>
+                                            <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Price</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200" id="plans-body">
+                                    </tbody>
+                                </table>
+                            </div>
+                            <input type="hidden" name="deploy_plan" id="deploy_plan" data-testid="input-plan-hidden">
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div>
+                                <label for="deploy_label" class="block text-sm font-semibold text-gray-700 mb-2">Server Label</label>
+                                <input type="text" name="deploy_label" id="deploy_label" placeholder="e.g. web-server-01" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500" data-testid="input-label">
+                            </div>
+                            <div>
+                                <label for="deploy_hostname" class="block text-sm font-semibold text-gray-700 mb-2">Hostname</label>
+                                <input type="text" name="deploy_hostname" id="deploy_hostname" placeholder="e.g. web-server-01" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500" data-testid="input-hostname">
+                            </div>
+                            <div>
+                                <label for="deploy_client_id" class="block text-sm font-semibold text-gray-700 mb-2">Assign to Client (Optional)</label>
+                                <select name="deploy_client_id" id="deploy_client_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500" data-testid="select-deploy-client">
+                                    <option value="0">-- No Client --</option>
+                                    <?php foreach ($clients_list as $cl): ?>
+                                        <option value="<?php echo $cl['id']; ?>"><?php echo htmlspecialchars($cl['company'] ?: $cl['name']); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between gap-4 pt-4 border-t border-gray-200 flex-wrap">
+                            <p class="text-xs text-gray-500"><i class="fas fa-info-circle mr-1"></i>The instance will be created via the Vultr API and auto-synced to your dashboard.</p>
+                            <button type="submit" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition" data-testid="button-deploy-submit">
+                                <i class="fas fa-rocket mr-1"></i>Deploy Instance
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
             <?php endif; ?>
 
             <?php if ($api_account): ?>
@@ -596,6 +849,7 @@ arsort($cost_by_client);
                                 <li><span class="text-green-600">GET</span> /v2/account</li>
                                 <li><span class="text-green-600">GET</span> /v2/instances</li>
                                 <li><span class="text-green-600">GET</span> /v2/instances/{id}/bandwidth</li>
+                                <li><span class="text-blue-600">POST</span> /v2/instances</li>
                             </ul>
                         </div>
                     </div>
@@ -683,5 +937,115 @@ arsort($cost_by_client);
         </div>
     </div>
 </div>
+<script>
+var deployPlans = {
+    vc2: [
+        { id: 'vc2-1c-1gb', vcpu: '1 vCPU', ram: '1 GB', disk: '25 GB SSD', bw: '1 TB', price: '$5/mo' },
+        { id: 'vc2-1c-2gb', vcpu: '1 vCPU', ram: '2 GB', disk: '55 GB SSD', bw: '2 TB', price: '$10/mo' },
+        { id: 'vc2-2c-4gb', vcpu: '2 vCPU', ram: '4 GB', disk: '80 GB SSD', bw: '3 TB', price: '$20/mo' },
+        { id: 'vc2-4c-8gb', vcpu: '4 vCPU', ram: '8 GB', disk: '160 GB SSD', bw: '4 TB', price: '$40/mo' },
+        { id: 'vc2-6c-16gb', vcpu: '6 vCPU', ram: '16 GB', disk: '320 GB SSD', bw: '5 TB', price: '$80/mo' },
+        { id: 'vc2-8c-32gb', vcpu: '8 vCPU', ram: '32 GB', disk: '640 GB SSD', bw: '6 TB', price: '$160/mo' },
+        { id: 'vc2-16c-64gb', vcpu: '16 vCPU', ram: '64 GB', disk: '1280 GB SSD', bw: '10 TB', price: '$320/mo' },
+        { id: 'vc2-24c-96gb', vcpu: '24 vCPU', ram: '96 GB', disk: '1600 GB SSD', bw: '15 TB', price: '$640/mo' },
+    ],
+    vdc: [
+        { id: 'vdc-2c-4gb', vcpu: '2 vCPU', ram: '4 GB', disk: '80 GB NVMe', bw: '3 TB', price: '$30/mo' },
+        { id: 'vdc-4c-8gb', vcpu: '4 vCPU', ram: '8 GB', disk: '160 GB NVMe', bw: '4 TB', price: '$60/mo' },
+        { id: 'vdc-4c-16gb', vcpu: '4 vCPU', ram: '16 GB', disk: '320 GB NVMe', bw: '5 TB', price: '$120/mo' },
+        { id: 'vdc-8c-32gb', vcpu: '8 vCPU', ram: '32 GB', disk: '640 GB NVMe', bw: '6 TB', price: '$240/mo' },
+        { id: 'vdc-16c-64gb', vcpu: '16 vCPU', ram: '64 GB', disk: '1280 GB NVMe', bw: '10 TB', price: '$480/mo' },
+        { id: 'vdc-24c-96gb', vcpu: '24 vCPU', ram: '96 GB', disk: '1600 GB NVMe', bw: '15 TB', price: '$960/mo' },
+    ],
+    vcg: [
+        { id: 'vcg-a16-2c-8gb', vcpu: '2 vCPU', ram: '8 GB', disk: '50 GB NVMe', bw: '1 TB', price: '$90/mo' },
+        { id: 'vcg-a16-4c-16gb', vcpu: '4 vCPU', ram: '16 GB', disk: '100 GB NVMe', bw: '2 TB', price: '$180/mo' },
+        { id: 'vcg-a100-8c-80gb', vcpu: '8 vCPU', ram: '80 GB', disk: '400 GB NVMe', bw: '5 TB', price: '$600/mo' },
+        { id: 'vcg-a100-12c-120gb', vcpu: '12 vCPU', ram: '120 GB', disk: '800 GB NVMe', bw: '10 TB', price: '$1200/mo' },
+    ],
+    vbm: [
+        { id: 'vbm-4c-32gb', vcpu: '4 Core', ram: '32 GB', disk: '2x 240 GB SSD', bw: '5 TB', price: '$120/mo' },
+        { id: 'vbm-8c-64gb', vcpu: '8 Core', ram: '64 GB', disk: '2x 480 GB SSD', bw: '10 TB', price: '$300/mo' },
+        { id: 'vbm-12c-128gb', vcpu: '12 Core', ram: '128 GB', disk: '2x 960 GB SSD', bw: '10 TB', price: '$450/mo' },
+        { id: 'vbm-24c-256gb', vcpu: '24 Core', ram: '256 GB', disk: '2x 1.92 TB NVMe', bw: '15 TB', price: '$750/mo' },
+    ]
+};
+
+var currentServerType = 'vc2';
+var selectedPlanId = '';
+
+function toggleDeployPanel() {
+    var panel = document.getElementById('deploy-panel');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+function selectServerType(type) {
+    currentServerType = type;
+    selectedPlanId = '';
+    document.getElementById('deploy_plan').value = '';
+
+    document.querySelectorAll('.server-type-card').forEach(function(card) {
+        card.classList.remove('border-blue-500', 'bg-blue-50');
+        card.classList.add('border-gray-200', 'bg-white');
+    });
+    var selected = document.getElementById('type-' + type);
+    if (selected) {
+        selected.classList.remove('border-gray-200', 'bg-white');
+        selected.classList.add('border-blue-500', 'bg-blue-50');
+    }
+
+    renderPlans(type);
+}
+
+function renderPlans(type) {
+    var plans = deployPlans[type] || [];
+    var tbody = document.getElementById('plans-body');
+    tbody.innerHTML = '';
+
+    plans.forEach(function(plan) {
+        var tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50 cursor-pointer plan-row';
+        tr.setAttribute('data-plan-id', plan.id);
+        tr.setAttribute('data-testid', 'row-plan-' + plan.id);
+        tr.onclick = function() { selectPlan(plan.id); };
+        tr.innerHTML =
+            '<td class="px-3 py-2.5"><input type="radio" name="plan_radio" value="' + plan.id + '" class="text-blue-600" data-testid="radio-plan-' + plan.id + '"></td>' +
+            '<td class="px-3 py-2.5 font-medium text-gray-900">' + plan.id + '</td>' +
+            '<td class="px-3 py-2.5 text-gray-700">' + plan.vcpu + '</td>' +
+            '<td class="px-3 py-2.5 text-gray-700">' + plan.ram + '</td>' +
+            '<td class="px-3 py-2.5 text-gray-700">' + plan.disk + '</td>' +
+            '<td class="px-3 py-2.5 text-gray-700">' + plan.bw + '</td>' +
+            '<td class="px-3 py-2.5 font-semibold text-blue-600">' + plan.price + '</td>';
+        tbody.appendChild(tr);
+    });
+}
+
+function selectPlan(planId) {
+    selectedPlanId = planId;
+    document.getElementById('deploy_plan').value = planId;
+
+    document.querySelectorAll('.plan-row').forEach(function(row) {
+        row.classList.remove('bg-blue-50');
+        var radio = row.querySelector('input[type=radio]');
+        if (radio) radio.checked = false;
+    });
+
+    var selectedRow = document.querySelector('.plan-row[data-plan-id="' + planId + '"]');
+    if (selectedRow) {
+        selectedRow.classList.add('bg-blue-50');
+        var radio = selectedRow.querySelector('input[type=radio]');
+        if (radio) radio.checked = true;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    renderPlans('vc2');
+});
+</script>
 </body>
 </html>

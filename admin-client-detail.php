@@ -86,6 +86,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
     }
 
+    if ($action === 'unassign_cloud') {
+        $instance_id = intval($_POST['instance_id'] ?? 0);
+        if ($instance_id > 0) {
+            try {
+                $pdo->prepare("UPDATE vultr_instances SET client_id = NULL WHERE id = ? AND client_id = ?")->execute([$instance_id, $client_id]);
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
+                    ->execute([$user_id, 'cloud_unassigned', 'client', $client_id, 'Unassigned cloud instance #' . $instance_id, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+                $success_msg = 'Cloud instance unassigned from client.';
+            } catch (\Exception $e) {
+                $error_msg = 'Failed to unassign cloud instance.';
+            }
+        }
+    }
+
     if ($action === 'update_credit') {
         $credit = floatval($_POST['credit_amount'] ?? 0);
         try {
@@ -164,6 +178,13 @@ try {
         $stmt = $pdo->prepare("SELECT * FROM network_devices WHERE client_id = ? ORDER BY hostname ASC");
         $stmt->execute([$client_id]);
         $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (\Exception $e) {}
+
+    $cloud_instances = [];
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM vultr_instances WHERE client_id = ? ORDER BY label");
+        $stmt->execute([$client_id]);
+        $cloud_instances = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (\Exception $e) {}
 
     $client_notes = $client['notes'] ?? '';
@@ -262,6 +283,7 @@ if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
                     'documents' => 'Documents',
                     'tickets' => 'Tickets',
                     'network' => 'Network',
+                    'cloud' => 'Cloud',
                     'projects' => 'Projects',
                 ];
                 foreach ($tabs as $tk => $tv):
@@ -947,6 +969,111 @@ if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
                                     <span class="px-2 py-0.5 rounded text-xs font-medium <?php echo ($dev['status'] ?? 'online') === 'online' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; ?>">
                                         <?php echo ucfirst($dev['status'] ?? 'online'); ?>
                                     </span>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <?php elseif ($active_tab === 'cloud'): ?>
+
+            <?php
+            $cloud_total_cost = 0;
+            $cloud_total_bandwidth_used = 0;
+            $cloud_total_bandwidth_allowed = 0;
+            foreach ($cloud_instances as $ci) {
+                $cloud_total_cost += (float)($ci['cost_per_month'] ?? 0);
+                $cloud_total_bandwidth_used += (float)($ci['current_bandwidth'] ?? 0);
+                $cloud_total_bandwidth_allowed += (float)($ci['allowed_bandwidth'] ?? 0);
+            }
+            ?>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white rounded-lg border border-gray-200 p-4">
+                    <p class="text-xs text-gray-500 mb-1">Total Instances</p>
+                    <p class="text-2xl font-bold text-gray-900" data-testid="text-cloud-total-instances"><?php echo count($cloud_instances); ?></p>
+                </div>
+                <div class="bg-white rounded-lg border border-gray-200 p-4">
+                    <p class="text-xs text-gray-500 mb-1">Monthly Cost</p>
+                    <p class="text-2xl font-bold text-gray-900" data-testid="text-cloud-monthly-cost">$<?php echo number_format($cloud_total_cost, 2); ?></p>
+                </div>
+                <div class="bg-white rounded-lg border border-gray-200 p-4">
+                    <p class="text-xs text-gray-500 mb-1">Bandwidth Used / Allowed</p>
+                    <p class="text-2xl font-bold text-gray-900" data-testid="text-cloud-bandwidth"><?php echo number_format($cloud_total_bandwidth_used, 1); ?> / <?php echo number_format($cloud_total_bandwidth_allowed, 1); ?> GB</p>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg border border-gray-200">
+                <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-cloud text-primary mr-2"></i>Cloud Instances (<?php echo count($cloud_instances); ?>)</h2>
+                    <a href="admin-vultr.php" class="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition" data-testid="link-manage-vultr"><i class="fas fa-server mr-1"></i>Manage in Vultr</a>
+                </div>
+                <?php if (empty($cloud_instances)): ?>
+                <div class="p-8 text-center text-gray-400" data-testid="text-cloud-empty">
+                    <i class="fas fa-cloud text-3xl mb-2"></i>
+                    <p>No cloud instances assigned.</p>
+                    <p class="text-xs mt-1">Assign instances from the <a href="admin-vultr.php" class="text-blue-600 hover:underline">Vultr Cloud page</a>.</p>
+                </div>
+                <?php else: ?>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left" data-testid="table-cloud-instances">
+                        <thead>
+                            <tr class="bg-gray-50 text-xs text-gray-500 uppercase">
+                                <th class="px-5 py-3 font-medium">Status</th>
+                                <th class="px-5 py-3 font-medium">Label</th>
+                                <th class="px-5 py-3 font-medium">OS</th>
+                                <th class="px-5 py-3 font-medium">IP Address</th>
+                                <th class="px-5 py-3 font-medium">Specs</th>
+                                <th class="px-5 py-3 font-medium">Region</th>
+                                <th class="px-5 py-3 font-medium">Plan</th>
+                                <th class="px-5 py-3 font-medium">Cost/Mo</th>
+                                <th class="px-5 py-3 font-medium">Bandwidth</th>
+                                <th class="px-5 py-3 font-medium">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <?php foreach ($cloud_instances as $ci): ?>
+                            <tr class="hover:bg-gray-50 transition" data-testid="row-cloud-<?php echo $ci['id']; ?>">
+                                <td class="px-5 py-3">
+                                    <span class="inline-flex items-center gap-1.5">
+                                        <span class="w-2 h-2 rounded-full <?php echo ($ci['power_status'] ?? '') === 'running' ? 'bg-green-500' : 'bg-red-400'; ?>"></span>
+                                        <span class="text-xs font-medium <?php echo ($ci['power_status'] ?? '') === 'running' ? 'text-green-700' : 'text-red-600'; ?>"><?php echo ucfirst($ci['power_status'] ?? 'stopped'); ?></span>
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3 text-sm font-medium text-gray-900"><?php echo htmlspecialchars($ci['label'] ?? '—'); ?></td>
+                                <td class="px-5 py-3 text-sm text-gray-600"><?php echo htmlspecialchars($ci['os'] ?? '—'); ?></td>
+                                <td class="px-5 py-3 text-sm text-gray-600 font-mono"><?php echo htmlspecialchars($ci['main_ip'] ?? '—'); ?></td>
+                                <td class="px-5 py-3 text-xs text-gray-600">
+                                    <?php echo intval($ci['vcpu_count'] ?? 0); ?> vCPU / <?php echo intval($ci['ram'] ?? 0); ?> MB / <?php echo intval($ci['disk'] ?? 0); ?> GB
+                                </td>
+                                <td class="px-5 py-3 text-sm text-gray-600"><?php echo htmlspecialchars($ci['region'] ?? '—'); ?></td>
+                                <td class="px-5 py-3 text-sm text-gray-600"><?php echo htmlspecialchars($ci['plan'] ?? '—'); ?></td>
+                                <td class="px-5 py-3 text-sm font-semibold text-gray-900">$<?php echo number_format((float)($ci['cost_per_month'] ?? 0), 2); ?></td>
+                                <td class="px-5 py-3">
+                                    <?php
+                                    $bw_used = (float)($ci['current_bandwidth'] ?? 0);
+                                    $bw_allowed = (float)($ci['allowed_bandwidth'] ?? 1);
+                                    $bw_pct = $bw_allowed > 0 ? min(100, ($bw_used / $bw_allowed) * 100) : 0;
+                                    ?>
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-16 bg-gray-200 rounded-full h-1.5">
+                                            <div class="rounded-full h-1.5 <?php echo $bw_pct > 80 ? 'bg-red-500' : ($bw_pct > 50 ? 'bg-yellow-500' : 'bg-green-500'); ?>" style="width: <?php echo number_format($bw_pct, 1); ?>%"></div>
+                                        </div>
+                                        <span class="text-[10px] text-gray-500"><?php echo number_format($bw_used, 1); ?>/<?php echo number_format($bw_allowed, 1); ?> GB</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3">
+                                    <form method="POST" class="inline" onsubmit="return confirm('Unassign this instance from the client?')">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="unassign_cloud">
+                                        <input type="hidden" name="instance_id" value="<?php echo $ci['id']; ?>">
+                                        <button type="submit" class="text-red-600 hover:text-red-800 text-xs font-medium" data-testid="button-unassign-cloud-<?php echo $ci['id']; ?>">
+                                            <i class="fas fa-unlink mr-1"></i>Unassign
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
                             <?php endforeach; ?>

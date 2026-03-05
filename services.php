@@ -37,11 +37,22 @@ try {
         }
     }
 
+    $stmt = $pdo->prepare("SELECT * FROM vultr_instances WHERE client_id = ? ORDER BY label");
+    $stmt->execute([$client_id]);
+    $cloud_instances = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $cloud_monthly_total = 0;
+    foreach ($cloud_instances as $ci) {
+        $cloud_monthly_total += floatval($ci['cost_per_month'] ?? 0);
+    }
+
 } catch (PDOException $e) {
     error_log("Services error: " . $e->getMessage());
     $services = [];
     $monthly_total = 0;
     $active_count = 0;
+    $cloud_instances = [];
+    $cloud_monthly_total = 0;
 }
 ?>
 <!DOCTYPE html>
@@ -159,6 +170,89 @@ try {
                             </div>
                         </div>
                     <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($cloud_instances)): ?>
+                <div class="mt-8">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">Cloud Services</h2>
+                            <p class="text-sm text-gray-500">Vultr cloud instances assigned to your account</p>
+                        </div>
+                        <div class="bg-white rounded-lg border border-gray-200 px-4 py-2">
+                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Cloud Monthly Cost</span>
+                            <p class="text-lg font-bold text-gray-900" data-testid="text-cloud-monthly-cost">$<?php echo number_format($cloud_monthly_total, 2); ?></p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <?php foreach ($cloud_instances as $instance): ?>
+                            <div class="bg-white rounded-lg border border-gray-200 overflow-hidden" data-testid="cloud-instance-card-<?php echo $instance['id']; ?>">
+                                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                                            <i class="fas fa-cloud text-indigo-600"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="font-semibold text-gray-900" data-testid="text-instance-label-<?php echo $instance['id']; ?>"><?php echo htmlspecialchars($instance['label'] ?: 'Unnamed Instance'); ?></h3>
+                                            <p class="text-xs text-gray-500"><?php echo htmlspecialchars($instance['plan'] ?? ''); ?></p>
+                                        </div>
+                                    </div>
+                                    <span class="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium <?php
+                                        echo ($instance['power_status'] ?? '') === 'running' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700';
+                                    ?>">
+                                        <span class="w-1.5 h-1.5 rounded-full <?php echo ($instance['power_status'] ?? '') === 'running' ? 'bg-green-500' : 'bg-gray-400'; ?>"></span>
+                                        <?php echo ucfirst($instance['power_status'] ?? 'unknown'); ?>
+                                    </span>
+                                </div>
+                                <div class="px-6 py-4">
+                                    <div class="flex items-baseline gap-1 mb-4">
+                                        <span class="text-3xl font-bold text-gray-900">$<?php echo number_format(floatval($instance['cost_per_month'] ?? 0), 2); ?></span>
+                                        <span class="text-sm text-gray-500">/mo</span>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3 text-sm">
+                                        <div>
+                                            <p class="text-gray-500 text-xs">IP Address</p>
+                                            <p class="font-medium text-gray-900" data-testid="text-instance-ip-<?php echo $instance['id']; ?>"><?php echo htmlspecialchars($instance['main_ip'] ?? 'N/A'); ?></p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500 text-xs">OS</p>
+                                            <p class="font-medium text-gray-900"><?php echo htmlspecialchars($instance['os'] ?? 'N/A'); ?></p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500 text-xs">Specs</p>
+                                            <p class="font-medium text-gray-900"><?php echo intval($instance['vcpu_count'] ?? 0); ?> vCPU / <?php echo htmlspecialchars($instance['ram'] ?? '0'); ?> MB RAM</p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500 text-xs">Region</p>
+                                            <p class="font-medium text-gray-900"><?php echo htmlspecialchars($instance['region'] ?? 'N/A'); ?></p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500 text-xs">Storage</p>
+                                            <p class="font-medium text-gray-900"><?php echo htmlspecialchars($instance['disk'] ?? '0'); ?> GB</p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500 text-xs">Bandwidth</p>
+                                            <p class="font-medium text-gray-900">
+                                                <?php
+                                                    $used = floatval($instance['current_bandwidth'] ?? 0);
+                                                    $allowed = floatval($instance['allowed_bandwidth'] ?? 0);
+                                                    echo number_format($used, 1) . ' / ' . number_format($allowed, 0) . ' GB';
+                                                ?>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <?php if ($allowed > 0): ?>
+                                        <div class="mt-3">
+                                            <div class="w-full bg-gray-200 rounded-full h-1.5">
+                                                <div class="bg-indigo-500 h-1.5 rounded-full" style="width: <?php echo min(100, ($used / $allowed) * 100); ?>%"></div>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
             <?php endif; ?>
         </div>

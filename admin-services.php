@@ -94,6 +94,31 @@ try {
     $stmt->execute();
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    $cloud_instances = $pdo->query("
+        SELECT vi.*, c.name as client_name, c.company as client_company
+        FROM vultr_instances vi
+        LEFT JOIN clients c ON vi.client_id = c.id
+        WHERE vi.client_id IS NOT NULL
+        ORDER BY c.company, c.name, vi.label
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $cloud_total_cost = 0;
+    $cloud_by_client = [];
+    foreach ($cloud_instances as $ci) {
+        $cloud_total_cost += floatval($ci['cost_per_month'] ?? 0);
+        $ckey = $ci['client_id'];
+        if (!isset($cloud_by_client[$ckey])) {
+            $cloud_by_client[$ckey] = [
+                'client_name' => $ci['client_company'] ?: $ci['client_name'],
+                'client_id' => $ci['client_id'],
+                'instances' => [],
+                'total_cost' => 0,
+            ];
+        }
+        $cloud_by_client[$ckey]['instances'][] = $ci;
+        $cloud_by_client[$ckey]['total_cost'] += floatval($ci['cost_per_month'] ?? 0);
+    }
+
 } catch (PDOException $e) {
     error_log("Admin services error: " . $e->getMessage());
     $subscriptions = [];
@@ -102,6 +127,9 @@ try {
     $total_subs = 0;
     $active_subs = 0;
     $total_mrr = 0;
+    $cloud_instances = [];
+    $cloud_total_cost = 0;
+    $cloud_by_client = [];
 }
 
 $success = $_GET['success'] ?? '';
@@ -288,6 +316,91 @@ $success = $_GET['success'] ?? '';
                         </tbody>
                     </table>
                 </div>
+            </div>
+
+            <div class="mt-8">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">Cloud Services</h2>
+                        <p class="text-sm text-gray-500">Vultr cloud instances assigned to clients</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div class="text-right">
+                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Cloud Instances</span>
+                            <p class="text-lg font-bold text-gray-900" data-testid="text-cloud-instance-count"><?php echo count($cloud_instances); ?></p>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Cloud MRR</span>
+                            <p class="text-lg font-bold text-gray-900" data-testid="text-cloud-mrr">$<?php echo number_format($cloud_total_cost, 2); ?></p>
+                        </div>
+                        <a href="admin-vultr.php" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2" data-testid="link-manage-vultr">
+                            <i class="fas fa-cloud"></i> Manage Vultr
+                        </a>
+                    </div>
+                </div>
+
+                <?php if (empty($cloud_by_client)): ?>
+                    <div class="bg-white rounded-lg border border-gray-200 text-center py-12">
+                        <i class="fas fa-cloud text-gray-300 text-3xl mb-3 block"></i>
+                        <p class="text-gray-900 font-semibold mb-1">No cloud instances assigned</p>
+                        <p class="text-sm text-gray-500">Assign Vultr instances to clients from the <a href="admin-vultr.php" class="text-blue-600 hover:underline">Vultr Cloud</a> page.</p>
+                    </div>
+                <?php else: ?>
+                    <?php foreach ($cloud_by_client as $client_group): ?>
+                        <div class="bg-white rounded-lg border border-gray-200 mb-4" data-testid="cloud-client-group-<?php echo $client_group['client_id']; ?>">
+                            <div class="px-6 py-3 border-b border-gray-200 flex items-center justify-between gap-2 bg-gray-50 rounded-t-lg">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                                        <i class="fas fa-building text-indigo-600 text-sm"></i>
+                                    </div>
+                                    <a href="admin-client-detail.php?id=<?php echo $client_group['client_id']; ?>" class="font-semibold text-gray-900 hover:text-blue-600">
+                                        <?php echo htmlspecialchars($client_group['client_name']); ?>
+                                    </a>
+                                </div>
+                                <div class="flex items-center gap-4 text-sm">
+                                    <span class="text-gray-500"><?php echo count($client_group['instances']); ?> instance<?php echo count($client_group['instances']) !== 1 ? 's' : ''; ?></span>
+                                    <span class="font-semibold text-gray-900">$<?php echo number_format($client_group['total_cost'], 2); ?>/mo</span>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                                            <th class="px-6 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Label</th>
+                                            <th class="px-6 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">IP Address</th>
+                                            <th class="px-6 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">OS</th>
+                                            <th class="px-6 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Specs</th>
+                                            <th class="px-6 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Region</th>
+                                            <th class="px-6 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Cost/Mo</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">
+                                        <?php foreach ($client_group['instances'] as $inst): ?>
+                                            <tr class="hover:bg-gray-50 transition" data-testid="row-cloud-instance-<?php echo $inst['id']; ?>">
+                                                <td class="px-6 py-3">
+                                                    <span class="flex items-center gap-1.5">
+                                                        <span class="w-2 h-2 rounded-full <?php echo ($inst['power_status'] ?? '') === 'running' ? 'bg-green-500' : 'bg-gray-400'; ?>"></span>
+                                                        <span class="text-xs font-medium <?php echo ($inst['power_status'] ?? '') === 'running' ? 'text-green-700' : 'text-gray-500'; ?>"><?php echo ucfirst($inst['power_status'] ?? 'unknown'); ?></span>
+                                                    </span>
+                                                </td>
+                                                <td class="px-6 py-3">
+                                                    <div class="font-medium text-gray-900"><?php echo htmlspecialchars($inst['label'] ?: 'Unnamed'); ?></div>
+                                                    <div class="text-xs text-gray-500"><?php echo htmlspecialchars($inst['plan'] ?? ''); ?></div>
+                                                </td>
+                                                <td class="px-6 py-3 text-sm text-gray-900"><?php echo htmlspecialchars($inst['main_ip'] ?? 'N/A'); ?></td>
+                                                <td class="px-6 py-3 text-sm text-gray-600"><?php echo htmlspecialchars($inst['os'] ?? 'N/A'); ?></td>
+                                                <td class="px-6 py-3 text-sm text-gray-600"><?php echo intval($inst['vcpu_count'] ?? 0); ?> vCPU / <?php echo htmlspecialchars($inst['ram'] ?? '0'); ?> MB / <?php echo htmlspecialchars($inst['disk'] ?? '0'); ?> GB</td>
+                                                <td class="px-6 py-3 text-sm text-gray-600"><?php echo htmlspecialchars($inst['region'] ?? 'N/A'); ?></td>
+                                                <td class="px-6 py-3 text-sm font-medium text-gray-900 text-right">$<?php echo number_format(floatval($inst['cost_per_month'] ?? 0), 2); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
             </div>
         </div>
     </div>
