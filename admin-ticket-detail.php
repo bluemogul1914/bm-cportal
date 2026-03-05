@@ -19,6 +19,7 @@ $success_msg = '';
 $error_msg = '';
 $ticket = null;
 $comments = [];
+$time_entries = [];
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
     require_csrf();
@@ -59,6 +60,57 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
         } catch (PDOException $e) {
             $error_msg = 'Failed to update ticket.';
         }
+    } elseif ($action === 'add_time') {
+        $hours = floatval($_POST['hours'] ?? 0);
+        $minutes = intval($_POST['minutes'] ?? 0);
+        $duration = intval($hours * 60) + $minutes;
+        $description = trim($_POST['time_description'] ?? '');
+        $billable = isset($_POST['billable']) ? true : false;
+        $hourly_rate = floatval($_POST['hourly_rate'] ?? 150.00);
+        if ($duration > 0) {
+            try {
+                $pdo = getDB();
+                $pdo->prepare("INSERT INTO ticket_time_entries (ticket_id, user_id, description, duration_minutes, billable, hourly_rate, started_at, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())")
+                    ->execute([$ticket_id, $user_id, $description, $duration, $billable, $hourly_rate]);
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
+                    ->execute([$user_id, 'time_logged', 'ticket', $ticket_id, "Logged {$duration} min on ticket #{$ticket_id}", $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+                $success_msg = "Logged " . ($duration >= 60 ? floor($duration/60) . "h " . ($duration%60) . "m" : $duration . " min") . " to this ticket.";
+            } catch (PDOException $e) {
+                $error_msg = 'Failed to log time.';
+            }
+        } else {
+            $error_msg = 'Duration must be greater than 0.';
+        }
+    } elseif ($action === 'save_timer') {
+        $duration = intval($_POST['timer_duration'] ?? 0);
+        $description = trim($_POST['timer_description'] ?? '');
+        $billable = isset($_POST['timer_billable']) ? true : false;
+        $hourly_rate = floatval($_POST['timer_rate'] ?? 150.00);
+        if ($duration > 0) {
+            try {
+                $pdo = getDB();
+                $pdo->prepare("INSERT INTO ticket_time_entries (ticket_id, user_id, description, duration_minutes, billable, hourly_rate, started_at, ended_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())")
+                    ->execute([$ticket_id, $user_id, $description, $duration, $billable, $hourly_rate, date('Y-m-d H:i:s', time() - ($duration * 60))]);
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
+                    ->execute([$user_id, 'timer_saved', 'ticket', $ticket_id, "Timer: {$duration} min on ticket #{$ticket_id}", $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+                $success_msg = "Timer saved: " . ($duration >= 60 ? floor($duration/60) . "h " . ($duration%60) . "m" : $duration . " min");
+            } catch (PDOException $e) {
+                $error_msg = 'Failed to save timer.';
+            }
+        } else {
+            $error_msg = 'Timer has no time recorded.';
+        }
+    } elseif ($action === 'delete_time') {
+        $entry_id = intval($_POST['entry_id'] ?? 0);
+        if ($entry_id > 0) {
+            try {
+                $pdo = getDB();
+                $pdo->prepare("DELETE FROM ticket_time_entries WHERE id = ? AND ticket_id = ?")->execute([$entry_id, $ticket_id]);
+                $success_msg = 'Time entry deleted.';
+            } catch (PDOException $e) {
+                $error_msg = 'Failed to delete time entry.';
+            }
+        }
     }
 }
 
@@ -73,6 +125,10 @@ try {
     $stmt = $pdo->prepare("SELECT tc.*, u.name as author_name, u.is_admin as author_is_admin FROM ticket_comments tc LEFT JOIN users u ON tc.user_id = u.id WHERE tc.ticket_id = ? ORDER BY tc.created_at ASC");
     $stmt->execute([$ticket_id]);
     $comments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmt = $pdo->prepare("SELECT te.*, u.name as user_name FROM ticket_time_entries te LEFT JOIN users u ON te.user_id = u.id WHERE te.ticket_id = ? ORDER BY te.created_at DESC");
+    $stmt->execute([$ticket_id]);
+    $time_entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     portal_redirect('/portal/admin-tickets.php');
 }
@@ -89,6 +145,17 @@ $created = $ticket['created_at'] ?? '';
 $updated = $ticket['updated_at'] ?? '';
 $source = ucfirst($ticket['source'] ?? 'Portal');
 $is_closed = ($status === 'closed');
+
+$total_minutes = 0;
+$billable_minutes = 0;
+$total_billable_amount = 0;
+foreach ($time_entries as $te) {
+    $total_minutes += $te['duration_minutes'];
+    if ($te['billable']) {
+        $billable_minutes += $te['duration_minutes'];
+        $total_billable_amount += ($te['duration_minutes'] / 60) * floatval($te['hourly_rate']);
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -137,6 +204,11 @@ $is_closed = ($status === 'closed');
                     ?>" data-testid="badge-priority"><?php echo ucfirst($priority); ?> Priority</span>
                     <?php if ($created): ?>
                     <span class="text-xs text-gray-500"><i class="far fa-clock mr-1"></i><?php $ts = strtotime($created); echo $ts ? date('M d, Y g:i A', $ts) : htmlspecialchars($created); ?></span>
+                    <?php endif; ?>
+                    <?php if ($total_minutes > 0): ?>
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700" data-testid="badge-time-total">
+                        <i class="fas fa-stopwatch mr-1"></i><?php echo floor($total_minutes/60); ?>h <?php echo $total_minutes%60; ?>m logged
+                    </span>
                     <?php endif; ?>
                 </div>
             </div>
@@ -259,6 +331,125 @@ $is_closed = ($status === 'closed');
                     </div>
 
                     <div class="bg-white rounded-lg border border-gray-200 mb-6">
+                        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                            <h3 class="font-semibold text-gray-900"><i class="fas fa-stopwatch text-purple-600 mr-2"></i>Billable Time</h3>
+                            <?php if ($total_billable_amount > 0): ?>
+                            <span class="text-sm font-bold text-green-700" data-testid="text-billable-total">$<?php echo number_format($total_billable_amount, 2); ?></span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <div class="bg-gray-900 rounded-lg p-4 text-center" data-testid="timer-display">
+                                <div class="text-3xl font-mono text-white tracking-widest" id="timer-clock">00:00:00</div>
+                                <div class="flex items-center justify-center gap-3 mt-3">
+                                    <button type="button" onclick="toggleTimer()" id="timer-toggle-btn" class="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition" data-testid="button-timer-toggle">
+                                        <i class="fas fa-play mr-1" id="timer-icon"></i><span id="timer-label">Start</span>
+                                    </button>
+                                    <button type="button" onclick="resetTimer()" class="px-4 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-md text-sm font-medium transition" data-testid="button-timer-reset">
+                                        <i class="fas fa-redo-alt mr-1"></i>Reset
+                                    </button>
+                                </div>
+                            </div>
+
+                            <form method="POST" action="admin-ticket-detail.php?id=<?php echo $ticket_id; ?>" id="timer-save-form" class="hidden" data-testid="form-timer-save">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="save_timer">
+                                <input type="hidden" name="timer_duration" id="timer-duration-input" value="0">
+                                <input type="text" name="timer_description" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mb-2" placeholder="What did you work on?" data-testid="input-timer-description">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <label class="flex items-center gap-2 text-sm text-gray-600">
+                                        <input type="checkbox" name="timer_billable" checked class="rounded border-gray-300" data-testid="checkbox-timer-billable"> Billable
+                                    </label>
+                                    <div class="flex items-center gap-1">
+                                        <span class="text-sm text-gray-500">$</span>
+                                        <input type="number" name="timer_rate" value="150" step="0.01" min="0" class="w-20 px-2 py-1 border border-gray-300 rounded text-sm" data-testid="input-timer-rate">
+                                        <span class="text-sm text-gray-500">/hr</span>
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-md font-medium text-sm transition" data-testid="button-timer-save">
+                                    <i class="fas fa-save mr-1"></i>Save Timer Entry
+                                </button>
+                            </form>
+
+                            <div class="border-t border-gray-200 pt-4">
+                                <p class="text-xs font-semibold text-gray-500 uppercase mb-2">Manual Entry</p>
+                                <form method="POST" action="admin-ticket-detail.php?id=<?php echo $ticket_id; ?>" data-testid="form-manual-time">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="add_time">
+                                    <div class="grid grid-cols-2 gap-2 mb-2">
+                                        <div>
+                                            <label class="block text-xs text-gray-500 mb-0.5">Hours</label>
+                                            <input type="number" name="hours" min="0" max="24" value="0" step="1" class="w-full px-2 py-1.5 border border-gray-300 rounded text-sm" data-testid="input-hours">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs text-gray-500 mb-0.5">Minutes</label>
+                                            <input type="number" name="minutes" min="0" max="59" value="0" step="5" class="w-full px-2 py-1.5 border border-gray-300 rounded text-sm" data-testid="input-minutes">
+                                        </div>
+                                    </div>
+                                    <input type="text" name="time_description" class="w-full px-2 py-1.5 border border-gray-300 rounded text-sm mb-2" placeholder="Description..." data-testid="input-time-description">
+                                    <div class="flex items-center gap-3 mb-2">
+                                        <label class="flex items-center gap-2 text-sm text-gray-600">
+                                            <input type="checkbox" name="billable" checked class="rounded border-gray-300" data-testid="checkbox-billable"> Billable
+                                        </label>
+                                        <div class="flex items-center gap-1">
+                                            <span class="text-sm text-gray-500">$</span>
+                                            <input type="number" name="hourly_rate" value="150" step="0.01" min="0" class="w-20 px-2 py-1 border border-gray-300 rounded text-sm" data-testid="input-hourly-rate">
+                                            <span class="text-sm text-gray-500">/hr</span>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-1.5 rounded-md font-medium text-sm transition" data-testid="button-add-time">
+                                        <i class="fas fa-plus mr-1"></i>Log Time
+                                    </button>
+                                </form>
+                            </div>
+
+                            <?php if (!empty($time_entries)): ?>
+                            <div class="border-t border-gray-200 pt-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <p class="text-xs font-semibold text-gray-500 uppercase">Time Log</p>
+                                    <p class="text-xs text-gray-500"><?php echo floor($total_minutes/60); ?>h <?php echo $total_minutes%60; ?>m total</p>
+                                </div>
+                                <div class="space-y-2 max-h-64 overflow-y-auto" data-testid="time-entries-list">
+                                    <?php foreach ($time_entries as $te):
+                                        $te_mins = $te['duration_minutes'];
+                                        $te_hrs = floor($te_mins / 60);
+                                        $te_rem = $te_mins % 60;
+                                        $te_amount = $te['billable'] ? ($te_mins / 60) * floatval($te['hourly_rate']) : 0;
+                                    ?>
+                                    <div class="bg-gray-50 rounded-md p-3 text-sm" data-testid="time-entry-<?php echo $te['id']; ?>">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="font-medium text-gray-900">
+                                                <?php echo $te_hrs > 0 ? $te_hrs . 'h ' : ''; ?><?php echo $te_rem; ?>m
+                                                <?php if ($te['billable']): ?>
+                                                    <span class="text-green-600 text-xs ml-1">($<?php echo number_format($te_amount, 2); ?>)</span>
+                                                <?php endif; ?>
+                                            </span>
+                                            <div class="flex items-center gap-2">
+                                                <?php if ($te['billable']): ?>
+                                                    <span class="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">Billable</span>
+                                                <?php else: ?>
+                                                    <span class="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-xs">Non-billable</span>
+                                                <?php endif; ?>
+                                                <form method="POST" class="inline" onsubmit="return confirm('Delete this time entry?')">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="action" value="delete_time">
+                                                    <input type="hidden" name="entry_id" value="<?php echo $te['id']; ?>">
+                                                    <button type="submit" class="text-red-400 hover:text-red-600 text-xs" data-testid="button-delete-time-<?php echo $te['id']; ?>"><i class="fas fa-trash"></i></button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                        <?php if (!empty($te['description'])): ?>
+                                        <p class="text-gray-600 text-xs"><?php echo htmlspecialchars($te['description']); ?></p>
+                                        <?php endif; ?>
+                                        <p class="text-gray-400 text-xs mt-1"><?php echo htmlspecialchars($te['user_name'] ?? 'Unknown'); ?> &middot; <?php $ts = strtotime($te['created_at']); echo $ts ? date('M d g:i A', $ts) : ''; ?></p>
+                                    </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-lg border border-gray-200 mb-6">
                         <div class="px-6 py-4 border-b border-gray-200"><h3 class="font-semibold text-gray-900">Client Info</h3></div>
                         <div class="p-6 space-y-3">
                             <div><p class="text-xs text-gray-500">Name</p><p class="font-medium text-gray-900 text-sm" data-testid="text-client-name"><?php echo htmlspecialchars($client_name ?: 'N/A'); ?></p></div>
@@ -322,6 +513,56 @@ function setReplyType(type) {
     document.getElementById('btn-internal').className = isInternal
         ? 'text-sm font-medium px-3 py-1.5 rounded-md bg-yellow-100 text-yellow-700 transition'
         : 'text-sm font-medium px-3 py-1.5 rounded-md text-gray-600 hover:bg-gray-100 transition';
+}
+
+let timerRunning = false;
+let timerSeconds = 0;
+let timerInterval = null;
+
+function padZero(n) { return n < 10 ? '0' + n : n; }
+
+function updateTimerDisplay() {
+    const h = Math.floor(timerSeconds / 3600);
+    const m = Math.floor((timerSeconds % 3600) / 60);
+    const s = timerSeconds % 60;
+    document.getElementById('timer-clock').textContent = padZero(h) + ':' + padZero(m) + ':' + padZero(s);
+    const saveForm = document.getElementById('timer-save-form');
+    if (timerSeconds > 0 && !timerRunning) {
+        saveForm.classList.remove('hidden');
+        document.getElementById('timer-duration-input').value = Math.ceil(timerSeconds / 60);
+    } else {
+        saveForm.classList.add('hidden');
+    }
+}
+
+function toggleTimer() {
+    if (timerRunning) {
+        clearInterval(timerInterval);
+        timerRunning = false;
+        document.getElementById('timer-icon').className = 'fas fa-play mr-1';
+        document.getElementById('timer-label').textContent = 'Resume';
+        document.getElementById('timer-toggle-btn').className = 'px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition';
+    } else {
+        timerRunning = true;
+        timerInterval = setInterval(function() {
+            timerSeconds++;
+            updateTimerDisplay();
+        }, 1000);
+        document.getElementById('timer-icon').className = 'fas fa-pause mr-1';
+        document.getElementById('timer-label').textContent = 'Pause';
+        document.getElementById('timer-toggle-btn').className = 'px-4 py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md text-sm font-medium transition';
+    }
+    updateTimerDisplay();
+}
+
+function resetTimer() {
+    clearInterval(timerInterval);
+    timerRunning = false;
+    timerSeconds = 0;
+    document.getElementById('timer-icon').className = 'fas fa-play mr-1';
+    document.getElementById('timer-label').textContent = 'Start';
+    document.getElementById('timer-toggle-btn').className = 'px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition';
+    updateTimerDisplay();
 }
 </script>
 </body>

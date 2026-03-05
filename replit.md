@@ -7,7 +7,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - **Frontend**: React with Tailwind CSS, shadcn/ui components, wouter routing
 - **Backend**: Express.js with PHP code execution via child_process
 - **Database**: PostgreSQL with Drizzle ORM
-- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, documents, payments, activity_log, agent_logs, agent_config, agent_metrics, system_settings, network_devices, network_credentials, knowledge_articles, notifications, projects, project_tasks, project_notes, vultr_instances, itarian_endpoints, itarian_alerts, snippets + Stripe schema
+- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, ticket_time_entries, documents, payments, activity_log, agent_logs, agent_config, agent_metrics, system_settings, network_devices, network_credentials, knowledge_articles, notifications, projects, project_tasks, project_notes, vultr_instances, itarian_endpoints, itarian_alerts, snippets + Stripe schema
 - **Runtime**: PHP 8.2 installed via Nix for server-side code execution
 - **Payments**: Stripe integration via Replit connector (OAuth-managed)
 
@@ -35,8 +35,8 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-client-detail.php` - Full CRM-style client profile: overview with 4 financial cards, services with status bars, location map (Leaflet/OpenStreetMap), activity logs with timestamps/ID#/tags, client profile card with avatar/tags, invoices mini-table, next invoice preview, credits management, active tickets, projects; tabs for Invoices (with billing summary), Payments, Documents, Tickets, Network (devices), Cloud (Vultr instances assigned to client with specs/bandwidth/cost, unassign action), Projects; master/sub-account hierarchy display
 - `admin-client-add.php` - Create new client with full form (info, parent account, location, credits, notes)
 - `admin-client-edit.php` - Edit client: info, parent account (master/sub-account), lat/lng location, credit balance, notes
-- `admin-tickets.php` - Ticket management via ITarian Service Desk API (list, search, filter, close)
-- `admin-ticket-detail.php` - Ticket detail via ITarian SD API (view, reply, close, ticket metadata)
+- `admin-tickets.php` - Ticket management (list, search, filter, close, time logged per ticket with billable amounts)
+- `admin-ticket-detail.php` - Ticket detail (view, reply, close, ticket metadata, billable time tracker with live timer + manual entry, time log with per-entry rates and delete)
 - `admin-invoices.php` - Invoice management
 - `admin-invoice-add.php` - Create invoices with ITFlow-style line items (Item/Description/Qty/Unit Price/Tax/Amount), product autocomplete, subtotal/tax/total, customer footer; invoice_number regex `'^INV-[0-9]{3,5}$'` excludes Stripe-synced 8-digit numbers
 - `admin-invoice-detail.php` - Invoice detail with line items display, payment history, mark paid/unpaid, Stripe payment link, email invoice, customer footer
@@ -162,5 +162,6 @@ An online PHP code editor and execution environment built with React + Express, 
 ## Integrations
 
 - **Stripe**: Connected via Replit integration (OAuth). Schema managed by stripe-replit-sync
-- **ITarian Service Desk**: Ticketing via SD API (`ITARIAN_SD_API_KEY`, `ITARIAN_SD_URL`). Uses `itarian_sd_api()` helper in config.php. API base: `/clientapi/index.php?serviceName=`. Services: `listtickets`, `createticket`, `ticketpostreply`, `closeTicket`, `getcategories`, `getassets`
-- **config.php**: References env vars for Coolify, VoIP.ms, ITarian (RMM + SD), HubSpot, Matrix, ITFlow, UISP, Vultr, Ollama, N8N, Flowise, AnythingLLM
+- **ITarian RMM**: Remote monitoring via ITarian API. API base auto-resolves from portal URL to correct API endpoint (pitstop-api.itarian.com / msp-api.itarian.com). Endpoints: `/api/v1/device/load`, `/api/v1/alerts`. Headers: `x-auth-token: ITARIAN_API_KEY`, `x-auth-type: 4`
+- **Ticketing**: 100% local PostgreSQL — no external API. `tickets` + `ticket_comments` + `ticket_time_entries` tables
+- **config.php**: References env vars for Coolify, VoIP.ms, ITarian (RMM), HubSpot, Matrix, ITFlow, UISP, Vultr, Ollama, N8N, Flowise, AnythingLLM

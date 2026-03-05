@@ -80,7 +80,7 @@ try {
     $total_pages = ceil($total_tickets / $limit);
 
     $query_params = array_merge($params, [$limit, $offset]);
-    $stmt = $pdo->prepare("SELECT t.*, c.name as client_name, c.email as client_email FROM tickets t LEFT JOIN clients c ON t.client_id = c.id $where_sql ORDER BY CASE WHEN t.status = 'open' THEN 0 WHEN t.status = 'in_progress' THEN 1 ELSE 2 END, CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END, t.created_at DESC LIMIT ? OFFSET ?");
+    $stmt = $pdo->prepare("SELECT t.*, c.name as client_name, c.email as client_email, COALESCE(tt.total_minutes, 0) as time_logged, COALESCE(tt.billable_amount, 0) as billable_amount FROM tickets t LEFT JOIN clients c ON t.client_id = c.id LEFT JOIN (SELECT ticket_id, SUM(duration_minutes) as total_minutes, SUM(CASE WHEN billable THEN (duration_minutes::numeric / 60) * hourly_rate ELSE 0 END) as billable_amount FROM ticket_time_entries GROUP BY ticket_id) tt ON tt.ticket_id = t.id $where_sql ORDER BY CASE WHEN t.status = 'open' THEN 0 WHEN t.status = 'in_progress' THEN 1 ELSE 2 END, CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END, t.created_at DESC LIMIT ? OFFSET ?");
     $stmt->execute($query_params);
     $tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -287,6 +287,19 @@ try {
                                         <div class="flex items-center">
                                             <i class="fas fa-user-tag mr-2 text-gray-400"></i>
                                             <span><?php echo htmlspecialchars($assigned_text); ?></span>
+                                        </div>
+                                        <?php endif; ?>
+                                        <?php
+                                            $t_logged = intval($ticket['time_logged'] ?? 0);
+                                            $t_billable = floatval($ticket['billable_amount'] ?? 0);
+                                            if ($t_logged > 0):
+                                        ?>
+                                        <div class="flex items-center">
+                                            <i class="fas fa-stopwatch mr-2 text-purple-400"></i>
+                                            <span class="text-purple-700 font-medium"><?php echo floor($t_logged/60); ?>h <?php echo $t_logged%60; ?>m</span>
+                                            <?php if ($t_billable > 0): ?>
+                                            <span class="ml-1 text-green-600">($<?php echo number_format($t_billable, 2); ?>)</span>
+                                            <?php endif; ?>
                                         </div>
                                         <?php endif; ?>
                                     </div>

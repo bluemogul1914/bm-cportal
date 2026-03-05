@@ -17,9 +17,51 @@ $pdo = getDB();
 $success_msg = '';
 $error_msg = '';
 
+function resolve_itarian_api_base() {
+    $configured = rtrim(ITARIAN_API_URL, '/');
+    if (strpos($configured, 'pitstop-api.itarian.com') !== false
+        || strpos($configured, 'msp-api.itarian.com') !== false
+        || strpos($configured, '-api.itarian.com') !== false
+        || strpos($configured, 'api.') !== false) {
+        return $configured;
+    }
+    $api_bases = [
+        'https://pitstop-api.itarian.com',
+        'https://msp-api.itarian.com',
+    ];
+    if (preg_match('/https?:\/\/(\w+)\.itarian\.com/', $configured, $m)) {
+        array_unshift($api_bases, 'https://' . $m[1] . '-api.itarian.com');
+        array_unshift($api_bases, 'https://api.' . $m[1] . '.itarian.com');
+    }
+    foreach ($api_bases as $base) {
+        $ch = curl_init($base . '/api/v1/device/load');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 5,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => '{}',
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'x-auth-token: ' . ITARIAN_API_KEY,
+                'x-auth-type: 4',
+            ],
+        ]);
+        curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($code >= 200 && $code < 500) {
+            return $base;
+        }
+    }
+    return $api_bases[0];
+}
+
 function itarian_api_post($path, $body = []) {
-    $base_url = rtrim(ITARIAN_API_URL, '/');
-    $url = $base_url . $path;
+    static $resolved_base = null;
+    if ($resolved_base === null) {
+        $resolved_base = resolve_itarian_api_base();
+    }
+    $url = $resolved_base . $path;
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,
@@ -71,7 +113,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'sync_endpoints' && $itarian_connected) {
-        $api_data = itarian_api_post('/api/rest/v1/device/load', [
+        $api_data = itarian_api_post('/api/v1/device/load', [
             'search' => new stdClass(),
             'pagination' => ['page' => 1, 'pageSize' => 500],
         ]);
@@ -121,7 +163,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     }
 
     if ($action === 'sync_alerts' && $itarian_connected) {
-        $api_data = itarian_api_post('/api/rest/v1/alerts', [
+        $api_data = itarian_api_post('/api/v1/alerts', [
             'search' => new stdClass(),
             'pagination' => ['page' => 1, 'pageSize' => 100],
         ]);
