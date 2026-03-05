@@ -394,6 +394,42 @@ require '${filePath.replace(/'/g, "\\'")}';
 
 app.use("/uploads", express.static(join(projectRoot, "uploads")));
 
+// ═══════════════════════════════════════════════════════════════
+// Chat API — Portal chat rooms
+// ═══════════════════════════════════════════════════════════════
+
+app.get("/api/chat/messages", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.userId) return res.status(401).json({ error: "Not authenticated" });
+  const room = (req.query.room as string) || "general";
+  const after = parseInt(req.query.after as string) || 0;
+  try {
+    const result = await webhookPool.query(
+      "SELECT id, room, user_id, user_name, is_admin, message, created_at FROM chat_messages WHERE room = $1 AND id > $2 ORDER BY created_at ASC LIMIT 200",
+      [room, after]
+    );
+    res.json({ messages: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/chat/messages", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.userId) return res.status(401).json({ error: "Not authenticated" });
+  const { room, message } = req.body;
+  if (!room || !message?.trim()) return res.status(400).json({ error: "Room and message required" });
+  try {
+    const result = await webhookPool.query(
+      "INSERT INTO chat_messages (room, user_id, user_name, is_admin, message) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [room, sess.userId, sess.userName || "User", sess.isAdmin || false, message.trim()]
+    );
+    res.json({ message: result.rows[0] });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 function validateWebhookAuth(req: Request, res: Response): boolean {
   const token = req.headers["x-webhook-token"] || req.headers["authorization"]?.replace("Bearer ", "");
   const expectedToken = process.env.SESSION_SECRET || "";
