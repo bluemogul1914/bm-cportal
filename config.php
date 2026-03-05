@@ -78,6 +78,47 @@ define('ITARIAN_API_KEY', getenv('ITARIAN_API_KEY') ?: '');
 define('ITARIAN_API_URL', getenv('ITARIAN_API_URL') ?: '');
 
 // ============================================
+// ITARIAN SERVICE DESK CONFIGURATION
+// ============================================
+define('ITARIAN_SD_API_KEY', getenv('ITARIAN_SD_API_KEY') ?: '');
+define('ITARIAN_SD_URL', getenv('ITARIAN_SD_URL') ?: 'https://bluemogultech.ticketing-us.itarian.com');
+
+function itarian_sd_api($serviceName, $body = []) {
+    $base = rtrim(ITARIAN_SD_URL, '/');
+    $url = $base . '/clientapi/index.php?serviceName=' . urlencode($serviceName);
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($body),
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'Authorization: ' . ITARIAN_SD_API_KEY,
+        ],
+    ]);
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_error = curl_error($ch);
+    curl_close($ch);
+    if ($curl_error) {
+        return ['error' => $curl_error, 'http_code' => 0];
+    }
+    if ($http_code < 200 || $http_code >= 300) {
+        $decoded = json_decode($response, true);
+        $msg = $decoded['message'] ?? $decoded['error'] ?? "HTTP $http_code";
+        return ['error' => $msg, 'http_code' => $http_code];
+    }
+    $data = json_decode($response, true);
+    if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
+        return ['error' => 'Invalid JSON: ' . json_last_error_msg(), 'raw' => substr($response, 0, 500)];
+    }
+    return $data;
+}
+
+// ============================================
 // HUBSPOT CRM CONFIGURATION
 // ============================================
 define('HUBSPOT_TOKEN', getenv('HUBSPOT_TOKEN') ?: '');

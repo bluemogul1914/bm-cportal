@@ -53,7 +53,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
         $total = round($subtotal + $tax_amount, 2);
 
         try {
-            $stmt = $pdo->prepare("SELECT COALESCE(MAX(CAST(REPLACE(invoice_number, 'INV-', '') AS INTEGER)), 0) + 1 as next_num FROM invoices WHERE invoice_number ~ '^INV-[0-9]+$'");
+            $stmt = $pdo->prepare("SELECT COALESCE(MAX(CAST(REPLACE(invoice_number, 'INV-', '') AS INTEGER)), 0) + 1 as next_num FROM invoices WHERE invoice_number ~ '^INV-[0-9]{3,5}$'");
             $stmt->execute();
             $next = $stmt->fetch(PDO::FETCH_ASSOC)['next_num'];
             $invoice_number = 'INV-' . str_pad($next, 5, '0', STR_PAD_LEFT);

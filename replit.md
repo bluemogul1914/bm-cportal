@@ -15,8 +15,8 @@ An online PHP code editor and execution environment built with React + Express, 
 
 ### Client Portal Pages
 - `dashboard.php` - Client dashboard with open tickets, invoices, services overview, real notifications
-- `tickets.php` - Ticket list with create, filter, search
-- `ticket-detail.php` - Individual ticket view with conversation thread and replies
+- `tickets.php` - Ticket list via ITarian Service Desk API (create, filter, search)
+- `ticket-detail.php` - Ticket detail via ITarian SD API (view conversation, reply)
 - `billing.php` - Invoice list with filters, payment history, outstanding balance
 - `pay-invoice.php` - Stripe Checkout payment flow for invoices
 - `payment-success.php` - Post-payment confirmation (supports demo mode)
@@ -35,10 +35,10 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-client-detail.php` - Full CRM-style client profile: overview with 4 financial cards, services with status bars, location map (Leaflet/OpenStreetMap), activity logs with timestamps/ID#/tags, client profile card with avatar/tags, invoices mini-table, next invoice preview, credits management, active tickets, projects; tabs for Invoices (with billing summary), Payments, Documents, Tickets, Network (devices), Cloud (Vultr instances assigned to client with specs/bandwidth/cost, unassign action), Projects; master/sub-account hierarchy display
 - `admin-client-add.php` - Create new client with full form (info, parent account, location, credits, notes)
 - `admin-client-edit.php` - Edit client: info, parent account (master/sub-account), lat/lng location, credit balance, notes
-- `admin-tickets.php` - Ticket management with triage
-- `admin-ticket-detail.php` - Reply (public/internal), status/priority/assignee changes
+- `admin-tickets.php` - Ticket management via ITarian Service Desk API (list, search, filter, close)
+- `admin-ticket-detail.php` - Ticket detail via ITarian SD API (view, reply, close, ticket metadata)
 - `admin-invoices.php` - Invoice management
-- `admin-invoice-add.php` - Create invoices with ITFlow-style line items (Item/Description/Qty/Unit Price/Tax/Amount), product autocomplete, subtotal/tax/total, customer footer
+- `admin-invoice-add.php` - Create invoices with ITFlow-style line items (Item/Description/Qty/Unit Price/Tax/Amount), product autocomplete, subtotal/tax/total, customer footer; invoice_number regex `'^INV-[0-9]{3,5}$'` excludes Stripe-synced 8-digit numbers
 - `admin-invoice-detail.php` - Invoice detail with line items display, payment history, mark paid/unpaid, Stripe payment link, email invoice, customer footer
 - `admin-products.php` - Product catalog management (CRUD, toggle active/inactive)
 - `admin-services.php` - Subscription management (assign products to clients, suspend/cancel)
@@ -162,4 +162,5 @@ An online PHP code editor and execution environment built with React + Express, 
 ## Integrations
 
 - **Stripe**: Connected via Replit integration (OAuth). Schema managed by stripe-replit-sync
-- **config.php**: References env vars for Coolify, VoIP.ms, ITarian, HubSpot, Matrix, ITFlow, UISP, Vultr, Ollama, N8N, Flowise, AnythingLLM
+- **ITarian Service Desk**: Ticketing via SD API (`ITARIAN_SD_API_KEY`, `ITARIAN_SD_URL`). Uses `itarian_sd_api()` helper in config.php. API base: `/clientapi/index.php?serviceName=`. Services: `listtickets`, `createticket`, `ticketpostreply`, `closeTicket`, `getcategories`, `getassets`
+- **config.php**: References env vars for Coolify, VoIP.ms, ITarian (RMM + SD), HubSpot, Matrix, ITFlow, UISP, Vultr, Ollama, N8N, Flowise, AnythingLLM
