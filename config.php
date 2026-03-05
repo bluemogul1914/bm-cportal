@@ -103,6 +103,12 @@ define('UISP_URL', 'https://uisp.bluemogul.us');
 define('UISP_API_KEY', getenv('UISP_API_KEY') ?: '');
 
 // ============================================
+// VULTR CLOUD CONFIGURATION
+// ============================================
+define('VULTR_API_KEY', getenv('VULTR_API_KEY') ?: '');
+define('VULTR_API_URL', 'https://api.vultr.com/v2');
+
+// ============================================
 // AI AGENT CONFIGURATION
 // ============================================
 define('AI_AGENTS_ENABLED', true);

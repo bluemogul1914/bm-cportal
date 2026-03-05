@@ -88,6 +88,11 @@
                     <i class="fas fa-credit-card w-5"></i>
                     <span>Stripe</span>
                 </a>
+
+                <a href="admin-vultr.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-vultr.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-vultr">
+                    <i class="fas fa-cloud w-5"></i>
+                    <span>Vultr Cloud</span>
+                </a>
             </div>
         </div>
 

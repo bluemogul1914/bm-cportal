@@ -7,7 +7,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - **Frontend**: React with Tailwind CSS, shadcn/ui components, wouter routing
 - **Backend**: Express.js with PHP code execution via child_process
 - **Database**: PostgreSQL with Drizzle ORM
-- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, documents, payments, activity_log, agent_logs, agent_config, agent_metrics, system_settings, network_devices, network_credentials, knowledge_articles, notifications, projects, project_tasks, project_notes, snippets + Stripe schema
+- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, documents, payments, activity_log, agent_logs, agent_config, agent_metrics, system_settings, network_devices, network_credentials, knowledge_articles, notifications, projects, project_tasks, project_notes, vultr_instances, snippets + Stripe schema
 - **Runtime**: PHP 8.2 installed via Nix for server-side code execution
 - **Payments**: Stripe integration via Replit connector (OAuth-managed)
 
@@ -56,6 +56,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-messages.php` - Messaging center (list sent/draft messages, filters by category/status)
 - `admin-message-compose.php` - Compose message (rich editor, categories, recipient selection, placeholders, template load/save, preview, draft save)
 - `admin-message-templates.php` - Message templates CRUD (create/edit/delete reusable templates)
+- `admin-vultr.php` - Vultr Cloud integration (live API: account info, instance management, bandwidth monitoring, client assignment for billing, cost breakdown per client, auto-sync on page load, instance detail cards)
 - `admin-roles.php` - Roles & Access Control (RBAC: super-admin, admin, sales, IT support, billing, wholesaler, dealer — staff/partner only; client 'user' role excluded, managed under Clients)
 - `admin-projects.php` - Project management list (create, filter, status/type/priority, progress tracking)
 - `admin-project-detail.php` - Individual project view with task board, notes, timeline, status management
@@ -159,4 +160,4 @@ An online PHP code editor and execution environment built with React + Express, 
 ## Integrations
 
 - **Stripe**: Connected via Replit integration (OAuth). Schema managed by stripe-replit-sync
-- **config.php**: References env vars for Coolify, VoIP.ms, ITarian, HubSpot, Matrix, ITFlow, UISP, Ollama, N8N, Flowise, AnythingLLM
+- **config.php**: References env vars for Coolify, VoIP.ms, ITarian, HubSpot, Matrix, ITFlow, UISP, Vultr, Ollama, N8N, Flowise, AnythingLLM
