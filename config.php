@@ -157,6 +157,12 @@ define('NEXTCLOUD_USER', getenv('NEXTCLOUD_USER') ?: '');
 define('NEXTCLOUD_PASSWORD', getenv('NEXTCLOUD_PASSWORD') ?: '');
 
 // ============================================
+// MONITORING CONFIGURATION
+// ============================================
+define('UPTIME_KUMA_URL', getenv('UPTIME_KUMA_URL') ?: 'https://status.bluemogul.us');
+define('GRAFANA_URL', getenv('GRAFANA_URL') ?: 'https://grafana.bluemogul.us');
+
+// ============================================
 // AI AGENT CONFIGURATION
 // ============================================
 define('AI_AGENTS_ENABLED', true);

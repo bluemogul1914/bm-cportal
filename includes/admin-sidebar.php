@@ -59,6 +59,16 @@
                 <i class="fas fa-envelope w-5"></i>
                 <span>Messages</span>
             </a>
+
+            <a href="admin-chat.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-chat.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-chat">
+                <i class="fas fa-comments w-5"></i>
+                <span>Chat</span>
+            </a>
+
+            <a href="admin-monitoring.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-monitoring.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-monitoring">
+                <i class="fas fa-heartbeat w-5"></i>
+                <span>Monitoring</span>
+            </a>
         </div>
 
         <div class="mt-8">

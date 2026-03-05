@@ -67,8 +67,6 @@ function itarian_api_post($path, $body = []) {
         CURLOPT_URL => $url,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => 30,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS => 3,
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode($body),
         CURLOPT_HTTPHEADER => [
@@ -80,18 +78,34 @@ function itarian_api_post($path, $body = []) {
     ]);
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $effective_url = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
     $curl_error = curl_error($ch);
     curl_close($ch);
 
     if ($curl_error) {
         return ['error' => $curl_error, 'http_code' => 0];
     }
+    if ($http_code >= 300 && $http_code < 400) {
+        return ['error' => "HTTP {$http_code} Redirect — API base URL may be incorrect. Tried: {$url}", 'http_code' => $http_code];
+    }
     if ($http_code < 200 || $http_code >= 300) {
         $body_resp = json_decode($response, true);
         $msg = $body_resp['error'] ?? $body_resp['message'] ?? $body_resp['errorMessage'] ?? "HTTP $http_code";
-        return ['error' => $msg, 'http_code' => $http_code];
+        return ['error' => $msg . " (URL: {$url})", 'http_code' => $http_code];
     }
-    return json_decode($response, true) ?: ['error' => 'Invalid JSON response'];
+    $content_type = '';
+    if ($response && strlen($response) > 0) {
+        $trimmed = ltrim($response);
+        if ($trimmed[0] === '<') {
+            return ['error' => "API returned HTML instead of JSON — check your ITARIAN_API_URL. API base: {$resolved_base}", 'http_code' => $http_code];
+        }
+    }
+    $decoded = json_decode($response, true);
+    if ($decoded === null && json_last_error() !== JSON_ERROR_NONE) {
+        $snippet = substr($response, 0, 100);
+        return ['error' => "Invalid JSON from API ({$url}): " . json_last_error_msg() . " — Response: " . $snippet, 'http_code' => $http_code];
+    }
+    return $decoded;
 }
 
 $api_error = '';

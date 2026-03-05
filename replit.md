@@ -58,7 +58,9 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-message-compose.php` - Compose message (rich editor, categories, recipient selection, placeholders, template load/save, preview, draft save)
 - `admin-message-templates.php` - Message templates CRUD (create/edit/delete reusable templates)
 - `admin-vultr.php` - Vultr Cloud integration (live API: account info, instance management, bandwidth monitoring, client assignment for billing, cost breakdown per client, sync button, deploy new server wizard with type/region/plan/OS selection)
-- `admin-itarian.php` - ITarian RMM integration (endpoint management, patch management, alert monitoring, device sync, OS breakdown, client assignment)
+- `admin-itarian.php` - ITarian RMM integration (endpoint management, patch management, alert monitoring, device sync, OS breakdown, client assignment; improved error handling with URL debugging)
+- `admin-monitoring.php` - Monitoring dashboard with Uptime Kuma and Grafana embedded iframes, tabs for each tool plus overview, connection status, env var config
+- `admin-chat.php` - Nextcloud Talk chat integration with Support, Billing, General channels; embedded iframe to Nextcloud Talk; channel sidebar with descriptions
 - `admin-roles.php` - Roles & Access Control (RBAC: super-admin, admin, sales, IT support, billing, wholesaler, dealer — staff/partner only; client 'user' role excluded, managed under Clients)
 - `admin-projects.php` - Project management list (create, filter, status/type/priority, progress tracking)
 - `admin-project-detail.php` - Individual project view with task board, notes, timeline, status management
