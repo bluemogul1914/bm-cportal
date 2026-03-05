@@ -9,9 +9,9 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
 $user_email = $_SESSION['user_email'] ?? '';
 $is_admin = true;
 
-$nextcloud_url = getenv('NEXTCLOUD_URL') ?: '';
-$nextcloud_user = getenv('NEXTCLOUD_USER') ?: '';
-$nextcloud_password = getenv('NEXTCLOUD_PASSWORD') ?: '';
+$nextcloud_url = defined('NEXTCLOUD_URL') ? NEXTCLOUD_URL : (getenv('NEXTCLOUD_URL') ?: '');
+$nextcloud_user = defined('NEXTCLOUD_USER') ? NEXTCLOUD_USER : (getenv('NEXTCLOUD_USER') ?: '');
+$nextcloud_password = defined('NEXTCLOUD_PASSWORD') ? NEXTCLOUD_PASSWORD : (getenv('NEXTCLOUD_PASSWORD') ?: '');
 $nextcloud_connected = !empty($nextcloud_url) && !empty($nextcloud_user) && !empty($nextcloud_password);
 
 $connection_status = $nextcloud_connected ? 'Connected' : 'Not Configured';

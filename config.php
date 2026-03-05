@@ -150,6 +150,13 @@ define('VULTR_API_KEY', getenv('VULTR_API_KEY') ?: '');
 define('VULTR_API_URL', 'https://api.vultr.com/v2');
 
 // ============================================
+// NEXTCLOUD CONFIGURATION
+// ============================================
+define('NEXTCLOUD_URL', getenv('NEXTCLOUD_URL') ?: '');
+define('NEXTCLOUD_USER', getenv('NEXTCLOUD_USER') ?: '');
+define('NEXTCLOUD_PASSWORD', getenv('NEXTCLOUD_PASSWORD') ?: '');
+
+// ============================================
 // AI AGENT CONFIGURATION
 // ============================================
 define('AI_AGENTS_ENABLED', true);
