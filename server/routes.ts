@@ -211,13 +211,13 @@ export async function registerRoutes(
       }
 
       const invoiceResult = await db.execute(
-        sql`SELECT id, amount, invoice_number, status, client_id FROM invoices WHERE id = ${Number(invoice_id)} AND status = 'unpaid'`
+        sql`SELECT id, amount, total, invoice_number, status, client_id FROM invoices WHERE id = ${Number(invoice_id)} AND status = 'unpaid'`
       );
       if (!invoiceResult.rows.length) {
         return res.status(404).json({ error: "Invoice not found or already paid" });
       }
       const invoice = invoiceResult.rows[0] as any;
-      const serverAmount = parseFloat(invoice.amount);
+      const serverAmount = parseFloat(invoice.total || invoice.amount);
       const invoiceNumber = invoice.invoice_number;
 
       try {
