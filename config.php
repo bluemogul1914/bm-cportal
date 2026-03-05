@@ -75,7 +75,7 @@ define('COOLIFY_TOKEN', getenv('COOLIFY_TOKEN') ?: '');
 // ITARIAN RMM CONFIGURATION
 // ============================================
 define('ITARIAN_API_KEY', getenv('ITARIAN_API_KEY') ?: '');
-define('ITARIAN_API_URL', 'https://api.comodo.com/v1');
+define('ITARIAN_API_URL', getenv('ITARIAN_API_URL') ?: '');
 
 // ============================================
 // HUBSPOT CRM CONFIGURATION

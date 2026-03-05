@@ -9,24 +9,29 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
 $user_email = $_SESSION['user_email'] ?? '';
 $is_admin = true;
 
-$itarian_connected = !empty(ITARIAN_API_KEY);
+$itarian_api_key = ITARIAN_API_KEY;
 $itarian_api_url = ITARIAN_API_URL;
+$itarian_connected = !empty($itarian_api_key) && !empty($itarian_api_url);
 $pdo = getDB();
 
 $success_msg = '';
 $error_msg = '';
 
-function itarian_api_get($endpoint) {
-    $url = ITARIAN_API_URL . $endpoint;
+function itarian_api_post($path, $body = []) {
+    $base_url = rtrim(ITARIAN_API_URL, '/');
+    $url = $base_url . $path;
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => 30,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($body),
         CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . ITARIAN_API_KEY,
             'Content-Type: application/json',
             'Accept: application/json',
+            'x-auth-token: ' . ITARIAN_API_KEY,
+            'x-auth-type: 4',
         ],
     ]);
     $response = curl_exec($ch);
@@ -38,8 +43,8 @@ function itarian_api_get($endpoint) {
         return ['error' => $curl_error, 'http_code' => 0];
     }
     if ($http_code < 200 || $http_code >= 300) {
-        $body = json_decode($response, true);
-        $msg = $body['error'] ?? $body['message'] ?? "HTTP $http_code";
+        $body_resp = json_decode($response, true);
+        $msg = $body_resp['error'] ?? $body_resp['message'] ?? $body_resp['errorMessage'] ?? "HTTP $http_code";
         return ['error' => $msg, 'http_code' => $http_code];
     }
     return json_decode($response, true) ?: ['error' => 'Invalid JSON response'];
@@ -66,16 +71,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'sync_endpoints' && $itarian_connected) {
-        $api_data = itarian_api_get('/endpoints');
+        $api_data = itarian_api_post('/api/rest/v1/device/load', [
+            'search' => new stdClass(),
+            'pagination' => ['page' => 1, 'pageSize' => 500],
+        ]);
 
         if (isset($api_data['error'])) {
             $err = $api_data['error'];
-            if (strpos(strtolower($err), 'unauthorized') !== false || strpos(strtolower($err), '401') !== false) {
-                $err .= ' — Check your ITARIAN_API_KEY in Replit Secrets.';
+            if (strpos(strtolower($err), 'unauthorized') !== false || strpos(strtolower($err), '401') !== false || strpos(strtolower($err), '403') !== false) {
+                $err .= ' — Check your ITARIAN_API_KEY and ITARIAN_API_URL in Replit Secrets.';
             }
-            $error_msg = 'Sync failed: ' . $err;
+            $error_msg = 'Endpoint sync failed: ' . $err;
         } else {
-            $api_endpoints = $api_data['data'] ?? $api_data['endpoints'] ?? $api_data;
+            $api_endpoints = $api_data['data'] ?? $api_data['result'] ?? $api_data['devices'] ?? $api_data;
             if (is_array($api_endpoints)) {
                 $synced = 0;
                 foreach ($api_endpoints as $ep) {
@@ -113,7 +121,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     }
 
     if ($action === 'sync_alerts' && $itarian_connected) {
-        $api_data = itarian_api_get('/alerts');
+        $api_data = itarian_api_post('/api/rest/v1/alerts', [
+            'search' => new stdClass(),
+            'pagination' => ['page' => 1, 'pageSize' => 100],
+        ]);
 
         if (isset($api_data['error'])) {
             $error_msg = 'Alert sync failed: ' . $api_data['error'];
@@ -247,10 +258,15 @@ try {
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Connection Status</p>
                     <?php if ($itarian_connected): ?>
                         <p class="text-lg font-bold text-green-600"><i class="fas fa-check-circle mr-1"></i>Active</p>
-                        <p class="text-xs text-gray-400 mt-1">API key configured</p>
+                        <p class="text-xs text-gray-400 mt-1">API key + host configured</p>
                     <?php else: ?>
                         <p class="text-lg font-bold text-red-600"><i class="fas fa-times-circle mr-1"></i>Inactive</p>
-                        <p class="text-xs text-gray-400 mt-1">API key not set</p>
+                        <p class="text-xs text-gray-400 mt-1"><?php
+                            $missing = [];
+                            if (empty($itarian_api_key)) $missing[] = 'ITARIAN_API_KEY';
+                            if (empty($itarian_api_url)) $missing[] = 'ITARIAN_API_URL';
+                            echo implode(' & ', $missing) . ' not set';
+                        ?></p>
                     <?php endif; ?>
                 </div>
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-total-endpoints">
@@ -426,30 +442,37 @@ try {
                             <div class="flex items-start gap-3">
                                 <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
                                 <div>
-                                    <p class="text-sm font-medium text-gray-900">Get your ITarian API Key</p>
-                                    <p class="text-xs text-gray-500 mt-0.5">Log in to your ITarian / Comodo One portal. Navigate to Management &rarr; Staff &rarr; API Keys. Generate a new API key with RMM access.</p>
+                                    <p class="text-sm font-medium text-gray-900">Get your ITSM API Token</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Log in to your ITarian / Comodo ONE portal. Go to <strong>Management &rarr; Staff &rarr; API</strong>. Generate an access token. You will use this as <code class="bg-gray-100 px-1 rounded text-xs">ITARIAN_API_KEY</code>.</p>
                                 </div>
                             </div>
                             <div class="flex items-start gap-3">
                                 <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
                                 <div>
-                                    <p class="text-sm font-medium text-gray-900">Add to Replit Secrets</p>
-                                    <p class="text-xs text-gray-500 mt-0.5">In Replit, go to Tools &rarr; Secrets and add <code class="bg-gray-100 px-1 rounded text-xs">ITARIAN_API_KEY</code> with your API key value.</p>
+                                    <p class="text-sm font-medium text-gray-900">Find your ITSM Host URL</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Your ITSM host is the base URL of your ITarian instance, e.g. <code class="bg-gray-100 px-1 rounded text-xs">https://yourcompany.cmdm.comodo.com</code> or your custom domain. This will be your <code class="bg-gray-100 px-1 rounded text-xs">ITARIAN_API_URL</code>.</p>
                                 </div>
                             </div>
                             <div class="flex items-start gap-3">
                                 <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
                                 <div>
-                                    <p class="text-sm font-medium text-gray-900">Verify Connection</p>
-                                    <p class="text-xs text-gray-500 mt-0.5">Refresh this page after adding the secret. The status should change to &ldquo;Connected&rdquo; and you can begin syncing endpoints.</p>
+                                    <p class="text-sm font-medium text-gray-900">Add both Secrets in Replit</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">In Replit, go to Tools &rarr; Secrets and add:</p>
+                                    <ul class="text-xs text-gray-500 mt-1 space-y-1 list-disc pl-4">
+                                        <li><code class="bg-gray-100 px-1 rounded text-xs">ITARIAN_API_KEY</code> &mdash; Your API access token</li>
+                                        <li><code class="bg-gray-100 px-1 rounded text-xs">ITARIAN_API_URL</code> &mdash; Your ITSM host URL (e.g. <code class="bg-gray-100 px-1 rounded text-xs">https://yourcompany.cmdm.comodo.com</code>)</li>
+                                    </ul>
                                 </div>
                             </div>
                             <div class="flex items-start gap-3">
                                 <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">4</span>
                                 <div>
-                                    <p class="text-sm font-medium text-gray-900">API Endpoint URL</p>
-                                    <p class="text-xs text-gray-500 mt-0.5">The ITarian API endpoint is currently set to <code class="bg-gray-100 px-1 rounded text-xs"><?php echo htmlspecialchars($itarian_api_url); ?></code>. Update <code class="bg-gray-100 px-1 rounded text-xs">ITARIAN_API_URL</code> in config.php if needed.</p>
+                                    <p class="text-sm font-medium text-gray-900">Verify Connection</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Refresh this page after adding the secrets. Both <code class="bg-gray-100 px-1 rounded text-xs">ITARIAN_API_KEY</code> and <code class="bg-gray-100 px-1 rounded text-xs">ITARIAN_API_URL</code> must be set for the status to show &ldquo;Connected.&rdquo;</p>
                                 </div>
+                            </div>
+                            <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                <p class="text-xs text-blue-700"><i class="fas fa-info-circle mr-1"></i><strong>API Reference:</strong> ITarian uses the Comodo ONE ITSM API. Endpoints are at <code class="bg-blue-100 px-1 rounded">/api/rest/v1/device/load</code> (devices), <code class="bg-blue-100 px-1 rounded">/api/rest/v1/alerts</code> (alerts). Auth uses <code class="bg-blue-100 px-1 rounded">x-auth-token</code> header. See <a href="https://developer.itarian.com/" target="_blank" class="underline">developer.itarian.com</a></p>
                             </div>
                         </div>
                     </div>
