@@ -443,7 +443,7 @@ async function resolveNcRoomToken(roomName: string): Promise<string | null> {
 
 app.get("/api/chat/messages", async (req, res) => {
   const sess = (req.session as any)?.portalUser;
-  if (!sess?.userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
   const room = (req.query.room as string) || "general";
   const after = parseInt(req.query.after as string) || 0;
   try {
@@ -459,7 +459,7 @@ app.get("/api/chat/messages", async (req, res) => {
 
 app.get("/api/chat/nc-messages", async (req, res) => {
   const sess = (req.session as any)?.portalUser;
-  if (!sess?.userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
   const room = (req.query.room as string) || "general";
   try {
     const token = await resolveNcRoomToken(room);
@@ -484,18 +484,18 @@ app.get("/api/chat/nc-messages", async (req, res) => {
 
 app.post("/api/chat/messages", async (req, res) => {
   const sess = (req.session as any)?.portalUser;
-  if (!sess?.userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
   const { room, message } = req.body;
   if (!room || !message?.trim()) return res.status(400).json({ error: "Room and message required" });
   try {
     const result = await webhookPool.query(
       "INSERT INTO chat_messages (room, user_id, user_name, is_admin, message) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-      [room, sess.userId, sess.userName || "User", sess.isAdmin || false, message.trim()]
+      [room, sess.user_id, sess.user_name || "User", sess.is_admin || false, message.trim()]
     );
     const token = await resolveNcRoomToken(room);
     let nc_sent = false;
     if (token) {
-      const ncResult = await nextcloudTalkRequest("POST", `/chat/${token}`, { message: `[Portal - ${sess.userName || "User"}] ${message.trim()}` });
+      const ncResult = await nextcloudTalkRequest("POST", `/chat/${token}`, { message: `[Portal - ${sess.user_name || "User"}] ${message.trim()}` });
       nc_sent = !!ncResult;
     }
     res.json({ message: result.rows[0], nc_sent });
@@ -506,7 +506,7 @@ app.post("/api/chat/messages", async (req, res) => {
 
 app.get("/api/monitoring/health", async (req, res) => {
   const sess = (req.session as any)?.portalUser;
-  if (!sess?.userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
   const results: Record<string, any> = {};
   const checks = [
     { name: "uptime_kuma", url: process.env.UPTIME_KUMA_URL || "", envKey: "UPTIME_KUMA_URL" },
