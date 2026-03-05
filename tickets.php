@@ -10,15 +10,12 @@ $user_id = $_SESSION['user_id'];
 $user_name = $_SESSION['user_name'] ?? 'User';
 $user_email = $_SESSION['user_email'] ?? '';
 $is_admin = $_SESSION['is_admin'] ?? false;
-$sd_connected = !empty(ITARIAN_SD_API_KEY);
-$sd_url = rtrim(ITARIAN_SD_URL, '/');
 
 $success_msg = '';
 $error_msg = '';
 $tickets = [];
 $status_counts = [];
 $total_tickets = 0;
-$api_available = false;
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_ticket') {
     require_csrf();
@@ -29,41 +26,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
     if (empty($subject)) {
         $error_msg = 'Subject is required.';
     } else {
-        $sd_created = false;
-        if ($sd_connected) {
-            $priority_map = ['low' => 1, 'medium' => 2, 'high' => 3, 'urgent' => 4];
-            $result = itarian_sd_api('createticket', [
-                'email' => $user_email,
-                'summary' => $subject,
-                'description' => $description ?: $subject,
-                'priorityId' => $priority_map[$priority] ?? 2,
-            ]);
-            if (!isset($result['error'])) {
-                $sd_created = true;
-                $success_msg = 'Ticket submitted to Service Desk successfully!';
-            }
-        }
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT id FROM clients WHERE user_id = ?");
+            $stmt->execute([$user_id]);
+            $client = $stmt->fetch(PDO::FETCH_ASSOC);
+            $client_id = $client ? $client['id'] : $user_id;
 
-        if (!$sd_created) {
-            try {
-                $pdo = getDB();
-                $stmt = $pdo->prepare("SELECT id FROM clients WHERE user_id = ?");
-                $stmt->execute([$user_id]);
-                $client = $stmt->fetch(PDO::FETCH_ASSOC);
-                $client_id = $client ? $client['id'] : $user_id;
-
-                $stmt = $pdo->prepare("INSERT INTO tickets (client_id, subject, description, status, priority, source, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, 'portal', NOW(), NOW())");
-                $stmt->execute([$client_id, $subject, $description, $priority]);
-                $new_ticket_id = $pdo->lastInsertId();
-                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'ticket_created', 'ticket', $new_ticket_id, 'Created ticket: ' . $subject, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
-                if (!empty($user_email)) {
-                    notify_ticket_created($new_ticket_id, $subject, $user_email, $user_name);
-                }
-                $success_msg = 'Ticket created successfully!';
-            } catch (PDOException $e) {
-                error_log("Ticket creation error: " . $e->getMessage());
-                $error_msg = 'Failed to create ticket. Please try again.';
+            $stmt = $pdo->prepare("INSERT INTO tickets (client_id, subject, description, status, priority, source, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, 'portal', NOW(), NOW()) RETURNING id");
+            $stmt->execute([$client_id, $subject, $description, $priority]);
+            $new_ticket_id = $stmt->fetchColumn();
+            $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
+                ->execute([$user_id, 'ticket_created', 'ticket', $new_ticket_id, 'Created ticket: ' . $subject, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+            if (!empty($user_email)) {
+                notify_ticket_created($new_ticket_id, $subject, $user_email, $user_name);
             }
+            $success_msg = 'Ticket created successfully!';
+        } catch (PDOException $e) {
+            error_log("Ticket creation error: " . $e->getMessage());
+            $error_msg = 'Failed to create ticket. Please try again.';
         }
     }
 }
@@ -71,63 +52,30 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
 $status_filter = $_GET['status'] ?? 'all';
 $search = $_GET['search'] ?? '';
 
-if ($sd_connected) {
-    $result = itarian_sd_api('listtickets', ['email' => $user_email]);
-    if (!isset($result['error'])) {
-        $raw = $result['data'] ?? $result['tickets'] ?? $result ?? [];
-        if (is_array($raw) && !empty($raw)) {
-            $api_available = true;
-            $tickets = $raw;
-            foreach ($tickets as $t) {
-                $st = strtolower($t['status'] ?? $t['ticketStatus'] ?? 'open');
-                if (!isset($status_counts[$st])) $status_counts[$st] = 0;
-                $status_counts[$st]++;
-            }
-            $total_tickets = count($tickets);
-            if ($status_filter !== 'all' || $search) {
-                $tickets = array_filter($tickets, function($t) use ($status_filter, $search) {
-                    $match = true;
-                    if ($status_filter !== 'all') {
-                        $match = (strtolower($t['status'] ?? '') === strtolower($status_filter));
-                    }
-                    if ($match && $search) {
-                        $s = strtolower($search);
-                        $match = (strpos(strtolower($t['subject'] ?? ''), $s) !== false || strpos(strtolower($t['description'] ?? ''), $s) !== false);
-                    }
-                    return $match;
-                });
-                $tickets = array_values($tickets);
-            }
-        }
+try {
+    $pdo = getDB();
+    $stmt = $pdo->prepare("SELECT id FROM clients WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    $client = $stmt->fetch(PDO::FETCH_ASSOC);
+    $client_id = $client ? $client['id'] : $user_id;
+
+    $where = "WHERE t.client_id = ?";
+    $params = [$client_id];
+    if ($status_filter !== 'all') { $where .= " AND t.status = ?"; $params[] = $status_filter; }
+    if (!empty($search)) { $where .= " AND (t.subject ILIKE ? OR t.description ILIKE ?)"; $params[] = "%$search%"; $params[] = "%$search%"; }
+
+    $stmt = $pdo->prepare("SELECT t.*, (SELECT COUNT(*) FROM ticket_comments WHERE ticket_id = t.id AND is_internal = false) as comment_count FROM tickets t $where ORDER BY t.created_at DESC");
+    $stmt->execute($params);
+    $tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmt = $pdo->prepare("SELECT status, COUNT(*) as count FROM tickets WHERE client_id = ? GROUP BY status");
+    $stmt->execute([$client_id]);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $status_counts[$row['status']] = $row['count'];
     }
-}
-
-if (!$api_available) {
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("SELECT id FROM clients WHERE user_id = ?");
-        $stmt->execute([$user_id]);
-        $client = $stmt->fetch(PDO::FETCH_ASSOC);
-        $client_id = $client ? $client['id'] : $user_id;
-
-        $where = "WHERE t.client_id = ?";
-        $params = [$client_id];
-        if ($status_filter !== 'all') { $where .= " AND t.status = ?"; $params[] = $status_filter; }
-        if (!empty($search)) { $where .= " AND (t.subject ILIKE ? OR t.description ILIKE ?)"; $params[] = "%$search%"; $params[] = "%$search%"; }
-
-        $stmt = $pdo->prepare("SELECT t.*, (SELECT COUNT(*) FROM ticket_comments WHERE ticket_id = t.id AND is_internal = false) as comment_count FROM tickets t $where ORDER BY t.created_at DESC");
-        $stmt->execute($params);
-        $tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $stmt = $pdo->prepare("SELECT status, COUNT(*) as count FROM tickets WHERE client_id = ? GROUP BY status");
-        $stmt->execute([$client_id]);
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $status_counts[$row['status']] = $row['count'];
-        }
-        $total_tickets = array_sum($status_counts);
-    } catch (PDOException $e) {
-        $tickets = [];
-    }
+    $total_tickets = array_sum($status_counts);
+} catch (PDOException $e) {
+    $tickets = [];
 }
 ?>
 <!DOCTYPE html>
@@ -177,7 +125,7 @@ if (!$api_available) {
                 </a>
                 <a href="tickets.php?status=open" class="bg-white rounded-lg border border-gray-200 p-4 hover:border-blue-300 transition <?php echo $status_filter === 'open' ? 'ring-2 ring-blue-500' : ''; ?>" data-testid="filter-open">
                     <p class="text-xs font-semibold text-gray-500 uppercase">Open</p>
-                    <p class="text-2xl font-bold text-blue-600 mt-1"><?php echo ($status_counts['open'] ?? 0) + ($status_counts['new'] ?? 0); ?></p>
+                    <p class="text-2xl font-bold text-blue-600 mt-1"><?php echo ($status_counts['open'] ?? 0); ?></p>
                 </a>
                 <a href="tickets.php?status=in_progress" class="bg-white rounded-lg border border-gray-200 p-4 hover:border-blue-300 transition <?php echo $status_filter === 'in_progress' ? 'ring-2 ring-blue-500' : ''; ?>" data-testid="filter-in-progress">
                     <p class="text-xs font-semibold text-gray-500 uppercase">In Progress</p>
@@ -185,7 +133,7 @@ if (!$api_available) {
                 </a>
                 <a href="tickets.php?status=closed" class="bg-white rounded-lg border border-gray-200 p-4 hover:border-blue-300 transition <?php echo $status_filter === 'closed' ? 'ring-2 ring-blue-500' : ''; ?>" data-testid="filter-closed">
                     <p class="text-xs font-semibold text-gray-500 uppercase">Closed</p>
-                    <p class="text-2xl font-bold text-green-600 mt-1"><?php echo ($status_counts['closed'] ?? 0) + ($status_counts['resolved'] ?? 0); ?></p>
+                    <p class="text-2xl font-bold text-green-600 mt-1"><?php echo ($status_counts['closed'] ?? 0); ?></p>
                 </a>
             </div>
 
@@ -215,28 +163,18 @@ if (!$api_available) {
                 <?php else: ?>
                     <div class="divide-y divide-gray-100">
                         <?php foreach ($tickets as $ticket):
-                            if ($api_available) {
-                                $tid = $ticket['ticketId'] ?? $ticket['id'] ?? '';
-                                $t_subject = $ticket['subject'] ?? $ticket['summary'] ?? 'No subject';
-                                $t_status = strtolower($ticket['status'] ?? 'open');
-                                $t_priority = strtolower($ticket['priority'] ?? 'medium');
-                                $t_created = $ticket['created'] ?? $ticket['createdDate'] ?? '';
-                                $t_comments = 0;
-                                $detail_link = "ticket-detail.php?id=" . urlencode($tid) . "&source=sd";
-                            } else {
-                                $tid = $ticket['id'];
-                                $t_subject = $ticket['subject'];
-                                $t_status = $ticket['status'];
-                                $t_priority = $ticket['priority'] ?? 'medium';
-                                $t_created = $ticket['created_at'];
-                                $t_comments = $ticket['comment_count'] ?? 0;
-                                $detail_link = "ticket-detail.php?id=" . urlencode($tid);
-                            }
+                            $tid = $ticket['id'];
+                            $t_subject = $ticket['subject'];
+                            $t_status = $ticket['status'];
+                            $t_priority = $ticket['priority'] ?? 'medium';
+                            $t_created = $ticket['created_at'];
+                            $t_comments = $ticket['comment_count'] ?? 0;
+                            $detail_link = "ticket-detail.php?id=" . urlencode($tid);
                         ?>
-                            <a href="<?php echo $detail_link; ?>" class="flex items-center px-6 py-4 hover:bg-gray-50 transition group" data-testid="ticket-row-<?php echo htmlspecialchars($tid); ?>">
+                            <a href="<?php echo $detail_link; ?>" class="flex items-center px-6 py-4 hover:bg-gray-50 transition group" data-testid="ticket-row-<?php echo $tid; ?>">
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-3 mb-1">
-                                        <span class="text-xs font-mono text-gray-400">#<?php echo htmlspecialchars($tid); ?></span>
+                                        <span class="text-xs font-mono text-gray-400">#<?php echo $tid; ?></span>
                                         <h3 class="font-medium text-gray-900 truncate group-hover:text-blue-600 transition"><?php echo htmlspecialchars($t_subject); ?></h3>
                                     </div>
                                     <div class="flex items-center gap-3 text-xs text-gray-500">
@@ -248,17 +186,20 @@ if (!$api_available) {
                                 </div>
                                 <div class="flex items-center gap-3 ml-4">
                                     <span class="px-2 py-1 rounded-full text-xs font-medium <?php
-                                        echo match(true) {
-                                            in_array($t_priority, ['high', 'urgent', 'critical']) => 'bg-red-100 text-red-700',
-                                            in_array($t_priority, ['medium', 'normal']) => 'bg-yellow-100 text-yellow-700',
-                                            default => 'bg-green-100 text-green-700'
+                                        echo match($t_priority) {
+                                            'urgent' => 'bg-red-200 text-red-800',
+                                            'high' => 'bg-red-100 text-red-700',
+                                            'medium' => 'bg-yellow-100 text-yellow-700',
+                                            'low' => 'bg-green-100 text-green-700',
+                                            default => 'bg-gray-100 text-gray-700'
                                         };
                                     ?>"><?php echo ucfirst($t_priority); ?></span>
                                     <span class="px-2 py-1 rounded-full text-xs font-medium <?php
-                                        echo match(true) {
-                                            in_array($t_status, ['open', 'new']) => 'bg-blue-100 text-blue-700',
-                                            in_array($t_status, ['closed', 'resolved']) => 'bg-gray-100 text-gray-700',
-                                            default => 'bg-yellow-100 text-yellow-700'
+                                        echo match($t_status) {
+                                            'open' => 'bg-blue-100 text-blue-700',
+                                            'in_progress' => 'bg-yellow-100 text-yellow-700',
+                                            'closed' => 'bg-gray-100 text-gray-700',
+                                            default => 'bg-gray-100 text-gray-700'
                                         };
                                     ?>"><?php echo ucfirst(str_replace('_', ' ', $t_status)); ?></span>
                                     <i class="fas fa-chevron-right text-gray-300 group-hover:text-blue-500 transition"></i>
