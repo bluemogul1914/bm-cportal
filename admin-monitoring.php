@@ -225,27 +225,22 @@ $grafana_health = check_service_health($grafana_url);
             <?php if ($kuma_configured && $kuma_health['reachable']): ?>
             <div class="bg-white rounded-lg border border-gray-200 mb-6 overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                    <h3 class="font-semibold text-gray-900"><i class="fas fa-signal text-green-500 mr-2"></i>Uptime Kuma — Status Page</h3>
-                    <a href="<?php echo htmlspecialchars($uptime_kuma_url); ?>/status" target="_blank" class="text-sm text-green-600 hover:text-green-700 font-medium">
-                        <i class="fas fa-external-link-alt mr-1"></i>Open Full Status Page
-                    </a>
+                    <h3 class="font-semibold text-gray-900"><i class="fas fa-signal text-green-500 mr-2"></i>Uptime Kuma — Quick Links</h3>
                 </div>
-                <div class="p-0" style="height: 500px; position: relative;">
-                    <iframe
-                        src="<?php echo htmlspecialchars($uptime_kuma_url); ?>/status"
-                        class="w-full h-full border-0"
-                        title="Uptime Kuma Status"
-                        data-testid="iframe-uptime-kuma"
-                        allow="fullscreen"
-                        id="kuma-iframe"
-                        onload="document.getElementById('kuma-iframe-fallback').style.display='none'"
-                        onerror="document.getElementById('kuma-iframe-fallback').style.display='flex'; this.style.display='none'"></iframe>
-                    <div id="kuma-iframe-fallback" class="absolute inset-0 bg-gray-50 items-center justify-center text-center" style="display: none;">
-                        <div>
-                            <i class="fas fa-shield-alt text-gray-400 text-3xl mb-3"></i>
-                            <p class="text-gray-600 font-medium">Iframe blocked by security policy</p>
-                            <p class="text-sm text-gray-500 mt-1">Use the "Open" button above to view in a new tab.</p>
-                        </div>
+                <div class="p-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <a href="<?php echo htmlspecialchars($uptime_kuma_url); ?>" target="_blank" class="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition" data-testid="link-kuma-dashboard">
+                            <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"><i class="fas fa-tachometer-alt text-green-600"></i></div>
+                            <div><p class="font-medium text-gray-900 text-sm">Dashboard</p><p class="text-xs text-gray-500">Main monitoring view</p></div>
+                        </a>
+                        <a href="<?php echo htmlspecialchars($uptime_kuma_url); ?>/status" target="_blank" class="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition" data-testid="link-kuma-status">
+                            <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"><i class="fas fa-list-check text-green-600"></i></div>
+                            <div><p class="font-medium text-gray-900 text-sm">Status Page</p><p class="text-xs text-gray-500">Public status overview</p></div>
+                        </a>
+                        <a href="<?php echo htmlspecialchars($uptime_kuma_url); ?>/settings" target="_blank" class="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition" data-testid="link-kuma-settings">
+                            <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"><i class="fas fa-cog text-green-600"></i></div>
+                            <div><p class="font-medium text-gray-900 text-sm">Settings</p><p class="text-xs text-gray-500">Configure monitors</p></div>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -254,27 +249,22 @@ $grafana_health = check_service_health($grafana_url);
             <?php if ($grafana_configured && $grafana_health['reachable']): ?>
             <div class="bg-white rounded-lg border border-gray-200 mb-6 overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                    <h3 class="font-semibold text-gray-900"><i class="fas fa-chart-area text-orange-500 mr-2"></i>Grafana — Dashboards</h3>
-                    <a href="<?php echo htmlspecialchars($grafana_url); ?>" target="_blank" class="text-sm text-orange-600 hover:text-orange-700 font-medium">
-                        <i class="fas fa-external-link-alt mr-1"></i>Open Grafana
-                    </a>
+                    <h3 class="font-semibold text-gray-900"><i class="fas fa-chart-area text-orange-500 mr-2"></i>Grafana — Quick Links</h3>
                 </div>
-                <div class="p-0" style="height: 500px; position: relative;">
-                    <iframe
-                        src="<?php echo htmlspecialchars($grafana_url); ?>/dashboards"
-                        class="w-full h-full border-0"
-                        title="Grafana Dashboards"
-                        data-testid="iframe-grafana"
-                        allow="fullscreen"
-                        id="grafana-iframe"
-                        onload="document.getElementById('grafana-iframe-fallback').style.display='none'"
-                        onerror="document.getElementById('grafana-iframe-fallback').style.display='flex'; this.style.display='none'"></iframe>
-                    <div id="grafana-iframe-fallback" class="absolute inset-0 bg-gray-50 items-center justify-center text-center" style="display: none;">
-                        <div>
-                            <i class="fas fa-shield-alt text-gray-400 text-3xl mb-3"></i>
-                            <p class="text-gray-600 font-medium">Iframe blocked by security policy</p>
-                            <p class="text-sm text-gray-500 mt-1">Use the "Open" button above to view in a new tab.</p>
-                        </div>
+                <div class="p-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <a href="<?php echo htmlspecialchars($grafana_url); ?>" target="_blank" class="flex items-center gap-3 p-4 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition" data-testid="link-grafana-home">
+                            <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center"><i class="fas fa-home text-orange-600"></i></div>
+                            <div><p class="font-medium text-gray-900 text-sm">Home</p><p class="text-xs text-gray-500">Grafana home page</p></div>
+                        </a>
+                        <a href="<?php echo htmlspecialchars($grafana_url); ?>/dashboards" target="_blank" class="flex items-center gap-3 p-4 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition" data-testid="link-grafana-dashboards">
+                            <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center"><i class="fas fa-chart-bar text-orange-600"></i></div>
+                            <div><p class="font-medium text-gray-900 text-sm">Dashboards</p><p class="text-xs text-gray-500">View all dashboards</p></div>
+                        </a>
+                        <a href="<?php echo htmlspecialchars($grafana_url); ?>/alerting" target="_blank" class="flex items-center gap-3 p-4 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition" data-testid="link-grafana-alerting">
+                            <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center"><i class="fas fa-bell text-orange-600"></i></div>
+                            <div><p class="font-medium text-gray-900 text-sm">Alerting</p><p class="text-xs text-gray-500">Alert rules & history</p></div>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -317,23 +307,5 @@ $grafana_health = check_service_health($grafana_url);
         </div>
     </div>
 </div>
-<script>
-setTimeout(function() {
-    ['kuma-iframe', 'grafana-iframe'].forEach(function(id) {
-        const iframe = document.getElementById(id);
-        if (!iframe) return;
-        try {
-            const doc = iframe.contentDocument || iframe.contentWindow.document;
-            if (!doc || doc.body.innerHTML === '') {
-                document.getElementById(id + '-fallback').style.display = 'flex';
-                iframe.style.display = 'none';
-            }
-        } catch(e) {
-            document.getElementById(id + '-fallback').style.display = 'flex';
-            iframe.style.display = 'none';
-        }
-    });
-}, 5000);
-</script>
 </body>
 </html>

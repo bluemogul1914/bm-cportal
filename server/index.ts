@@ -151,7 +151,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-monitoring.php", "admin-chat.php"];
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -395,51 +395,65 @@ require '${filePath.replace(/'/g, "\\'")}';
 app.use("/uploads", express.static(join(projectRoot, "uploads")));
 
 // ═══════════════════════════════════════════════════════════════
-// Chat API — Portal chat rooms
+// Chat API — Standalone portal messaging system
 // ═══════════════════════════════════════════════════════════════
 
-async function nextcloudTalkRequest(method: string, path: string, body?: any) {
-  const ncUrl = process.env.NEXTCLOUD_URL || "";
-  const ncUser = process.env.NEXTCLOUD_USER || "";
-  const ncPass = process.env.NEXTCLOUD_PASSWORD || "";
-  if (!ncUrl || !ncUser || !ncPass) return null;
-  const url = `${ncUrl.replace(/\/$/, "")}/ocs/v2.php/apps/spreed/api/v1${path}`;
-  const auth = Buffer.from(`${ncUser}:${ncPass}`).toString("base64");
-  const headers: Record<string, string> = {
-    "Authorization": `Basic ${auth}`,
-    "OCS-APIRequest": "true",
-    "Accept": "application/json",
-  };
-  const opts: any = { method, headers, timeout: 10000 };
-  if (body) {
-    headers["Content-Type"] = "application/json";
-    opts.body = JSON.stringify(body);
-  }
+app.get("/api/chat/channels", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
   try {
-    const resp = await fetch(url, opts);
-    if (!resp.ok) return null;
-    return await resp.json();
-  } catch { return null; }
-}
-
-let ncRoomTokenCache: Record<string, string> = {};
-let ncRoomCacheTime = 0;
-
-async function resolveNcRoomToken(roomName: string): Promise<string | null> {
-  const now = Date.now();
-  if (now - ncRoomCacheTime > 300000) {
-    const data = await nextcloudTalkRequest("GET", "/../v4/room");
-    if (data?.ocs?.data) {
-      ncRoomTokenCache = {};
-      for (const r of data.ocs.data) {
-        const name = (r.displayName || r.name || "").toLowerCase();
-        ncRoomTokenCache[name] = r.token;
-      }
-      ncRoomCacheTime = now;
-    }
+    const result = await webhookPool.query(
+      "SELECT c.*, (SELECT COUNT(*) FROM chat_channel_members cm WHERE cm.channel_id = c.id) as member_count FROM chat_channels c ORDER BY c.id"
+    );
+    res.json({ channels: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
-  return ncRoomTokenCache[roomName.toLowerCase()] || null;
-}
+});
+
+app.get("/api/chat/channels/:id/members", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
+  try {
+    const result = await webhookPool.query(
+      "SELECT cm.*, u.name as user_name, u.email as user_email FROM chat_channel_members cm LEFT JOIN users u ON u.id = cm.user_id WHERE cm.channel_id = $1 ORDER BY cm.added_at",
+      [req.params.id]
+    );
+    res.json({ members: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/chat/channels/:id/members", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id || !sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+  const { user_id, role } = req.body;
+  if (!user_id) return res.status(400).json({ error: "user_id required" });
+  try {
+    const result = await webhookPool.query(
+      "INSERT INTO chat_channel_members (channel_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT (channel_id, user_id) DO UPDATE SET role = $3 RETURNING *",
+      [req.params.id, user_id, role || "member"]
+    );
+    res.json({ member: result.rows[0] });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete("/api/chat/channels/:id/members/:userId", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id || !sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+  try {
+    await webhookPool.query(
+      "DELETE FROM chat_channel_members WHERE channel_id = $1 AND user_id = $2",
+      [req.params.id, req.params.userId]
+    );
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 app.get("/api/chat/messages", async (req, res) => {
   const sess = (req.session as any)?.portalUser;
@@ -457,31 +471,6 @@ app.get("/api/chat/messages", async (req, res) => {
   }
 });
 
-app.get("/api/chat/nc-messages", async (req, res) => {
-  const sess = (req.session as any)?.portalUser;
-  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
-  const room = (req.query.room as string) || "general";
-  try {
-    const token = await resolveNcRoomToken(room);
-    if (!token) return res.json({ messages: [], nc_connected: false });
-    const lookBack = parseInt(req.query.lookBackSeconds as string) || 3600;
-    const data = await nextcloudTalkRequest("GET", `/chat/${token}?lookIntoFuture=0&limit=100`);
-    if (!data?.ocs?.data) return res.json({ messages: [], nc_connected: true });
-    const msgs = data.ocs.data
-      .filter((m: any) => m.messageType === "comment")
-      .map((m: any) => ({
-        nc_id: m.id,
-        user_name: m.actorDisplayName || m.actorId,
-        message: m.message,
-        created_at: new Date(m.timestamp * 1000).toISOString(),
-        is_nc: true,
-      }));
-    res.json({ messages: msgs, nc_connected: true });
-  } catch (e: any) {
-    res.json({ messages: [], nc_connected: false, error: e.message });
-  }
-});
-
 app.post("/api/chat/messages", async (req, res) => {
   const sess = (req.session as any)?.portalUser;
   if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
@@ -492,13 +481,7 @@ app.post("/api/chat/messages", async (req, res) => {
       "INSERT INTO chat_messages (room, user_id, user_name, is_admin, message) VALUES ($1, $2, $3, $4, $5) RETURNING *",
       [room, sess.user_id, sess.user_name || "User", sess.is_admin || false, message.trim()]
     );
-    const token = await resolveNcRoomToken(room);
-    let nc_sent = false;
-    if (token) {
-      const ncResult = await nextcloudTalkRequest("POST", `/chat/${token}`, { message: `[Portal - ${sess.user_name || "User"}] ${message.trim()}` });
-      nc_sent = !!ncResult;
-    }
-    res.json({ message: result.rows[0], nc_sent });
+    res.json({ message: result.rows[0] });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -1409,6 +1392,33 @@ async function bootstrapPortalDatabase() {
       }
       console.log(`Seeded ${products.length} products into database`);
     }
+
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS chat_channels (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        slug VARCHAR(50) UNIQUE NOT NULL,
+        description TEXT DEFAULT '',
+        icon VARCHAR(50) DEFAULT 'fas fa-hashtag',
+        color VARCHAR(20) DEFAULT 'blue',
+        created_at TIMESTAMP DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS chat_channel_members (
+        id SERIAL PRIMARY KEY,
+        channel_id INTEGER NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL,
+        role VARCHAR(20) DEFAULT 'member',
+        added_at TIMESTAMP DEFAULT now(),
+        UNIQUE(channel_id, user_id)
+      );
+    `);
+    await webhookPool.query(`
+      INSERT INTO chat_channels (name, slug, description, icon, color) VALUES
+        ('Support', 'support', 'Technical support questions and troubleshooting', 'fas fa-headset', 'blue'),
+        ('Billing', 'billing', 'Billing inquiries, payment issues, and account questions', 'fas fa-file-invoice-dollar', 'green'),
+        ('General', 'general', 'General discussion, announcements, and team chat', 'fas fa-comments', 'purple')
+      ON CONFLICT (slug) DO NOTHING;
+    `);
 
     console.log("Portal database bootstrap complete");
   } catch (err) {

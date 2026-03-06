@@ -19,47 +19,59 @@ $error_msg = '';
 
 function resolve_itarian_api_base() {
     $configured = rtrim(ITARIAN_API_URL, '/');
-    if (strpos($configured, 'pitstop-api.itarian.com') !== false
+    if (strpos($configured, 'cmdm.comodo.com') !== false
+        || strpos($configured, 'pitstop-api.itarian.com') !== false
         || strpos($configured, 'msp-api.itarian.com') !== false
         || strpos($configured, '-api.itarian.com') !== false
         || strpos($configured, 'api.') !== false) {
         return $configured;
     }
-    $api_bases = [
-        'https://pitstop-api.itarian.com',
-        'https://msp-api.itarian.com',
-    ];
+    $api_bases = [];
     if (preg_match('/https?:\/\/(\w+)\.itarian\.com/', $configured, $m)) {
-        array_unshift($api_bases, 'https://' . $m[1] . '-api.itarian.com');
-        array_unshift($api_bases, 'https://api.' . $m[1] . '.itarian.com');
+        $api_bases[] = 'https://' . $m[1] . '-msp.cmdm.comodo.com';
+        $api_bases[] = 'https://' . $m[1] . '-api.itarian.com';
+        $api_bases[] = 'https://api.' . $m[1] . '.itarian.com';
     }
+    $api_bases[] = 'https://pitstop-msp.cmdm.comodo.com';
+    $api_bases[] = 'https://pitstop-api.itarian.com';
+    $api_bases[] = 'https://msp-api.itarian.com';
+    $api_paths = ['/api/rest/v1/device/load', '/api/v1/device/load'];
     foreach ($api_bases as $base) {
-        $ch = curl_init($base . '/api/v1/device/load');
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 5,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode(['search' => new \stdClass(), 'pagination' => ['page' => 1, 'pageSize' => 1]]),
-            CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'x-auth-token: ' . ITARIAN_API_KEY,
-                'x-auth-type: 4',
-            ],
-        ]);
-        $resp = curl_exec($ch);
-        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        if ($code >= 200 && $code < 300) {
-            return $base;
+        foreach ($api_paths as $path) {
+            $ch = curl_init($base . $path);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 5,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode(['search' => new \stdClass(), 'pagination' => ['page' => 1, 'pageSize' => 1]]),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'x-auth-token: ' . ITARIAN_API_KEY,
+                    'x-auth-type: 4',
+                ],
+            ]);
+            $resp = curl_exec($ch);
+            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($code >= 200 && $code < 300) {
+                $prefix = preg_replace('#/device/load$#', '', $path);
+                define('ITARIAN_API_PATH_PREFIX', $prefix);
+                return $base;
+            }
         }
     }
-    return 'https://pitstop-api.itarian.com';
+    define('ITARIAN_API_PATH_PREFIX', '/api/rest/v1');
+    return $configured ?: 'https://pitstop-msp.cmdm.comodo.com';
 }
 
 function itarian_api_post($path, $body = []) {
     static $resolved_base = null;
     if ($resolved_base === null) {
         $resolved_base = resolve_itarian_api_base();
+    }
+    $prefix = defined('ITARIAN_API_PATH_PREFIX') ? ITARIAN_API_PATH_PREFIX : '/api/rest/v1';
+    if (preg_match('#^/api/(rest/)?v1/(.+)$#', $path, $pm)) {
+        $path = $prefix . '/' . $pm[2];
     }
     $url = $resolved_base . $path;
     $ch = curl_init();

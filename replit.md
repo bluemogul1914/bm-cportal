@@ -26,6 +26,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - `profile.php` - Profile editing and password change
 - `settings.php` - Account settings (notification prefs, 2FA, theme, communication prefs)
 - `client-voip.php` - Client voice services (VoIP.ms white-label portal: My Services, CallerID Filtering, Call Forwarding, Callback, Voicemail, Order DIDs)
+- `client-chat.php` - Client support chat (real-time messaging with support team, same chat_messages table as admin)
 - `projects.php` - Client project tracking with progress bars, task lists, status cards
 - `help.php` - Client-facing Help Center / Knowledge Base with search, categories, article view
 
@@ -59,8 +60,8 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-message-templates.php` - Message templates CRUD (create/edit/delete reusable templates)
 - `admin-vultr.php` - Vultr Cloud integration (live API: account info, instance management, bandwidth monitoring, client assignment for billing, cost breakdown per client, sync button, deploy new server wizard with type/region/plan/OS selection)
 - `admin-itarian.php` - ITarian RMM integration (endpoint management, patch management, alert monitoring, device sync, OS breakdown, client assignment; improved error handling with URL debugging)
-- `admin-monitoring.php` - Monitoring dashboard with Uptime Kuma and Grafana embedded iframes, tabs for each tool plus overview, connection status, env var config
-- `admin-chat.php` - Nextcloud Talk chat integration with Support, Billing, General channels; embedded iframe to Nextcloud Talk; channel sidebar with descriptions
+- `admin-monitoring.php` - Monitoring dashboard with Uptime Kuma and Grafana health checks, quick-link cards, connection status, env var config (no iframes — external tools opened in new tabs)
+- `admin-chat.php` - Standalone messaging system with Support, Billing, General channels; channel member management (assign/unassign staff); real-time polling; DB-backed chat_messages + chat_channels + chat_channel_members tables
 - `admin-roles.php` - Roles & Access Control (RBAC: super-admin, admin, sales, IT support, billing, wholesaler, dealer — staff/partner only; client 'user' role excluded, managed under Clients)
 - `admin-projects.php` - Project management list (create, filter, status/type/priority, progress tracking)
 - `admin-project-detail.php` - Individual project view with task board, notes, timeline, status management
@@ -164,6 +165,6 @@ An online PHP code editor and execution environment built with React + Express, 
 ## Integrations
 
 - **Stripe**: Connected via Replit integration (OAuth). Schema managed by stripe-replit-sync
-- **ITarian RMM**: Remote monitoring via ITarian API. API base auto-resolves from portal URL to correct API endpoint (pitstop-api.itarian.com / msp-api.itarian.com). Endpoints: `/api/v1/device/load`, `/api/v1/alerts`. Headers: `x-auth-token: ITARIAN_API_KEY`, `x-auth-type: 4`
+- **ITarian RMM**: Remote monitoring via ITarian API. API base auto-resolves trying multiple hosts (cmdm.comodo.com, pitstop-api.itarian.com, msp-api.itarian.com) and paths (`/api/rest/v1/`, `/api/v1/`). Headers: `x-auth-token: ITARIAN_API_KEY`, `x-auth-type: 4`
 - **Ticketing**: 100% local PostgreSQL — no external API. `tickets` + `ticket_comments` + `ticket_time_entries` tables
 - **config.php**: References env vars for Coolify, VoIP.ms, ITarian (RMM), HubSpot, Matrix, ITFlow, UISP, Vultr, Ollama, N8N, Flowise, AnythingLLM

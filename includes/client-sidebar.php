@@ -48,6 +48,11 @@
                 <i class="fas fa-phone-alt w-5"></i>
                 <span>Voice Services</span>
             </a>
+
+            <a href="client-chat.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'client-chat.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-support-chat">
+                <i class="fas fa-headset w-5"></i>
+                <span>Support Chat</span>
+            </a>
         </div>
 
         <div class="mt-8">

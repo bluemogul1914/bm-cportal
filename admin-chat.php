@@ -10,43 +10,43 @@ $user_email = $_SESSION['user_email'] ?? '';
 $user_id = $_SESSION['user_id'];
 $is_admin = true;
 
-$nextcloud_url = defined('NEXTCLOUD_URL') ? NEXTCLOUD_URL : (getenv('NEXTCLOUD_URL') ?: '');
-$nextcloud_connected = !empty($nextcloud_url);
-$talk_base_url = $nextcloud_connected ? rtrim($nextcloud_url, '/') . '/apps/spreed' : '';
-
 $active_room = $_GET['room'] ?? 'support';
-$rooms = [
-    'support' => [
-        'name' => 'Support',
-        'icon' => 'fas fa-headset',
-        'color' => 'blue',
-        'description' => 'Technical support questions and troubleshooting',
-    ],
-    'billing' => [
-        'name' => 'Billing',
-        'icon' => 'fas fa-file-invoice-dollar',
-        'color' => 'green',
-        'description' => 'Billing inquiries, payment issues, and account questions',
-    ],
-    'general' => [
-        'name' => 'General',
-        'icon' => 'fas fa-comments',
-        'color' => 'purple',
-        'description' => 'General discussion, announcements, and team chat',
-    ],
-];
+$pdo = getDB();
 
-if (!isset($rooms[$active_room])) {
-    $active_room = 'support';
+$channels_stmt = $pdo->query("SELECT * FROM chat_channels ORDER BY id");
+$channels = $channels_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$rooms = [];
+foreach ($channels as $ch) {
+    $rooms[$ch['slug']] = [
+        'id' => $ch['id'],
+        'name' => $ch['name'],
+        'icon' => $ch['icon'],
+        'color' => $ch['color'],
+        'description' => $ch['description'],
+    ];
 }
 
-$pdo = getDB();
+if (!isset($rooms[$active_room]) && count($rooms) > 0) {
+    $active_room = array_key_first($rooms);
+}
+
 $unread_counts = [];
 foreach ($rooms as $key => $r) {
     $stmt = $pdo->prepare("SELECT COUNT(*) as cnt FROM chat_messages WHERE room = ?");
     $stmt->execute([$key]);
     $unread_counts[$key] = (int)$stmt->fetch(PDO::FETCH_ASSOC)['cnt'];
 }
+
+$active_channel_id = $rooms[$active_room]['id'] ?? 0;
+$members_stmt = $pdo->prepare("SELECT cm.*, u.name as user_name, u.email as user_email FROM chat_channel_members cm LEFT JOIN users u ON u.id = cm.user_id WHERE cm.channel_id = ? ORDER BY cm.added_at");
+$members_stmt->execute([$active_channel_id]);
+$channel_members = $members_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$staff_stmt = $pdo->query("SELECT id, name, email FROM users WHERE is_admin = true ORDER BY name");
+$all_staff = $staff_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$member_ids = array_column($channel_members, 'user_id');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -74,14 +74,12 @@ foreach ($rooms as $key => $r) {
                     <h1 class="text-2xl font-bold text-gray-900" data-testid="text-page-title">
                         <i class="fas fa-comments text-blue-500 mr-2"></i>Chat
                     </h1>
-                    <p class="text-sm text-gray-500 mt-1">Team communication channels</p>
+                    <p class="text-sm text-gray-500 mt-1">Team & client communication channels</p>
                 </div>
                 <div class="flex items-center gap-3">
-                    <?php if ($nextcloud_connected): ?>
-                    <a href="<?php echo htmlspecialchars($talk_base_url); ?>" target="_blank" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition" data-testid="link-talk-external">
-                        <i class="fas fa-external-link-alt mr-2"></i>Nextcloud Talk
-                    </a>
-                    <?php endif; ?>
+                    <button onclick="document.getElementById('members-panel').classList.toggle('hidden')" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition" data-testid="button-toggle-members">
+                        <i class="fas fa-users mr-2"></i>Members
+                    </button>
                 </div>
             </div>
         </header>
@@ -110,8 +108,8 @@ foreach ($rooms as $key => $r) {
                     <a href="?room=<?php echo $key; ?>" class="flex items-center gap-3 px-3 py-3 rounded-lg border <?php echo $is_active ? $color_classes : 'border-transparent ' . $color_classes; ?> transition" data-testid="channel-<?php echo $key; ?>">
                         <i class="<?php echo $room['icon']; ?> <?php echo $icon_color; ?> text-lg w-6 text-center"></i>
                         <div class="flex-1 min-w-0">
-                            <p class="font-medium text-sm"><?php echo $room['name']; ?></p>
-                            <p class="text-xs text-gray-500 truncate"><?php echo $room['description']; ?></p>
+                            <p class="font-medium text-sm"><?php echo htmlspecialchars($room['name']); ?></p>
+                            <p class="text-xs text-gray-500 truncate"><?php echo htmlspecialchars($room['description']); ?></p>
                         </div>
                         <?php if ($unread_counts[$key] > 0): ?>
                         <span class="bg-gray-200 text-gray-600 text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center"><?php echo $unread_counts[$key]; ?></span>
@@ -140,12 +138,11 @@ foreach ($rooms as $key => $r) {
                             <i class="<?php echo $room['icon']; ?> text-<?php echo $room['color']; ?>-600 text-sm"></i>
                         </div>
                         <div>
-                            <h3 class="font-semibold text-gray-900 text-sm" data-testid="text-active-channel"><?php echo $room['name']; ?></h3>
-                            <p class="text-xs text-gray-500"><?php echo $room['description']; ?></p>
+                            <h3 class="font-semibold text-gray-900 text-sm" data-testid="text-active-channel"><?php echo htmlspecialchars($room['name']); ?></h3>
+                            <p class="text-xs text-gray-500"><?php echo htmlspecialchars($room['description']); ?></p>
                         </div>
                     </div>
                     <div class="flex items-center gap-2 text-xs text-gray-400">
-                        <span id="nc-sync-status" class="hidden"><i class="fas fa-cloud text-blue-400 mr-1"></i>Synced to Nextcloud Talk</span>
                         <span id="connection-status"><i class="fas fa-circle text-green-400 text-[8px] mr-1"></i>Connected</span>
                     </div>
                 </div>
@@ -169,11 +166,57 @@ foreach ($rooms as $key => $r) {
                     </form>
                 </div>
             </div>
+
+            <div id="members-panel" class="w-72 bg-white border-l border-gray-200 flex-shrink-0 flex flex-col hidden">
+                <div class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                    <h3 class="font-semibold text-gray-900 text-sm"><i class="fas fa-users text-gray-400 mr-2"></i>Channel Members</h3>
+                    <button onclick="document.getElementById('members-panel').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="p-4 flex-1 overflow-y-auto">
+                    <div class="space-y-2 mb-4">
+                        <?php foreach ($channel_members as $member): ?>
+                        <div class="flex items-center gap-3 p-2 bg-gray-50 rounded-lg" data-testid="member-<?php echo $member['user_id']; ?>">
+                            <div class="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-semibold text-xs flex-shrink-0">
+                                <?php echo strtoupper(substr($member['user_name'] ?? 'U', 0, 1)); ?>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-medium text-gray-900 truncate"><?php echo htmlspecialchars($member['user_name'] ?? 'Unknown'); ?></p>
+                                <p class="text-xs text-gray-500"><?php echo htmlspecialchars($member['role']); ?></p>
+                            </div>
+                            <button onclick="removeMember(<?php echo $active_channel_id; ?>, <?php echo $member['user_id']; ?>)" class="text-red-400 hover:text-red-600 text-xs" data-testid="button-remove-member-<?php echo $member['user_id']; ?>">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <?php endforeach; ?>
+                        <?php if (empty($channel_members)): ?>
+                        <p class="text-sm text-gray-500 text-center py-4">No members assigned</p>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="border-t border-gray-200 pt-4">
+                        <h4 class="text-xs font-semibold text-gray-500 uppercase mb-2">Add Staff Member</h4>
+                        <select id="add-member-select" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2" data-testid="select-add-member">
+                            <option value="">Select staff...</option>
+                            <?php foreach ($all_staff as $staff):
+                                if (!in_array($staff['id'], $member_ids)):
+                            ?>
+                            <option value="<?php echo $staff['id']; ?>"><?php echo htmlspecialchars($staff['name']); ?> (<?php echo htmlspecialchars($staff['email']); ?>)</option>
+                            <?php endif; endforeach; ?>
+                        </select>
+                        <button onclick="addMember()" class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition" data-testid="button-add-member">
+                            <i class="fas fa-plus mr-1"></i>Add to Channel
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 <script>
 const ROOM = '<?php echo $active_room; ?>';
+const CHANNEL_ID = <?php echo $active_channel_id; ?>;
 const CURRENT_USER_ID = <?php echo $user_id; ?>;
 const CURRENT_USER_NAME = '<?php echo addslashes($user_name); ?>';
 let lastMessageId = 0;
@@ -222,15 +265,6 @@ chatForm.addEventListener('submit', async function(e) {
             body: JSON.stringify({ room: ROOM, message: msg })
         });
         if (!resp.ok) throw new Error('Failed to send');
-        const data = await resp.json();
-        if (data.nc_sent) {
-            const ncStatus = document.getElementById('nc-sync-status');
-            ncStatus.classList.remove('hidden');
-            ncStatus.innerHTML = '<i class="fas fa-cloud-upload-alt text-green-500 mr-1"></i>Sent to Nextcloud Talk';
-            setTimeout(() => {
-                ncStatus.innerHTML = '<i class="fas fa-cloud text-blue-400 mr-1"></i>Synced to Nextcloud Talk';
-            }, 3000);
-        }
         fetchMessages();
     } catch (err) {
         console.error('Send error:', err);
@@ -258,13 +292,12 @@ function escapeHtml(text) {
 function appendMessage(msg) {
     const isMe = msg.user_id === CURRENT_USER_ID;
     const isPending = msg._pending;
-    const isNc = msg.is_nc;
     const initial = (msg.user_name || 'U')[0].toUpperCase();
-    const avatarColor = isNc ? 'bg-purple-600' : (msg.is_admin ? 'bg-blue-600' : 'bg-gray-500');
-    const badge = isNc
-        ? '<span class="px-1 py-0.5 bg-purple-100 text-purple-600 rounded text-[10px] font-medium"><i class="fas fa-cloud text-[8px] mr-0.5"></i>Nextcloud</span>'
-        : (msg.is_admin ? '<span class="px-1 py-0.5 bg-blue-100 text-blue-600 rounded text-[10px] font-medium">Staff</span>' : '<span class="px-1 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] font-medium">Client</span>');
-    const bubbleClass = isMe ? 'bg-blue-600 text-white' : (isNc ? 'bg-purple-50 text-gray-900 border border-purple-200' : 'bg-gray-100 text-gray-900');
+    const avatarColor = msg.is_admin ? 'bg-blue-600' : 'bg-emerald-600';
+    const badge = msg.is_admin
+        ? '<span class="px-1 py-0.5 bg-blue-100 text-blue-600 rounded text-[10px] font-medium">Staff</span>'
+        : '<span class="px-1 py-0.5 bg-emerald-100 text-emerald-600 rounded text-[10px] font-medium">Client</span>';
+    const bubbleClass = isMe ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900';
     const html = `
         <div class="flex items-start gap-3 ${isMe ? 'flex-row-reverse' : ''} ${isPending ? 'opacity-60' : ''}" data-msg-id="${msg.id}">
             <div class="${avatarColor} text-white rounded-full h-8 w-8 flex items-center justify-center font-semibold text-sm flex-shrink-0">${initial}</div>
@@ -282,8 +315,7 @@ function appendMessage(msg) {
     if (!isPending && tempMsgs.length > 0) {
         tempMsgs.forEach(el => {
             const tempText = el.querySelector('.whitespace-pre-wrap')?.textContent;
-            const newText = msg.message;
-            if (tempText === newText) el.remove();
+            if (tempText === msg.message) el.remove();
         });
     }
     if (!isPending && messagesContainer.querySelector(`[data-msg-id="${msg.id}"]`)) return;
@@ -303,39 +335,6 @@ function insertDateSeparator(dateStr) {
     }
     const html = `<div class="flex items-center gap-3 py-3"><div class="flex-1 h-px bg-gray-200"></div><span class="text-xs text-gray-400 font-medium px-2">${label}</span><div class="flex-1 h-px bg-gray-200"></div></div>`;
     messagesContainer.insertAdjacentHTML('beforeend', html);
-}
-
-let ncMessagesLoaded = false;
-let knownNcIds = new Set();
-
-async function fetchNcMessages() {
-    try {
-        const resp = await fetch(`/api/chat/nc-messages?room=${ROOM}`);
-        if (!resp.ok) return;
-        const data = await resp.json();
-        if (data.nc_connected) {
-            const ncStatus = document.getElementById('nc-sync-status');
-            ncStatus.classList.remove('hidden');
-        }
-        if (data.messages && data.messages.length > 0) {
-            data.messages.forEach(msg => {
-                if (knownNcIds.has(msg.nc_id)) return;
-                knownNcIds.add(msg.nc_id);
-                if (msg.message.startsWith('[Portal -')) return;
-                appendMessage({
-                    id: 'nc-' + msg.nc_id,
-                    user_id: -1,
-                    user_name: msg.user_name,
-                    is_admin: false,
-                    is_nc: true,
-                    message: msg.message,
-                    created_at: msg.created_at
-                });
-            });
-        }
-    } catch (err) {
-        console.error('NC fetch error:', err);
-    }
 }
 
 async function fetchMessages() {
@@ -365,20 +364,40 @@ async function fetchMessages() {
                 messagesContainer.innerHTML = '<div class="empty-state flex flex-col items-center justify-center py-16 text-center"><div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4"><i class="fas fa-comments text-gray-400 text-2xl"></i></div><p class="text-gray-500 font-medium">No messages yet</p><p class="text-sm text-gray-400 mt-1">Be the first to send a message in this channel!</p></div>';
             }
         }
-        if (!ncMessagesLoaded) {
-            ncMessagesLoaded = true;
-            fetchNcMessages();
-        }
     } catch (err) {
         console.error('Fetch error:', err);
     }
     isLoading = false;
 }
 
+async function addMember() {
+    const sel = document.getElementById('add-member-select');
+    const userId = sel.value;
+    if (!userId) return;
+    try {
+        const resp = await fetch(`/api/chat/channels/${CHANNEL_ID}/members`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: parseInt(userId), role: 'member' })
+        });
+        if (resp.ok) location.reload();
+    } catch (err) {
+        console.error('Add member error:', err);
+    }
+}
+
+async function removeMember(channelId, userId) {
+    if (!confirm('Remove this member from the channel?')) return;
+    try {
+        const resp = await fetch(`/api/chat/channels/${channelId}/members/${userId}`, { method: 'DELETE' });
+        if (resp.ok) location.reload();
+    } catch (err) {
+        console.error('Remove member error:', err);
+    }
+}
+
 fetchMessages();
 pollInterval = setInterval(fetchMessages, 3000);
-setInterval(fetchNcMessages, 15000);
-
 messageInput.focus();
 </script>
 </body>
