@@ -12,6 +12,7 @@ $is_admin = true;
 $itarian_api_key = ITARIAN_API_KEY;
 $itarian_api_url = ITARIAN_API_URL;
 $itarian_connected = !empty($itarian_api_key) && !empty($itarian_api_url);
+$itarian_on_hold = false;
 $pdo = getDB();
 
 $success_msg = '';
@@ -109,6 +110,9 @@ function itarian_api_post($path, $body = []) {
     if ($response && strlen($response) > 0) {
         $trimmed = ltrim($response);
         if ($trimmed[0] === '<') {
+            if (stripos($response, 'Portal is on hold') !== false) {
+                return ['error' => "Your ITarian/Xcitium RMM portal is currently on hold. This is an account-level issue on ITarian's side — log into the ITarian/Xcitium portal to reactivate the RMM service, or contact their support team.", 'http_code' => $http_code, 'on_hold' => true];
+            }
             return ['error' => "API returned HTML instead of JSON — check your ITARIAN_API_URL. API base: {$resolved_base}", 'http_code' => $http_code];
         }
     }
@@ -148,7 +152,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
         if (isset($api_data['error'])) {
             $err = $api_data['error'];
-            if (strpos(strtolower($err), 'unauthorized') !== false || strpos(strtolower($err), '401') !== false || strpos(strtolower($err), '403') !== false) {
+            if (!empty($api_data['on_hold'])) {
+                $itarian_on_hold = true;
+            } elseif (strpos(strtolower($err), 'unauthorized') !== false || strpos(strtolower($err), '401') !== false || strpos(strtolower($err), '403') !== false) {
                 $err .= ' — Check your ITARIAN_API_KEY and ITARIAN_API_URL in Replit Secrets.';
             }
             $error_msg = 'Endpoint sync failed: ' . $err;
@@ -197,6 +203,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         ]);
 
         if (isset($api_data['error'])) {
+            if (!empty($api_data['on_hold'])) $itarian_on_hold = true;
             $error_msg = 'Alert sync failed: ' . $api_data['error'];
         } else {
             $api_alerts = $api_data['data'] ?? $api_data['alerts'] ?? $api_data;
@@ -226,6 +233,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     ->execute([$_SESSION['user_id'], 'itarian_alert_sync', 'itarian_alert', 0, "Synced {$synced} alerts from ITarian", $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             }
         }
+    }
+}
+
+if ($itarian_connected && !$itarian_on_hold && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    $probe = itarian_api_post('/api/v1/device/load', [
+        'search' => new stdClass(),
+        'pagination' => ['page' => 1, 'pageSize' => 1],
+    ]);
+    if (!empty($probe['on_hold'])) {
+        $itarian_on_hold = true;
     }
 }
 
@@ -302,7 +319,11 @@ try {
                                 <i class="fas fa-bell mr-1"></i>Sync Alerts
                             </button>
                         </form>
-                        <span class="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-xs font-medium" data-testid="status-connected"><i class="fas fa-circle text-[8px] mr-1"></i>Connected</span>
+                        <?php if ($itarian_on_hold): ?>
+                            <span class="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium" data-testid="status-on-hold"><i class="fas fa-pause-circle text-[8px] mr-1"></i>Portal On Hold</span>
+                        <?php else: ?>
+                            <span class="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-xs font-medium" data-testid="status-connected"><i class="fas fa-circle text-[8px] mr-1"></i>Connected</span>
+                        <?php endif; ?>
                     <?php else: ?>
                         <span class="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-xs font-medium" data-testid="status-disconnected"><i class="fas fa-circle text-[8px] mr-1"></i>Not Connected</span>
                     <?php endif; ?>
@@ -323,10 +344,33 @@ try {
                 </div>
             <?php endif; ?>
 
+            <?php if ($itarian_on_hold): ?>
+                <div class="mb-6 bg-yellow-50 border border-yellow-300 rounded-lg p-5" data-testid="alert-on-hold">
+                    <div class="flex items-start gap-4">
+                        <div class="flex-shrink-0 w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
+                            <i class="fas fa-pause-circle text-yellow-600 text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-semibold text-yellow-800 mb-1">ITarian RMM Portal is On Hold</h3>
+                            <p class="text-sm text-yellow-700 mb-3">Your ITarian/Xcitium RMM portal has been suspended or paused on their end. Endpoint and alert syncing is unavailable until the portal is reactivated.</p>
+                            <div class="flex items-center gap-3">
+                                <a href="https://us.itarian.com" target="_blank" class="inline-flex items-center px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition" data-testid="link-itarian-portal">
+                                    <i class="fas fa-external-link-alt mr-1.5"></i>Open ITarian Portal
+                                </a>
+                                <span class="text-xs text-yellow-600">Log in to reactivate, or contact ITarian/Xcitium support</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-connection-status">
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Connection Status</p>
-                    <?php if ($itarian_connected): ?>
+                    <?php if ($itarian_on_hold): ?>
+                        <p class="text-lg font-bold text-yellow-600"><i class="fas fa-pause-circle mr-1"></i>On Hold</p>
+                        <p class="text-xs text-yellow-500 mt-1">Portal suspended on ITarian's side</p>
+                    <?php elseif ($itarian_connected): ?>
                         <p class="text-lg font-bold text-green-600"><i class="fas fa-check-circle mr-1"></i>Active</p>
                         <p class="text-xs text-gray-400 mt-1">API key + host configured</p>
                     <?php else: ?>
