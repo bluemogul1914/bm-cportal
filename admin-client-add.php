@@ -68,7 +68,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
             ];
         } catch (PDOException $e) {
             error_log("Client create error: " . $e->getMessage());
-            $error_msg = 'Failed to create client.';
+            if (strpos($e->getMessage(), 'clients_email_unique') !== false || strpos($e->getMessage(), 'duplicate key') !== false) {
+                $error_msg = 'A client with this email address already exists.';
+            } else {
+                $error_msg = 'Failed to create client.';
+            }
         }
     }
 }
