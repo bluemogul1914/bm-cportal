@@ -273,6 +273,16 @@ $initials = strtoupper(substr($client['name'], 0, 1)) . (strpos($client['name'],
 $lat = $client['latitude'] ?? '';
 $lng = $client['longitude'] ?? '';
 $has_location = !empty($lat) && !empty($lng);
+
+$address_parts = array_filter([
+    $client['address'] ?? '',
+    $client['city'] ?? '',
+    $client['state'] ?? '',
+    $client['zip'] ?? '',
+]);
+$geocode_query = implode(', ', $address_parts);
+$has_address = !empty($geocode_query);
+
 if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
     $city_coords = [
         'houston' => ['29.7604', '-95.3698'],
@@ -292,6 +302,8 @@ if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
         $has_location = true;
     }
 }
+
+$show_map = $has_location || $has_address;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -425,12 +437,24 @@ if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
                         <?php endif; ?>
                     </div>
 
-                    <?php if ($has_location): ?>
+                    <?php if ($show_map): ?>
                     <div class="bg-white rounded-lg border border-gray-200">
-                        <div class="px-5 py-3 border-b border-gray-200">
+                        <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
                             <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Location</h2>
+                            <?php if (!empty($geocode_query)): ?>
+                            <span class="text-xs text-gray-400 truncate max-w-[200px]"><?php echo htmlspecialchars($geocode_query); ?></span>
+                            <?php endif; ?>
                         </div>
-                        <div id="client-map" class="h-48 rounded-b-lg" data-testid="map-location"></div>
+                        <div id="client-map" class="h-52 rounded-b-lg" data-testid="map-location"></div>
+                        <div id="map-loading" class="h-52 rounded-b-lg bg-gray-50 flex items-center justify-center hidden">
+                            <div class="text-center text-gray-400">
+                                <i class="fas fa-map-marker-alt text-2xl mb-2 block animate-pulse"></i>
+                                <span class="text-xs">Loading map...</span>
+                            </div>
+                        </div>
+                        <div id="map-error" class="h-20 rounded-b-lg bg-gray-50 items-center justify-center hidden">
+                            <p class="text-xs text-gray-400"><i class="fas fa-exclamation-circle mr-1"></i>Could not load map for this address</p>
+                        </div>
                     </div>
                     <?php endif; ?>
 
@@ -1213,19 +1237,62 @@ if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
     </div>
 </div>
 
-<?php if ($active_tab === 'overview' && $has_location): ?>
+<?php if ($active_tab === 'overview' && $show_map): ?>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    var lat = parseFloat(<?php echo json_encode($lat); ?>);
-    var lng = parseFloat(<?php echo json_encode($lng); ?>);
-    if (isNaN(lat) || isNaN(lng)) return;
-    var map = L.map('client-map').setView([lat, lng], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    }).addTo(map);
-    var popupText = <?php echo json_encode(htmlspecialchars($client['name']) . '<br>' . htmlspecialchars(implode(', ', array_filter([$client['address'] ?? '', $client['city'] ?? '', $client['state'] ?? ''])))); ?>;
-    L.marker([lat, lng]).addTo(map).bindPopup(popupText);
-    setTimeout(function() { map.invalidateSize(); }, 200);
+    var knownLat  = <?php echo json_encode($has_location ? (float)$lat : null); ?>;
+    var knownLng  = <?php echo json_encode($has_location ? (float)$lng : null); ?>;
+    var geocodeQ  = <?php echo json_encode($geocode_query); ?>;
+    var popupText = <?php echo json_encode(htmlspecialchars($client['name']) . '<br>' . htmlspecialchars(implode(', ', array_filter([$client['address'] ?? '', $client['city'] ?? '', $client['state'] ?? '', $client['zip'] ?? ''])))); ?>;
+
+    function initMap(lat, lng) {
+        var mapEl = document.getElementById('client-map');
+        var loadEl = document.getElementById('map-loading');
+        var errEl  = document.getElementById('map-error');
+        mapEl.classList.remove('hidden');
+        if (loadEl) loadEl.classList.add('hidden');
+        if (errEl)  errEl.classList.add('hidden');
+
+        var map = L.map('client-map').setView([lat, lng], 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+        }).addTo(map);
+        var marker = L.marker([lat, lng]).addTo(map);
+        if (popupText) marker.bindPopup(popupText).openPopup();
+        setTimeout(function() { map.invalidateSize(); }, 250);
+    }
+
+    function showError() {
+        var mapEl = document.getElementById('client-map');
+        var loadEl = document.getElementById('map-loading');
+        var errEl  = document.getElementById('map-error');
+        mapEl.classList.add('hidden');
+        if (loadEl) loadEl.classList.add('hidden');
+        if (errEl) { errEl.classList.remove('hidden'); errEl.classList.add('flex'); }
+    }
+
+    if (knownLat !== null && knownLng !== null) {
+        initMap(knownLat, knownLng);
+    } else if (geocodeQ) {
+        var mapEl = document.getElementById('client-map');
+        var loadEl = document.getElementById('map-loading');
+        mapEl.classList.add('hidden');
+        if (loadEl) { loadEl.classList.remove('hidden'); }
+
+        fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(geocodeQ), {
+            headers: { 'Accept-Language': 'en', 'User-Agent': 'BlueMogulPortal/1.0' }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data && data.length > 0) {
+                initMap(parseFloat(data[0].lat), parseFloat(data[0].lon));
+            } else {
+                showError();
+            }
+        })
+        .catch(function() { showError(); });
+    }
 });
 </script>
 <?php endif; ?>
