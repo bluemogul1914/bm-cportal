@@ -187,12 +187,25 @@ function send_email($to, $subject, $html_body, $plain_body = '') {
     fwrite($socket, "QUIT\r\n");
     fclose($socket);
 
+    $to_str = is_array($to) ? implode(', ', $to) : $to;
     if (substr($send_resp, 0, 3) === '250') {
-        error_log("Email sent successfully to " . (is_array($to) ? implode(', ', $to) : $to));
+        error_log("Email sent successfully to $to_str");
+        log_email_sent($to_str, $subject, true, null);
         return ['success' => true];
     } else {
         error_log("Email send failed: $send_resp");
+        log_email_sent($to_str, $subject, false, "Send failed: $send_resp");
         return ['success' => false, 'error' => "Send failed: $send_resp"];
+    }
+}
+
+function log_email_sent($to, $subject, $success, $error = null) {
+    try {
+        $pdo = getDB();
+        $pdo->prepare("INSERT INTO email_log (recipient, subject, status, error_message, sent_at) VALUES (?, ?, ?, ?, NOW())")
+            ->execute([$to, $subject, $success ? 'sent' : 'failed', $error]);
+    } catch (\Exception $e) {
+        error_log("Failed to log email: " . $e->getMessage());
     }
 }
 

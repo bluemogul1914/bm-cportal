@@ -143,6 +143,10 @@
                     <i class="fas fa-clipboard-list w-5"></i>
                     <span>Audit Trail</span>
                 </a>
+                <a href="admin-email-log.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-email-log.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-email-log">
+                    <i class="fas fa-paper-plane w-5"></i>
+                    <span>Email Log</span>
+                </a>
 
                 <a href="admin-settings.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-settings.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                     <i class="fas fa-cog w-5"></i>

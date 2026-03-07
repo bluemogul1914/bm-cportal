@@ -111,6 +111,61 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $error_msg = 'Failed to update credit.';
         }
     }
+
+    if ($action === 'send_portal_invite') {
+        require_once 'includes/email.php';
+        try {
+            $cl_row = $pdo->prepare("SELECT c.*, u.id as uid FROM clients c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ?");
+            $cl_row->execute([$client_id]);
+            $cl = $cl_row->fetch(PDO::FETCH_ASSOC);
+            $target_email = $cl['email'];
+            $target_name  = $cl['name'];
+            $uid = $cl['uid'] ?? null;
+
+            if (!$uid) {
+                $temp_pass = password_hash(bin2hex(random_bytes(16)), PASSWORD_BCRYPT);
+                $ins = $pdo->prepare("INSERT INTO users (email, password, name, is_admin, role, status) VALUES (?, ?, ?, 'f', 'client', 'active') RETURNING id");
+                $ins->execute([$target_email, $temp_pass, $target_name]);
+                $uid = $ins->fetchColumn();
+                $pdo->prepare("UPDATE clients SET user_id = ? WHERE id = ?")->execute([$uid, $client_id]);
+                $client['user_id'] = $uid;
+            }
+
+            $token  = bin2hex(random_bytes(32));
+            $hashed = hash('sha256', $token);
+            $pdo->prepare("UPDATE users SET remember_token = ?, remember_token_expires = NOW() + INTERVAL '72 hours' WHERE id = ?")->execute([$hashed, $uid]);
+
+            $scheme     = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+            $base_url   = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'portal.bluemogul.biz');
+            $reset_link = $base_url . '/portal/reset-password.php?token=' . $token;
+
+            $body = '<p style="color:#374151;font-size:14px;line-height:1.6;">Hi ' . htmlspecialchars($target_name) . ',</p>
+<p style="color:#374151;font-size:14px;line-height:1.6;">Your <strong>Blue Mogul client portal</strong> account is ready. Click the button below to set your password and get started.</p>
+<p style="text-align:center;margin:28px 0;">
+  <a href="' . $reset_link . '" style="background:#1a56db;color:#ffffff;padding:13px 32px;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px;display:inline-block;">Set My Password &amp; Log In</a>
+</p>
+<table style="width:100%;border-collapse:collapse;margin:16px 0;">
+  <tr><td style="padding:8px 12px;background:#f3f4f6;font-weight:600;font-size:13px;color:#6b7280;width:120px;">Portal URL</td>
+      <td style="padding:8px 12px;font-size:14px;color:#111827;">' . $base_url . '/portal</td></tr>
+  <tr><td style="padding:8px 12px;background:#f3f4f6;font-weight:600;font-size:13px;color:#6b7280;">Login Email</td>
+      <td style="padding:8px 12px;font-size:14px;color:#111827;">' . htmlspecialchars($target_email) . '</td></tr>
+</table>
+<p style="color:#6b7280;font-size:12px;">This link expires in <strong>72 hours</strong>. If you did not expect this email you can safely ignore it.</p>';
+
+            $html   = email_template('Welcome to Your Client Portal', $body);
+            $result = send_email($target_email, 'Your Blue Mogul Portal Access', $html);
+
+            if ($result['success'] ?? false) {
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
+                    ->execute([$user_id, 'portal_invite_sent', 'client', $client_id, 'Portal invite sent to ' . $target_email, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+                $success_msg = 'Portal invite sent to ' . htmlspecialchars($target_email) . '. Link expires in 72 hours.';
+            } else {
+                $error_msg = 'Account created but email failed: ' . ($result['error'] ?? 'Unknown error') . '. Share this link manually: ' . $reset_link;
+            }
+        } catch (\Exception $e) {
+            $error_msg = 'Failed to send invite: ' . $e->getMessage();
+        }
+    }
 }
 
 try {
@@ -556,6 +611,34 @@ if (!$has_location && !empty($client['city']) && !empty($client['state'])) {
                                     <?php endif; ?>
                                     <div class="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
                                         Created: <?php echo date('M d, Y', strtotime($client['created_at'])); ?>
+                                    </div>
+
+                                    <div class="mt-3 pt-3 border-t border-gray-100">
+                                        <span class="text-[10px] text-gray-400 uppercase font-semibold">Portal Access</span>
+                                        <?php if (!empty($client['user_id'])): ?>
+                                        <div class="mt-1.5 flex items-center justify-between gap-2">
+                                            <div>
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-green-100 text-green-700 text-[10px] font-semibold" data-testid="badge-portal-active"><i class="fas fa-check-circle"></i> Account Linked</span>
+                                                <?php if (!empty($client['user_email'])): ?>
+                                                <p class="text-[11px] text-gray-500 mt-0.5"><?php echo htmlspecialchars($client['user_email']); ?></p>
+                                                <?php endif; ?>
+                                            </div>
+                                            <form method="POST">
+                                                <?php echo csrf_field(); ?>
+                                                <input type="hidden" name="action" value="send_portal_invite">
+                                                <button type="submit" class="text-[11px] text-blue-600 hover:underline whitespace-nowrap" data-testid="button-resend-invite" onclick="return confirm('Resend portal invite to <?php echo addslashes($client['email']); ?>?')">Resend Invite</button>
+                                            </form>
+                                        </div>
+                                        <?php else: ?>
+                                        <div class="mt-1.5 flex items-center justify-between gap-2">
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-[10px] font-semibold" data-testid="badge-portal-none"><i class="fas fa-exclamation-circle"></i> No Portal Account</span>
+                                            <form method="POST">
+                                                <?php echo csrf_field(); ?>
+                                                <input type="hidden" name="action" value="send_portal_invite">
+                                                <button type="submit" class="text-[11px] text-blue-600 hover:underline whitespace-nowrap" data-testid="button-send-invite">Send Invite</button>
+                                            </form>
+                                        </div>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             </div>
