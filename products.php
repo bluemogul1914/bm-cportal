@@ -200,6 +200,7 @@ function formatBillingPeriod($period) {
     </div>
 </div>
 
+<input type="hidden" id="csrf-token" value="<?php echo htmlspecialchars(csrf_token()); ?>">
 <div id="request-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-lg shadow-xl max-w-md w-full">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
@@ -238,14 +239,18 @@ async function submitRequest() {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({
                 action: 'create_ticket',
+                csrf_token: document.getElementById('csrf-token').value,
                 subject: 'Service Request: ' + selectedProductName,
                 description: 'I would like to request the following service: ' + selectedProductName + '\n\nPlease reach out to set up this service for my account.',
                 priority: 'medium'
             })
         });
+        if (!response.ok) {
+            throw new Error('Request failed with status ' + response.status);
+        }
         document.getElementById('request-modal').classList.add('hidden');
         alert('Service request submitted! A support ticket has been created.');
-        window.location.href = 'tickets.php';
+        window.location.href = '/portal/tickets.php';
     } catch (err) {
         alert('Failed to submit request. Please try again.');
     }

@@ -72,10 +72,16 @@ define('COOLIFY_URL', getenv('COOLIFY_URL') ?: 'https://coolify.bluemogul.us');
 define('COOLIFY_TOKEN', getenv('COOLIFY_TOKEN') ?: '');
 
 // ============================================
-// ITARIAN RMM CONFIGURATION
+// ITARIAN RMM CONFIGURATION (Legacy)
 // ============================================
 define('ITARIAN_API_KEY', getenv('ITARIAN_API_KEY') ?: '');
 define('ITARIAN_API_URL', getenv('ITARIAN_API_URL') ?: '');
+
+// ============================================
+// ACTION1 RMM CONFIGURATION
+// ============================================
+define('ACTION1_API_KEY', getenv('ACTION1_API_KEY') ?: '');
+define('ACTION1_API_URL', getenv('ACTION1_API_URL') ?: 'https://app.action1.com/api/3.0');
 
 // ============================================
 // ITARIAN SERVICE DESK CONFIGURATION

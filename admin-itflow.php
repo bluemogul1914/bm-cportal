@@ -198,15 +198,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
 
                     if (!$client_id) { $skipped++; continue; }
 
-                    $dup = $db->prepare("SELECT id FROM tickets WHERE subject = ? AND client_id = ?");
-                    $dup->execute([$subject, $client_id]);
-                    if ($dup->fetch()) {
-                        $skipped++;
+                    $itf_ticket_id = $itf_ticket['ticket_id'] ?? '';
+
+                    $existing_ticket = null;
+                    if ($itf_ticket_id) {
+                        $dup = $db->prepare("SELECT id FROM tickets WHERE external_id = ? AND source = 'itflow'");
+                        $dup->execute([$itf_ticket_id]);
+                        $existing_ticket = $dup->fetch();
+                    }
+                    if (!$existing_ticket) {
+                        $dup = $db->prepare("SELECT id FROM tickets WHERE subject = ? AND client_id = ?");
+                        $dup->execute([$subject, $client_id]);
+                        $existing_ticket = $dup->fetch();
+                    }
+                    if ($existing_ticket) {
+                        $db->prepare("UPDATE tickets SET status = ?, priority = ?, source = 'itflow', external_id = ?, updated_at = NOW() WHERE id = ?")
+                           ->execute([$status, $priority, $itf_ticket_id ?: null, $existing_ticket['id']]);
+                        $synced++;
                         continue;
                     }
 
-                    $db->prepare("INSERT INTO tickets (client_id, subject, description, status, priority) VALUES (?, ?, ?, ?, ?)")
-                       ->execute([$client_id, $subject, $body, $status, $priority]);
+                    $db->prepare("INSERT INTO tickets (client_id, subject, description, status, priority, source, external_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'itflow', ?, NOW(), NOW())")
+                       ->execute([$client_id, $subject, $body, $status, $priority, $itf_ticket_id ?: null]);
                     $synced++;
                 } catch (Exception $e) {
                     $errors++;

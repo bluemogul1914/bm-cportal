@@ -61,6 +61,7 @@ $offset = ($page - 1) * $limit;
 $search = $_GET['search'] ?? '';
 $status_filter = $_GET['status'] ?? '';
 $priority_filter = $_GET['priority'] ?? '';
+$source_filter = $_GET['source'] ?? '';
 
 try {
     $pdo = getDB();
@@ -72,6 +73,7 @@ try {
     }
     if ($status_filter) { $where_clauses[] = "t.status = ?"; $params[] = $status_filter; }
     if ($priority_filter) { $where_clauses[] = "t.priority = ?"; $params[] = $priority_filter; }
+    if ($source_filter) { $where_clauses[] = "t.source = ?"; $params[] = $source_filter; }
     $where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses) : "";
 
     $count_stmt = $pdo->prepare("SELECT COUNT(*) as count FROM tickets t LEFT JOIN clients c ON t.client_id = c.id $where_sql");
@@ -198,10 +200,16 @@ try {
                         <option value="medium" <?php echo $priority_filter === 'medium' ? 'selected' : ''; ?>>Medium</option>
                         <option value="low" <?php echo $priority_filter === 'low' ? 'selected' : ''; ?>>Low</option>
                     </select>
+                    <select name="source" class="px-4 py-2 border border-gray-300 rounded-md" data-testid="select-source-filter">
+                        <option value="">All Sources</option>
+                        <option value="itflow" <?php echo $source_filter === 'itflow' ? 'selected' : ''; ?>>ITFlow</option>
+                        <option value="portal" <?php echo $source_filter === 'portal' ? 'selected' : ''; ?>>Portal</option>
+                        <option value="admin" <?php echo $source_filter === 'admin' ? 'selected' : ''; ?>>Admin</option>
+                    </select>
                     <button type="submit" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium" data-testid="button-search">
                         <i class="fas fa-search mr-2"></i>Search
                     </button>
-                    <?php if ($search || $status_filter || $priority_filter): ?>
+                    <?php if ($search || $status_filter || $priority_filter || $source_filter): ?>
                         <a href="admin-tickets.php" class="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md font-medium" data-testid="link-clear-filter">
                             <i class="fas fa-times mr-2"></i>Clear
                         </a>
@@ -266,6 +274,11 @@ try {
                                         ?>">
                                             <?php echo ucwords(str_replace('_', ' ', $status)); ?>
                                         </span>
+                                        <?php if (($ticket['source'] ?? '') === 'itflow'): ?>
+                                        <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-100 text-indigo-700" data-testid="badge-itflow-<?php echo $tid; ?>">
+                                            <i class="fas fa-exchange-alt mr-1"></i>ITFlow
+                                        </span>
+                                        <?php endif; ?>
                                         <?php if ($time_display): ?>
                                         <span class="text-xs text-gray-500"><i class="far fa-clock mr-1"></i><?php echo htmlspecialchars($time_display); ?></span>
                                         <?php endif; ?>
@@ -330,15 +343,15 @@ try {
             <?php if (($total_pages ?? 0) > 1): ?>
                 <div class="flex items-center justify-center space-x-2 mt-6">
                     <?php if ($page > 1): ?>
-                        <a href="?page=<?php echo $page - 1; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo urlencode($status_filter); ?>&priority=<?php echo urlencode($priority_filter); ?>"
+                        <a href="?page=<?php echo $page - 1; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo urlencode($status_filter); ?>&priority=<?php echo urlencode($priority_filter); ?>&source=<?php echo urlencode($source_filter); ?>"
                            class="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50">Previous</a>
                     <?php endif; ?>
                     <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
-                        <a href="?page=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo urlencode($status_filter); ?>&priority=<?php echo urlencode($priority_filter); ?>"
+                        <a href="?page=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo urlencode($status_filter); ?>&priority=<?php echo urlencode($priority_filter); ?>&source=<?php echo urlencode($source_filter); ?>"
                            class="px-3 py-2 <?php echo $i === $page ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'; ?> rounded-md text-sm"><?php echo $i; ?></a>
                     <?php endfor; ?>
                     <?php if ($page < $total_pages): ?>
-                        <a href="?page=<?php echo $page + 1; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo urlencode($status_filter); ?>&priority=<?php echo urlencode($priority_filter); ?>"
+                        <a href="?page=<?php echo $page + 1; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo urlencode($status_filter); ?>&priority=<?php echo urlencode($priority_filter); ?>&source=<?php echo urlencode($source_filter); ?>"
                            class="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50">Next</a>
                     <?php endif; ?>
                 </div>

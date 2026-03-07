@@ -7,7 +7,7 @@ An online PHP code editor and execution environment built with React + Express, 
 - **Frontend**: React with Tailwind CSS, shadcn/ui components, wouter routing
 - **Backend**: Express.js with PHP code execution via child_process
 - **Database**: PostgreSQL with Drizzle ORM
-- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, ticket_time_entries, documents, payments, activity_log, agent_logs, agent_config, agent_metrics, system_settings, network_devices, network_credentials, knowledge_articles, notifications, projects, project_tasks, project_notes, vultr_instances, itarian_endpoints, itarian_alerts, snippets + Stripe schema
+- **Tables**: users, clients, products, subscriptions, invoices, tickets, ticket_comments, ticket_time_entries, documents, payments, activity_log, agent_logs, agent_config, agent_metrics, system_settings, network_devices, network_credentials, knowledge_articles, notifications, projects, project_tasks, project_notes, vultr_instances, action1_endpoints, action1_alerts, crm_leads, crm_campaigns, crm_meetings, snippets + Stripe schema
 - **Runtime**: PHP 8.2 installed via Nix for server-side code execution
 - **Payments**: Stripe integration via Replit connector (OAuth-managed)
 
@@ -22,7 +22,8 @@ An online PHP code editor and execution environment built with React + Express, 
 - `payment-success.php` - Post-payment confirmation (supports demo mode)
 - `services.php` - Active subscriptions with costs and details, cloud services (Vultr instances) section
 - `products.php` - Product catalog browsing with category filters and "Request Service" flow
-- `documents.php` - Document management with categories, upload, delete
+- `documents.php` - Document management with categories, file upload (progress bar), download, delete
+- `service-detail.php` - Service/subscription detail view with cancel/contact support options
 - `profile.php` - Profile editing and password change
 - `settings.php` - Account settings (notification prefs, 2FA, theme, communication prefs)
 - `client-voip.php` - Client voice services (VoIP.ms white-label portal: My Services, CallerID Filtering, Call Forwarding, Callback, Voicemail, Order DIDs)
@@ -59,7 +60,8 @@ An online PHP code editor and execution environment built with React + Express, 
 - `admin-message-compose.php` - Compose message (rich editor, categories, recipient selection, placeholders, template load/save, preview, draft save)
 - `admin-message-templates.php` - Message templates CRUD (create/edit/delete reusable templates)
 - `admin-vultr.php` - Vultr Cloud integration (live API: account info, instance management, bandwidth monitoring, client assignment for billing, cost breakdown per client, sync button, deploy new server wizard with type/region/plan/OS selection)
-- `admin-itarian.php` - ITarian RMM integration (endpoint management, patch management, alert monitoring, device sync, OS breakdown, client assignment; improved error handling with URL debugging)
+- `admin-action1.php` - Action1 RMM integration (endpoint management, patch management, alert monitoring, device sync, OS breakdown; replaced ITarian RMM)
+- `admin-crm.php` - CRM dashboard with tabs: Leads (add/edit/convert-to-client/delete, status pipeline), Campaigns (email/SMS/call/social, status management), Meetings (schedule with clients, type/duration/location), Inbox (aggregated recent tickets + chat messages)
 - `admin-monitoring.php` - Monitoring dashboard with Uptime Kuma and Grafana health checks, quick-link cards, connection status, env var config (no iframes — external tools opened in new tabs)
 - `admin-chat.php` - Standalone messaging system with Support, Billing, General channels; channel member management (assign/unassign staff); real-time polling; DB-backed chat_messages + chat_channels + chat_channel_members tables
 - `admin-roles.php` - Roles & Access Control (RBAC: super-admin, admin, sales, IT support, billing, wholesaler, dealer — staff/partner only; client 'user' role excluded, managed under Clients)
@@ -165,6 +167,6 @@ An online PHP code editor and execution environment built with React + Express, 
 ## Integrations
 
 - **Stripe**: Connected via Replit integration (OAuth). Schema managed by stripe-replit-sync
-- **ITarian RMM**: Remote monitoring via ITarian API. API base auto-resolves trying multiple hosts (cmdm.comodo.com, pitstop-api.itarian.com, msp-api.itarian.com) and paths (`/api/rest/v1/`, `/api/v1/`). Headers: `x-auth-token: ITARIAN_API_KEY`, `x-auth-type: 4`
+- **Action1 RMM**: Remote monitoring via Action1 REST API. Bearer token auth. Replaced ITarian RMM
 - **Ticketing**: 100% local PostgreSQL — no external API. `tickets` + `ticket_comments` + `ticket_time_entries` tables
 - **config.php**: References env vars for Coolify, VoIP.ms, ITarian (RMM), HubSpot, Matrix, ITFlow, UISP, Vultr, Ollama, N8N, Flowise, AnythingLLM

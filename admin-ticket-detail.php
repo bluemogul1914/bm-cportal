@@ -202,6 +202,11 @@ foreach ($time_entries as $te) {
                             default => 'bg-gray-100 text-gray-700'
                         };
                     ?>" data-testid="badge-priority"><?php echo ucfirst($priority); ?> Priority</span>
+                    <?php if (strtolower($ticket['source'] ?? '') === 'itflow'): ?>
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700" data-testid="badge-itflow-source">
+                        <i class="fas fa-exchange-alt mr-1"></i>ITFlow
+                    </span>
+                    <?php endif; ?>
                     <?php if ($created): ?>
                     <span class="text-xs text-gray-500"><i class="far fa-clock mr-1"></i><?php $ts = strtotime($created); echo $ts ? date('M d, Y g:i A', $ts) : htmlspecialchars($created); ?></span>
                     <?php endif; ?>
@@ -457,7 +462,26 @@ foreach ($time_entries as $te) {
                             <?php if ($ticket['client_company'] ?? ''): ?>
                             <div><p class="text-xs text-gray-500">Company</p><p class="font-medium text-gray-900 text-sm"><?php echo htmlspecialchars($ticket['client_company']); ?></p></div>
                             <?php endif; ?>
-                            <div><p class="text-xs text-gray-500">Source</p><p class="font-medium text-gray-900 text-sm"><?php echo htmlspecialchars($source); ?></p></div>
+                            <div>
+                                <p class="text-xs text-gray-500">Source</p>
+                                <p class="font-medium text-gray-900 text-sm">
+                                    <?php if (strtolower($ticket['source'] ?? '') === 'itflow'): ?>
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-medium" data-testid="badge-source-itflow">
+                                            <i class="fas fa-exchange-alt"></i>ITFlow
+                                        </span>
+                                        <?php if (!empty($ticket['external_id'])): ?>
+                                            <a href="<?php echo htmlspecialchars(rtrim(ITFLOW_URL, '/')); ?>/ticket.php?ticket_id=<?php echo htmlspecialchars($ticket['external_id']); ?>"
+                                               target="_blank" rel="noopener noreferrer"
+                                               class="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium hover:bg-blue-200 transition"
+                                               data-testid="link-itflow-ticket">
+                                                <i class="fas fa-external-link-alt"></i>View in ITFlow
+                                            </a>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <?php echo htmlspecialchars($source); ?>
+                                    <?php endif; ?>
+                                </p>
+                            </div>
                             <div><p class="text-xs text-gray-500">Created</p><p class="font-medium text-gray-900 text-sm"><?php $ts = strtotime($created); echo $ts ? date('M d, Y g:i A', $ts) : htmlspecialchars($created); ?></p></div>
                             <?php if ($updated && $updated !== $created): ?>
                             <div><p class="text-xs text-gray-500">Updated</p><p class="font-medium text-gray-900 text-sm"><?php $ts = strtotime($updated); echo $ts ? date('M d, Y g:i A', $ts) : htmlspecialchars($updated); ?></p></div>

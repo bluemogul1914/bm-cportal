@@ -25,36 +25,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'upload') {
-        $doc_name = trim($_POST['doc_name'] ?? '');
-        $category = $_POST['category'] ?? 'general';
-        $description = trim($_POST['description'] ?? '');
-
-        if (empty($doc_name)) {
-            $error_msg = 'Document name is required.';
-        } else {
-            $filename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $doc_name) . '_' . time() . '.txt';
-            $filepath = 'uploads/' . $filename;
-
-            try {
-                $stmt = $pdo->prepare("INSERT INTO documents (client_id, uploaded_by, name, filename, filepath, filesize, mimetype, category, description, is_public, created_at) VALUES (?, ?, ?, ?, ?, 0, 'text/plain', ?, ?, false, NOW())");
-                $stmt->execute([$client_id, $user_id, $doc_name, $filename, $filepath, $category, $description]);
-                $new_doc_id = $pdo->lastInsertId();
-                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'document_uploaded', 'document', $new_doc_id, 'Uploaded: ' . $doc_name, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
-                $doc_email = $_SESSION['user_email'] ?? '';
-                $doc_client_name = $_SESSION['user_name'] ?? 'Client';
-                if (!empty($doc_email)) {
-                    notify_document_uploaded($doc_name, $category, $doc_email, $doc_client_name);
-                }
-                $success_msg = 'Document record created successfully!';
-            } catch (PDOException $e) {
-                error_log("Document upload error: " . $e->getMessage());
-                $error_msg = 'Failed to create document record.';
-            }
-        }
-    } elseif ($action === 'delete') {
+    if ($action === 'delete') {
         $doc_id = intval($_POST['doc_id'] ?? 0);
         try {
+            $stmt = $pdo->prepare("SELECT filepath FROM documents WHERE id = ? AND client_id = ?");
+            $stmt->execute([$doc_id, $client_id]);
+            $docRow = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($docRow && !empty($docRow['filepath']) && file_exists($docRow['filepath'])) {
+                @unlink($docRow['filepath']);
+            }
             $stmt = $pdo->prepare("DELETE FROM documents WHERE id = ? AND client_id = ?");
             $stmt->execute([$doc_id, $client_id]);
             $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'document_deleted', 'document', $doc_id, 'Deleted document #' . $doc_id, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
@@ -191,6 +170,17 @@ try {
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2 ml-4">
+                                    <?php if ($doc['filesize'] > 0): ?>
+                                        <span class="text-xs text-gray-400 mr-2"><?php
+                                            $size = $doc['filesize'];
+                                            if ($size >= 1048576) echo round($size / 1048576, 1) . ' MB';
+                                            elseif ($size >= 1024) echo round($size / 1024, 1) . ' KB';
+                                            else echo $size . ' B';
+                                        ?></span>
+                                        <a href="/api/documents/download/<?php echo $doc['id']; ?>" class="text-blue-400 hover:text-blue-600 p-2 transition" title="Download" data-testid="button-download-<?php echo $doc['id']; ?>">
+                                            <i class="fas fa-download"></i>
+                                        </a>
+                                    <?php endif; ?>
                                     <form method="POST" action="documents.php" onsubmit="return confirm('Delete this document?');" class="inline">
                             <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="delete">
@@ -217,16 +207,19 @@ try {
                 <i class="fas fa-times"></i>
             </button>
         </div>
-        <form method="POST" action="documents.php" class="p-6 space-y-4">
-                            <?= csrf_field() ?>
-            <input type="hidden" name="action" value="upload">
+        <form id="upload-form" class="p-6 space-y-4" onsubmit="return handleUpload(event)">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">File *</label>
+                <input type="file" name="file" id="upload-file" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" data-testid="input-file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.odt,.ods,.jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.zip,.rar,.7z,.tar,.gz">
+                <p class="text-xs text-gray-400 mt-1">Max file size: 25 MB. Allowed: PDF, DOC, XLS, PPT, images, archives.</p>
+            </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Document Name *</label>
-                <input type="text" name="doc_name" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Service Agreement" data-testid="input-doc-name">
+                <input type="text" name="doc_name" id="upload-doc-name" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Service Agreement" data-testid="input-doc-name">
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <select name="category" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-testid="select-category">
+                <select name="category" id="upload-category" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-testid="select-category">
                     <option value="general">General</option>
                     <option value="contracts">Contracts</option>
                     <option value="invoices">Invoices</option>
@@ -237,11 +230,17 @@ try {
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea name="description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Optional description..." data-testid="textarea-description"></textarea>
+                <textarea name="description" id="upload-description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Optional description..." data-testid="textarea-description"></textarea>
+            </div>
+            <div id="upload-progress" class="hidden">
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div id="upload-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all" style="width: 0%"></div>
+                </div>
+                <p id="upload-status" class="text-xs text-gray-500 mt-1">Uploading...</p>
             </div>
             <div class="flex justify-end gap-3 pt-2">
                 <button type="button" onclick="document.getElementById('upload-modal').classList.add('hidden')" class="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md text-sm font-medium transition">Cancel</button>
-                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition" data-testid="button-submit-upload">Upload</button>
+                <button type="submit" id="upload-submit-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition" data-testid="button-submit-upload">Upload</button>
             </div>
         </form>
     </div>
@@ -251,6 +250,108 @@ try {
 document.getElementById('upload-modal').addEventListener('click', function(e) {
     if (e.target === this) this.classList.add('hidden');
 });
+
+document.getElementById('upload-file').addEventListener('change', function() {
+    var nameInput = document.getElementById('upload-doc-name');
+    if (this.files.length > 0 && !nameInput.value.trim()) {
+        var fileName = this.files[0].name;
+        nameInput.value = fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+    }
+});
+
+function handleUpload(e) {
+    e.preventDefault();
+    var fileInput = document.getElementById('upload-file');
+    var docName = document.getElementById('upload-doc-name').value.trim();
+    var category = document.getElementById('upload-category').value;
+    var description = document.getElementById('upload-description').value.trim();
+    var submitBtn = document.getElementById('upload-submit-btn');
+    var progressDiv = document.getElementById('upload-progress');
+    var progressBar = document.getElementById('upload-progress-bar');
+    var statusText = document.getElementById('upload-status');
+
+    if (!fileInput.files.length) {
+        alert('Please select a file to upload.');
+        return false;
+    }
+    if (!docName) {
+        alert('Please enter a document name.');
+        return false;
+    }
+
+    var maxSize = 25 * 1024 * 1024;
+    if (fileInput.files[0].size > maxSize) {
+        alert('File is too large. Maximum size is 25 MB.');
+        return false;
+    }
+
+    var formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('doc_name', docName);
+    formData.append('category', category);
+    formData.append('description', description);
+    formData.append('csrf_token', '<?= csrf_token() ?>');
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Uploading...';
+    progressDiv.classList.remove('hidden');
+    progressBar.style.width = '0%';
+    statusText.textContent = 'Uploading...';
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/documents/upload', true);
+
+    xhr.upload.addEventListener('progress', function(evt) {
+        if (evt.lengthComputable) {
+            var pct = Math.round((evt.loaded / evt.total) * 100);
+            progressBar.style.width = pct + '%';
+            statusText.textContent = 'Uploading... ' + pct + '%';
+        }
+    });
+
+    xhr.onload = function() {
+        if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+                var resp = JSON.parse(xhr.responseText);
+                if (resp.success) {
+                    statusText.textContent = 'Upload complete!';
+                    progressBar.style.width = '100%';
+                    window.location.reload();
+                } else {
+                    alert(resp.error || 'Upload failed.');
+                    resetUploadForm();
+                }
+            } catch(err) {
+                alert('Upload failed: unexpected response.');
+                resetUploadForm();
+            }
+        } else {
+            try {
+                var errResp = JSON.parse(xhr.responseText);
+                alert(errResp.error || 'Upload failed (status ' + xhr.status + ')');
+            } catch(err) {
+                alert('Upload failed (status ' + xhr.status + ')');
+            }
+            resetUploadForm();
+        }
+    };
+
+    xhr.onerror = function() {
+        alert('Upload failed: network error.');
+        resetUploadForm();
+    };
+
+    xhr.send(formData);
+    return false;
+}
+
+function resetUploadForm() {
+    var submitBtn = document.getElementById('upload-submit-btn');
+    var progressDiv = document.getElementById('upload-progress');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Upload';
+    progressDiv.classList.add('hidden');
+}
 </script>
 </body>
 </html>

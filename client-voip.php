@@ -50,7 +50,11 @@ function voip_client_api($action, $extra_params = []) {
     if ($response === false) return ['status' => 'error', 'message' => 'Connection failed'];
     $data = json_decode($response, true);
     if (!$data) return ['status' => 'error', 'message' => 'Invalid response'];
-    if (($data['status'] ?? '') === 'invalid_credentials' && !empty(VOIP_API_PASSWORD) && !empty(VOIP_API_TOKEN)) {
+    $status = $data['status'] ?? '';
+    if ($status === 'ip_not_enabled') {
+        return $data;
+    }
+    if ($status === 'invalid_credentials' && !empty(VOIP_API_PASSWORD) && !empty(VOIP_API_TOKEN)) {
         $params['api_password'] = VOIP_API_TOKEN;
         $url = VOIP_API_URL . '?' . http_build_query($params);
         $response = @file_get_contents($url, false, $ctx);
@@ -61,6 +65,22 @@ function voip_client_api($action, $extra_params = []) {
     }
     return $data;
 }
+
+function get_server_outbound_ip() {
+    $ctx = stream_context_create(['http' => ['timeout' => 5, 'ignore_errors' => true]]);
+    $ip = @file_get_contents('https://api.ipify.org', false, $ctx);
+    if ($ip !== false && filter_var(trim($ip), FILTER_VALIDATE_IP)) {
+        return trim($ip);
+    }
+    $ip = @file_get_contents('https://checkip.amazonaws.com', false, $ctx);
+    if ($ip !== false && filter_var(trim($ip), FILTER_VALIDATE_IP)) {
+        return trim($ip);
+    }
+    return null;
+}
+
+$ip_not_enabled = false;
+$server_outbound_ip = null;
 
 if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     require_csrf();
@@ -210,6 +230,9 @@ if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $result = voip_client_api('getDIDsUSA', $params);
         if (($result['status'] ?? '') === 'success') {
             $order_dids_results = $result['dids'] ?? [];
+        } elseif (($result['status'] ?? '') === 'ip_not_enabled') {
+            $ip_not_enabled = true;
+            $server_outbound_ip = get_server_outbound_ip();
         } else {
             $error_msg = 'DID search failed: ' . ($result['status'] ?? 'unknown error');
         }
@@ -221,6 +244,9 @@ if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $result = voip_client_api('getDIDsCAN', $params);
         if (($result['status'] ?? '') === 'success') {
             $order_dids_results = $result['dids'] ?? [];
+        } elseif (($result['status'] ?? '') === 'ip_not_enabled') {
+            $ip_not_enabled = true;
+            $server_outbound_ip = get_server_outbound_ip();
         } else {
             $error_msg = 'DID search failed: ' . ($result['status'] ?? 'unknown error');
         }
@@ -230,7 +256,16 @@ if ($voip_connected && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
 if ($voip_connected) {
     $bal = voip_client_api('getBalance');
-    if (($bal['status'] ?? '') === 'success') $balance = $bal['balance'] ?? null;
+    if (($bal['status'] ?? '') === 'success') {
+        $balance = $bal['balance'] ?? null;
+    } elseif (($bal['status'] ?? '') === 'ip_not_enabled') {
+        $ip_not_enabled = true;
+        $server_outbound_ip = get_server_outbound_ip();
+    } elseif (($bal['status'] ?? '') === 'invalid_credentials') {
+        if (!$error_msg) {
+            $error_msg = 'VoIP.ms API credentials are invalid. Please contact your administrator.';
+        }
+    }
 
     if ($active_tab === 'myservices' || $active_tab === 'account_detail') {
         $sa = voip_client_api('getSubAccounts');
@@ -348,6 +383,38 @@ $ca_provinces = ['ALBERTA','BRITISH COLUMBIA','MANITOBA','NEW BRUNSWICK','NEWFOU
         </header>
 
         <div class="p-6">
+            <?php if ($ip_not_enabled): ?>
+            <div class="mb-4 bg-amber-50 border border-amber-300 rounded-lg p-5" data-testid="text-ip-not-enabled">
+                <div class="flex items-start gap-3">
+                    <i class="fas fa-exclamation-triangle text-amber-500 text-xl mt-0.5"></i>
+                    <div>
+                        <h3 class="text-base font-semibold text-amber-800 mb-1">Server IP Not Whitelisted</h3>
+                        <p class="text-sm text-amber-700 mb-3">The VoIP.ms API rejected the request because this server's IP address is not authorized. An administrator needs to whitelist it in the VoIP.ms control panel.</p>
+                        <?php if ($server_outbound_ip): ?>
+                        <div class="bg-white border border-amber-200 rounded-lg px-4 py-3 mb-3">
+                            <p class="text-xs text-gray-500 mb-1">This server's outbound IP address:</p>
+                            <p class="text-lg font-mono font-bold text-gray-900" data-testid="text-server-ip"><?php echo htmlspecialchars($server_outbound_ip); ?></p>
+                        </div>
+                        <?php endif; ?>
+                        <div class="text-sm text-amber-700">
+                            <p class="font-medium mb-1">To fix this, an administrator should:</p>
+                            <ol class="list-decimal list-inside space-y-1 text-amber-600">
+                                <li>Log in to <a href="https://voip.ms" target="_blank" rel="noopener" class="underline font-medium">voip.ms</a></li>
+                                <li>Go to <strong>Main Menu</strong> &rarr; <strong>SOAP and REST/JSON API</strong></li>
+                                <li>Under <strong>IP Addresses</strong>, click <strong>Add</strong></li>
+                                <?php if ($server_outbound_ip): ?>
+                                <li>Enter IP: <code class="bg-amber-100 px-1.5 py-0.5 rounded text-amber-800 font-mono text-xs"><?php echo htmlspecialchars($server_outbound_ip); ?></code></li>
+                                <?php else: ?>
+                                <li>Enter this server's IP address</li>
+                                <?php endif; ?>
+                                <li>Click <strong>Save</strong> and wait a few minutes for changes to take effect</li>
+                            </ol>
+                        </div>
+                        <p class="text-xs text-amber-500 mt-3">If you are not an administrator, please contact Blue Mogul support for assistance.</p>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
             <?php if ($error_msg): ?>
             <div class="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm" data-testid="text-error"><?php echo htmlspecialchars($error_msg); ?></div>
             <?php endif; ?>

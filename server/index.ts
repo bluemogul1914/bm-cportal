@@ -151,7 +151,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php"];
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -393,6 +393,128 @@ require '${filePath.replace(/'/g, "\\'")}';
 }
 
 app.use("/uploads", express.static(join(projectRoot, "uploads")));
+
+// ═══════════════════════════════════════════════════════════════
+// Document Upload/Download API
+// ═══════════════════════════════════════════════════════════════
+
+import multer from "multer";
+import { existsSync, mkdirSync, unlinkSync, statSync } from "fs";
+
+const uploadsDir = join(projectRoot, "uploads");
+if (!existsSync(uploadsDir)) {
+  mkdirSync(uploadsDir, { recursive: true });
+}
+
+const ALLOWED_EXTENSIONS = [
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+  ".txt", ".csv", ".rtf", ".odt", ".ods",
+  ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp",
+  ".zip", ".rar", ".7z", ".tar", ".gz",
+];
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadsDir),
+    filename: (_req, file, cb) => {
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const uniqueName = `${Date.now()}_${randomUUID().slice(0, 8)}_${safeName}`;
+      cb(null, uniqueName);
+    },
+  }),
+  limits: { fileSize: MAX_FILE_SIZE },
+  fileFilter: (_req, file, cb) => {
+    const ext = "." + (file.originalname.split(".").pop() || "").toLowerCase();
+    if (ALLOWED_EXTENSIONS.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type not allowed: ${ext}`));
+    }
+  },
+});
+
+app.post("/api/documents/upload", upload.single("file"), async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
+
+  const csrfToken = req.body.csrf_token;
+  const sessionCsrf = (req.session as any)?.csrfToken;
+  if (!csrfToken || csrfToken !== sessionCsrf) {
+    return res.status(403).json({ error: "CSRF validation failed" });
+  }
+
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: "No file uploaded" });
+
+  const docName = (req.body.doc_name || file.originalname).trim();
+  const category = req.body.category || "general";
+  const description = (req.body.description || "").trim();
+
+  try {
+    const clientResult = await webhookPool.query(
+      "SELECT id FROM clients WHERE user_id = $1",
+      [sess.user_id]
+    );
+    const clientId = clientResult.rows[0]?.id || sess.user_id;
+
+    const result = await webhookPool.query(
+      `INSERT INTO documents (client_id, uploaded_by, name, filename, filepath, filesize, mimetype, category, description, is_public, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, NOW()) RETURNING id`,
+      [clientId, sess.user_id, docName, file.filename, `uploads/${file.filename}`, file.size, file.mimetype, category, description]
+    );
+
+    await webhookPool.query(
+      "INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES ($1, $2, $3, $4, $5, $6)",
+      [sess.user_id, "document_uploaded", "document", result.rows[0].id, `Uploaded: ${docName}`, req.ip || "0.0.0.0"]
+    );
+
+    res.json({ success: true, message: "Document uploaded successfully", id: result.rows[0].id });
+  } catch (e: any) {
+    if (file?.path && existsSync(file.path)) {
+      try { unlinkSync(file.path); } catch {}
+    }
+    console.error("Document upload error:", e.message);
+    res.status(500).json({ error: "Failed to upload document" });
+  }
+});
+
+app.get("/api/documents/download/:id", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
+
+  try {
+    const clientResult = await webhookPool.query(
+      "SELECT id FROM clients WHERE user_id = $1",
+      [sess.user_id]
+    );
+    const clientId = clientResult.rows[0]?.id || sess.user_id;
+
+    let docResult;
+    if (sess.is_admin) {
+      docResult = await webhookPool.query("SELECT * FROM documents WHERE id = $1", [req.params.id]);
+    } else {
+      docResult = await webhookPool.query("SELECT * FROM documents WHERE id = $1 AND client_id = $2", [req.params.id, clientId]);
+    }
+
+    const doc = docResult.rows[0];
+    if (!doc) return res.status(404).json({ error: "Document not found" });
+
+    const filePath = join(projectRoot, doc.filepath);
+    if (!existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found on disk" });
+    }
+
+    const stats = statSync(filePath);
+    res.setHeader("Content-Type", doc.mimetype || "application/octet-stream");
+    res.setHeader("Content-Length", stats.size);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(doc.name || doc.filename)}"`);
+    res.sendFile(filePath);
+  } catch (e: any) {
+    console.error("Document download error:", e.message);
+    res.status(500).json({ error: "Failed to download document" });
+  }
+});
 
 // ═══════════════════════════════════════════════════════════════
 // Chat API — Standalone portal messaging system
@@ -1326,6 +1448,59 @@ async function bootstrapPortalDatabase() {
         status VARCHAR(20) DEFAULT 'open',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         resolved_at TIMESTAMP
+      )
+    `);
+
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS crm_leads (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(200) NOT NULL,
+        email VARCHAR(200),
+        phone VARCHAR(50),
+        company VARCHAR(200),
+        source VARCHAR(50) DEFAULT 'manual',
+        status VARCHAR(20) DEFAULT 'new',
+        notes TEXT,
+        assigned_to INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS crm_campaigns (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(200) NOT NULL,
+        type VARCHAR(30) DEFAULT 'email',
+        status VARCHAR(20) DEFAULT 'draft',
+        subject VARCHAR(300),
+        content TEXT,
+        target_audience VARCHAR(100) DEFAULT 'all_clients',
+        start_date DATE,
+        end_date DATE,
+        sent_count INTEGER DEFAULT 0,
+        open_count INTEGER DEFAULT 0,
+        response_count INTEGER DEFAULT 0,
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS crm_meetings (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(300) NOT NULL,
+        client_id INTEGER,
+        client_name VARCHAR(200),
+        meeting_type VARCHAR(30) DEFAULT 'consultation',
+        scheduled_at TIMESTAMP NOT NULL,
+        duration_minutes INTEGER DEFAULT 60,
+        location VARCHAR(300),
+        notes TEXT,
+        status VARCHAR(20) DEFAULT 'scheduled',
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
