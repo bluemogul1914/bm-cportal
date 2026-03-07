@@ -80,6 +80,7 @@ define('ITARIAN_API_URL', getenv('ITARIAN_API_URL') ?: '');
 // ============================================
 // ACTION1 RMM CONFIGURATION
 // ============================================
+define('ACTION1_CLIENT_ID', getenv('ACTION1_CLIENT_ID') ?: '');
 define('ACTION1_API_KEY', getenv('ACTION1_API_KEY') ?: '');
 define('ACTION1_API_URL', getenv('ACTION1_API_URL') ?: 'https://app.action1.com/api/3.0');
 

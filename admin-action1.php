@@ -9,22 +9,70 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
 $user_email = $_SESSION['user_email'] ?? '';
 $is_admin = true;
 
-$action1_api_key = ACTION1_API_KEY;
+$action1_client_id = ACTION1_CLIENT_ID;
+$action1_client_secret = ACTION1_API_KEY;
 $action1_api_url = ACTION1_API_URL;
-$action1_connected = !empty($action1_api_key);
+$action1_connected = !empty($action1_client_id) && !empty($action1_client_secret);
 $pdo = getDB();
 
 $success_msg = '';
 $error_msg = '';
 
-function action1_api_request($method, $path, $body = null) {
+function action1_get_token() {
     $base = rtrim(ACTION1_API_URL, '/');
-    $url = $base . $path;
+    $url = $base . '/oauth2/token';
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded', 'Accept: application/json'],
+        CURLOPT_POSTFIELDS => http_build_query([
+            'grant_type' => 'client_credentials',
+            'client_id' => ACTION1_CLIENT_ID,
+            'client_secret' => ACTION1_API_KEY,
+        ]),
+    ]);
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_error = curl_error($ch);
+    curl_close($ch);
+
+    if ($curl_error) return ['error' => 'Token request failed: ' . $curl_error];
+    if ($http_code < 200 || $http_code >= 300) {
+        $body = json_decode($response, true);
+        $msg = $body['error_description'] ?? $body['error'] ?? $body['message'] ?? "HTTP $http_code";
+        return ['error' => 'Authentication failed: ' . $msg];
+    }
+    $decoded = json_decode($response, true);
+    if (!isset($decoded['access_token'])) return ['error' => 'No access_token in auth response'];
+    return $decoded;
+}
+
+$_action1_token_cache = ['token' => null, 'expires_at' => 0];
+
+function action1_api_request($method, $path, $body = null, $is_retry = false) {
+    global $_action1_token_cache;
+
+    if (!$_action1_token_cache['token'] || time() >= $_action1_token_cache['expires_at']) {
+        $auth = action1_get_token();
+        if (isset($auth['error'])) return $auth;
+        $_action1_token_cache['token'] = $auth['access_token'];
+        $_action1_token_cache['expires_at'] = time() + (($auth['expires_in'] ?? 3600) - 60);
+    }
+
+    $url = $path;
+    if (strpos($path, 'http') !== 0) {
+        $base = rtrim(ACTION1_API_URL, '/');
+        $url = $base . $path;
+    }
+
     $ch = curl_init();
     $headers = [
         'Content-Type: application/json',
         'Accept: application/json',
-        'Authorization: Bearer ' . ACTION1_API_KEY,
+        'Authorization: Bearer ' . $_action1_token_cache['token'],
     ];
     $opts = [
         CURLOPT_URL => $url,
@@ -49,6 +97,10 @@ function action1_api_request($method, $path, $body = null) {
     if ($curl_error) {
         return ['error' => $curl_error, 'http_code' => 0];
     }
+    if (($http_code === 401 || $http_code === 403) && !$is_retry) {
+        $_action1_token_cache = ['token' => null, 'expires_at' => 0];
+        return action1_api_request($method, $path, $body, true);
+    }
     if ($http_code < 200 || $http_code >= 300) {
         $body_resp = json_decode($response, true);
         $msg = $body_resp['error'] ?? $body_resp['message'] ?? $body_resp['detail'] ?? "HTTP $http_code";
@@ -59,6 +111,14 @@ function action1_api_request($method, $path, $body = null) {
         return ['error' => 'Invalid JSON: ' . json_last_error_msg(), 'http_code' => $http_code];
     }
     return $decoded;
+}
+
+function action1_get_org_id() {
+    $result = action1_api_request('GET', '/organizations');
+    if (isset($result['error'])) return $result;
+    $items = $result['items'] ?? [];
+    if (empty($items)) return ['error' => 'No organizations found in Action1 account'];
+    return ['org_id' => $items[0]['id']];
 }
 
 $clients_list = [];
@@ -101,36 +161,46 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'sync_endpoints' && $action1_connected) {
-        $api_data = action1_api_request('GET', '/endpoints');
-
-        if (isset($api_data['error'])) {
-            $err = $api_data['error'];
-            if (strpos(strtolower($err), 'unauthorized') !== false || strpos(strtolower($err), '401') !== false || strpos(strtolower($err), '403') !== false) {
-                $err .= ' — Check your ACTION1_API_KEY in Replit Secrets.';
-            }
-            $error_msg = 'Endpoint sync failed: ' . $err;
+        $org = action1_get_org_id();
+        if (isset($org['error'])) {
+            $error_msg = 'Endpoint sync failed: ' . $org['error'];
         } else {
-            $api_endpoints = $api_data['items'] ?? $api_data['data'] ?? $api_data['endpoints'] ?? $api_data;
-            if (is_array($api_endpoints)) {
+            $org_id = $org['org_id'];
+            $api_data = action1_api_request('GET', '/endpoints/managed/' . urlencode($org_id) . '?fields=*');
+
+            if (isset($api_data['error'])) {
+                $error_msg = 'Endpoint sync failed: ' . $api_data['error'];
+            } else {
+                $api_endpoints = $api_data['items'] ?? [];
                 $synced = 0;
-                foreach ($api_endpoints as $ep) {
-                    $ep_id = $ep['id'] ?? $ep['endpoint_id'] ?? '';
+                $next_page = $api_data['next_page'] ?? null;
+
+                $all_endpoints = $api_endpoints;
+                while ($next_page) {
+                    $page_data = action1_api_request('GET', $next_page);
+                    if (isset($page_data['error'])) break;
+                    $all_endpoints = array_merge($all_endpoints, $page_data['items'] ?? []);
+                    $next_page = $page_data['next_page'] ?? null;
+                }
+
+                foreach ($all_endpoints as $ep) {
+                    $ep_id = $ep['id'] ?? '';
                     if (!$ep_id) continue;
 
                     try {
                         $pdo->prepare("INSERT INTO action1_endpoints (action1_id, name, hostname, os_name, os_version, ip_address, mac_address, status, last_seen, agent_version, group_name, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW()) ON CONFLICT (action1_id) DO UPDATE SET name = EXCLUDED.name, hostname = EXCLUDED.hostname, os_name = EXCLUDED.os_name, os_version = EXCLUDED.os_version, ip_address = EXCLUDED.ip_address, mac_address = EXCLUDED.mac_address, status = EXCLUDED.status, last_seen = EXCLUDED.last_seen, agent_version = EXCLUDED.agent_version, group_name = EXCLUDED.group_name, updated_at = NOW()")
                             ->execute([
                                 $ep_id,
-                                $ep['name'] ?? $ep['endpoint_name'] ?? $ep['hostname'] ?? '',
-                                $ep['hostname'] ?? $ep['computer_name'] ?? '',
-                                $ep['os_name'] ?? $ep['os'] ?? $ep['operating_system'] ?? '',
+                                $ep['name'] ?? $ep['hostname'] ?? '',
+                                $ep['hostname'] ?? '',
+                                $ep['os_name'] ?? $ep['os_type'] ?? '',
                                 $ep['os_version'] ?? '',
-                                $ep['ip_address'] ?? $ep['ip'] ?? $ep['internal_ip'] ?? '',
-                                $ep['mac_address'] ?? $ep['mac'] ?? '',
-                                $ep['status'] ?? $ep['online_status'] ?? $ep['state'] ?? 'unknown',
-                                $ep['last_seen'] ?? $ep['last_activity'] ?? $ep['last_contact'] ?? null,
-                                $ep['agent_version'] ?? $ep['version'] ?? '',
-                                $ep['group'] ?? $ep['group_name'] ?? $ep['organization'] ?? '',
+                                $ep['ip_address'] ?? $ep['internal_addresses'] ?? '',
+                                $ep['mac_address'] ?? '',
+                                $ep['status'] ?? $ep['online_status'] ?? 'unknown',
+                                $ep['last_seen'] ?? $ep['last_seen_at'] ?? null,
+                                $ep['agent_version'] ?? '',
+                                $ep['group_name'] ?? $ep['endpoint_group'] ?? '',
                             ]);
                         $synced++;
                     } catch (Exception $e) {}
@@ -139,43 +209,50 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
                 $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
                     ->execute([$_SESSION['user_id'], 'action1_sync', 'action1_endpoint', 0, "Synced {$synced} endpoints from Action1", $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
-            } else {
-                $error_msg = 'Unexpected API response format.';
             }
         }
     }
 
     if ($action === 'sync_alerts' && $action1_connected) {
-        $api_data = action1_api_request('GET', '/alerts');
-
-        if (isset($api_data['error'])) {
-            $error_msg = 'Alert sync failed: ' . $api_data['error'];
+        $org = action1_get_org_id();
+        if (isset($org['error'])) {
+            $error_msg = 'Alert sync failed: ' . $org['error'];
         } else {
-            $api_alerts = $api_data['items'] ?? $api_data['data'] ?? $api_data['alerts'] ?? $api_data;
-            if (is_array($api_alerts)) {
-                $synced = 0;
-                foreach ($api_alerts as $al) {
-                    $alert_id = $al['id'] ?? $al['alert_id'] ?? '';
-                    if (!$alert_id) continue;
+            $org_id = $org['org_id'];
+            $status_data = action1_api_request('GET', '/endpoints/status/' . urlencode($org_id));
 
-                    try {
-                        $pdo->prepare("INSERT INTO action1_alerts (action1_alert_id, endpoint_id, severity, category, message, status, created_at_remote, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW()) ON CONFLICT (action1_alert_id) DO UPDATE SET severity = EXCLUDED.severity, status = EXCLUDED.status, message = EXCLUDED.message, updated_at = NOW()")
-                            ->execute([
-                                $alert_id,
-                                $al['endpoint_id'] ?? $al['device_id'] ?? '',
-                                $al['severity'] ?? $al['priority'] ?? 'info',
-                                $al['category'] ?? $al['type'] ?? '',
-                                $al['message'] ?? $al['description'] ?? '',
-                                $al['status'] ?? 'open',
-                                $al['created_at'] ?? $al['timestamp'] ?? null,
-                            ]);
-                        $synced++;
-                    } catch (Exception $e) {}
+            if (isset($status_data['error'])) {
+                $error_msg = 'Alert sync failed: ' . $status_data['error'];
+            } else {
+                $status_items = $status_data['items'] ?? [$status_data];
+                $synced = 0;
+                foreach ($status_items as $st) {
+                    $ep_id = $st['id'] ?? $st['endpoint_id'] ?? '';
+                    if (!$ep_id) continue;
+                    $ep_status = strtolower($st['status'] ?? $st['online_status'] ?? '');
+                    if ($ep_status === 'offline' || $ep_status === 'disconnected' || $ep_status === 'error') {
+                        $alert_id = 'status_' . $ep_id . '_' . date('Y-m-d');
+                        $ep_name = $st['name'] ?? $st['hostname'] ?? $ep_id;
+                        try {
+                            $pdo->prepare("INSERT INTO action1_alerts (action1_alert_id, endpoint_id, severity, category, message, status, created_at_remote, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW()) ON CONFLICT (action1_alert_id) DO UPDATE SET severity = EXCLUDED.severity, status = EXCLUDED.status, message = EXCLUDED.message, updated_at = NOW()")
+                                ->execute([
+                                    $alert_id,
+                                    $ep_id,
+                                    $ep_status === 'error' ? 'critical' : 'warning',
+                                    'endpoint_status',
+                                    "Endpoint '{$ep_name}' is {$ep_status}",
+                                    'open',
+                                ]);
+                            $synced++;
+                        } catch (Exception $e) {}
+                    }
                 }
-                $success_msg = "Synced {$synced} alerts from Action1.";
+                $pdo->exec("UPDATE action1_alerts SET status = 'resolved', updated_at = NOW() WHERE category = 'endpoint_status' AND status = 'open' AND updated_at < NOW() - INTERVAL '1 day'");
+
+                $success_msg = "Synced endpoint status. {$synced} alert(s) generated for offline/error endpoints.";
 
                 $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
-                    ->execute([$_SESSION['user_id'], 'action1_alert_sync', 'action1_alert', 0, "Synced {$synced} alerts from Action1", $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+                    ->execute([$_SESSION['user_id'], 'action1_alert_sync', 'action1_alert', 0, "Alert sync: {$synced} alerts generated", $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             }
         }
     }
@@ -282,10 +359,10 @@ try {
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Connection Status</p>
                     <?php if ($action1_connected): ?>
                         <p class="text-lg font-bold text-green-600"><i class="fas fa-check-circle mr-1"></i>Active</p>
-                        <p class="text-xs text-gray-400 mt-1">API key configured</p>
+                        <p class="text-xs text-gray-400 mt-1">OAuth2 credentials configured</p>
                     <?php else: ?>
                         <p class="text-lg font-bold text-red-600"><i class="fas fa-times-circle mr-1"></i>Inactive</p>
-                        <p class="text-xs text-gray-400 mt-1">ACTION1_API_KEY not set</p>
+                        <p class="text-xs text-gray-400 mt-1">ACTION1_CLIENT_ID or ACTION1_API_KEY not set</p>
                     <?php endif; ?>
                 </div>
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-total-endpoints">
@@ -446,7 +523,7 @@ try {
                     <?php else: ?>
                         <div class="p-8 text-center text-gray-500 text-sm">
                             <i class="fas fa-bell-slash text-gray-300 text-2xl mb-2 block"></i>
-                            No alerts found. <?php if ($action1_connected): ?>Click &ldquo;Sync Alerts&rdquo; to pull alerts from Action1.<?php else: ?>Configure your API key first.<?php endif; ?>
+                            No alerts found. <?php if ($action1_connected): ?>Click &ldquo;Sync Alerts&rdquo; to check endpoint status and generate alerts.<?php else: ?>Configure your API credentials first.<?php endif; ?>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -468,8 +545,8 @@ try {
                             <div class="flex items-start gap-3">
                                 <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
                                 <div>
-                                    <p class="text-sm font-medium text-gray-900">Generate an API Key</p>
-                                    <p class="text-xs text-gray-500 mt-0.5">In your Action1 console, navigate to <strong>Configuration &rarr; API Keys</strong>. Generate a new API key with read permissions for endpoints, alerts, and policies.</p>
+                                    <p class="text-sm font-medium text-gray-900">Generate API Credentials</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">In your Action1 console, navigate to <strong>Configuration &rarr; Users &amp; API Credentials</strong>. Click <strong>+ New API Credentials</strong>, give it a name, and copy the <strong>Client ID</strong> and <strong>Client Secret</strong>.</p>
                                 </div>
                             </div>
                             <div class="flex items-start gap-3">
@@ -478,7 +555,8 @@ try {
                                     <p class="text-sm font-medium text-gray-900">Add Secrets in Replit</p>
                                     <p class="text-xs text-gray-500 mt-0.5">In Replit, go to Tools &rarr; Secrets and add:</p>
                                     <ul class="text-xs text-gray-500 mt-1 space-y-1 list-disc pl-4">
-                                        <li><code class="bg-gray-100 px-1 rounded text-xs">ACTION1_API_KEY</code> &mdash; Your API key from Action1</li>
+                                        <li><code class="bg-gray-100 px-1 rounded text-xs">ACTION1_CLIENT_ID</code> &mdash; Your Client ID from Action1</li>
+                                        <li><code class="bg-gray-100 px-1 rounded text-xs">ACTION1_API_KEY</code> &mdash; Your Client Secret from Action1</li>
                                         <li><code class="bg-gray-100 px-1 rounded text-xs">ACTION1_API_URL</code> &mdash; (Optional) defaults to <code class="bg-gray-100 px-1 rounded text-xs">https://app.action1.com/api/3.0</code></li>
                                     </ul>
                                 </div>
@@ -487,11 +565,11 @@ try {
                                 <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">4</span>
                                 <div>
                                     <p class="text-sm font-medium text-gray-900">Verify Connection</p>
-                                    <p class="text-xs text-gray-500 mt-0.5">Refresh this page after adding the secrets. The status will show &ldquo;Connected&rdquo; once <code class="bg-gray-100 px-1 rounded text-xs">ACTION1_API_KEY</code> is set.</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Refresh this page after adding the secrets. The status will show &ldquo;Connected&rdquo; once both <code class="bg-gray-100 px-1 rounded text-xs">ACTION1_CLIENT_ID</code> and <code class="bg-gray-100 px-1 rounded text-xs">ACTION1_API_KEY</code> are set.</p>
                                 </div>
                             </div>
                             <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                <p class="text-xs text-blue-700"><i class="fas fa-info-circle mr-1"></i><strong>API Reference:</strong> Action1 uses a REST API with Bearer token authentication. Endpoints include <code class="bg-blue-100 px-1 rounded">/endpoints</code> (devices), <code class="bg-blue-100 px-1 rounded">/alerts</code> (alerts), <code class="bg-blue-100 px-1 rounded">/policies</code> (patch policies). See <a href="https://www.action1.com/api-documentation/" target="_blank" class="underline">Action1 API Documentation</a></p>
+                                <p class="text-xs text-blue-700"><i class="fas fa-info-circle mr-1"></i><strong>API Reference:</strong> Action1 uses OAuth 2.0 with Client ID + Client Secret. The portal automatically obtains a JWT token, then queries <code class="bg-blue-100 px-1 rounded">/organizations</code>, <code class="bg-blue-100 px-1 rounded">/endpoints/managed/{orgId}</code>, and <code class="bg-blue-100 px-1 rounded">/alerts/{orgId}</code>. See <a href="https://www.action1.com/api-documentation/" target="_blank" class="underline">Action1 API Documentation</a></p>
                             </div>
                         </div>
                     </div>
