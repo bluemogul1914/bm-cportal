@@ -223,7 +223,7 @@ export async function registerRoutes(
       try {
         const stripe = await getUncachableStripeClient();
         const session = await stripe.checkout.sessions.create({
-          automatic_payment_methods: { enabled: true },
+          payment_method_types: ["card"],
           line_items: [{
             price_data: {
               currency: "usd",
@@ -243,8 +243,15 @@ export async function registerRoutes(
 
         res.json({ url: session.url });
       } catch (stripeError: any) {
-        console.log("Stripe not configured, using demo mode:", stripeError.message);
-        res.json({ demo: true, message: "Demo payment - Stripe not fully configured" });
+        const msg: string = stripeError.message || '';
+        const isNotConfigured = msg.includes('not configured') || msg.includes('STRIPE_');
+        if (isNotConfigured) {
+          console.log("Stripe not configured, using demo mode:", msg);
+          res.json({ demo: true, message: "Demo payment - Stripe not fully configured" });
+        } else {
+          console.error("Stripe checkout error:", msg);
+          res.status(500).json({ error: "Stripe error: " + msg });
+        }
       }
     } catch (error: any) {
       console.error("Checkout session error:", error);
