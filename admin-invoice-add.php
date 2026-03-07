@@ -104,6 +104,41 @@ try {
 } catch (PDOException $e) {
     $products = [];
 }
+
+$footer_templates = [];
+try {
+    $footer_templates = $pdo->query("SELECT id, name, content, is_default FROM invoice_footer_templates ORDER BY is_default DESC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {}
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'save_footer_template') {
+    require_csrf();
+    $tpl_name = trim($_POST['template_name'] ?? '');
+    $tpl_content = trim($_POST['template_content'] ?? '');
+    $tpl_default = isset($_POST['template_default']) && $_POST['template_default'] ? 't' : 'f';
+    if ($tpl_name && $tpl_content) {
+        if ($tpl_default === 't') {
+            $pdo->prepare("UPDATE invoice_footer_templates SET is_default = false WHERE is_default = true")->execute();
+        }
+        $pdo->prepare("INSERT INTO invoice_footer_templates (name, content, is_default) VALUES (?, ?, ?)")->execute([$tpl_name, $tpl_content, $tpl_default]);
+        $footer_templates = $pdo->query("SELECT id, name, content, is_default FROM invoice_footer_templates ORDER BY is_default DESC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $success_msg = "Footer template '$tpl_name' saved.";
+    }
+}
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'delete_footer_template') {
+    require_csrf();
+    $del_id = (int)($_POST['template_id'] ?? 0);
+    if ($del_id) {
+        $pdo->prepare("DELETE FROM invoice_footer_templates WHERE id = ?")->execute([$del_id]);
+        $footer_templates = $pdo->query("SELECT id, name, content, is_default FROM invoice_footer_templates ORDER BY is_default DESC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $success_msg = "Footer template deleted.";
+    }
+}
+
+$default_footer = '';
+foreach ($footer_templates as $ft) {
+    if ($ft['is_default']) { $default_footer = $ft['content']; break; }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -179,14 +214,14 @@ try {
                     </div>
                 </div>
 
-                <div class="bg-white rounded-lg border border-gray-200 mb-6">
+                <div class="bg-white rounded-lg border border-gray-200 mb-6 overflow-visible">
                     <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
                         <h2 class="text-lg font-semibold text-gray-900">Line Items</h2>
                         <button type="button" onclick="addLineItem()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition" data-testid="button-add-line-item">
                             <i class="fas fa-plus mr-1"></i>Add Line Item
                         </button>
                     </div>
-                    <div class="overflow-x-auto">
+                    <div class="overflow-visible">
                         <table class="w-full text-sm" id="lineItemsTable" data-testid="table-line-items">
                             <thead>
                                 <tr class="bg-gray-50 border-b border-gray-200">
@@ -234,12 +269,34 @@ try {
                 </div>
 
                 <div class="bg-white rounded-lg border border-gray-200 mb-6">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h2 class="text-lg font-semibold text-gray-900">Invoice Footer</h2>
-                        <p class="text-sm text-gray-500 mt-1">This message will appear at the bottom of the customer-facing invoice.</p>
+                    <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">Invoice Footer</h2>
+                            <p class="text-sm text-gray-500 mt-1">This message will appear at the bottom of the customer-facing invoice.</p>
+                        </div>
+                        <?php if (!empty($footer_templates)): ?>
+                        <div class="flex items-center gap-2">
+                            <select id="footerTemplateSelect" onchange="loadFooterTemplate()" class="px-3 py-1.5 border border-gray-300 rounded-md text-sm" data-testid="select-footer-template">
+                                <option value="">Load Template...</option>
+                                <?php foreach ($footer_templates as $ft): ?>
+                                    <option value="<?= htmlspecialchars($ft['content']) ?>"><?= htmlspecialchars($ft['name']) ?><?= $ft['is_default'] ? ' (Default)' : '' ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div class="p-6">
-                        <textarea name="footer" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Thank you for your business! Payment is due within 30 days..." data-testid="textarea-footer"></textarea>
+                        <textarea name="footer" id="footerTextarea" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-3" placeholder="e.g. Thank you for your business! Payment is due within 30 days..." data-testid="textarea-footer"><?= htmlspecialchars($default_footer) ?></textarea>
+                        <div class="flex items-center justify-between">
+                            <button type="button" onclick="document.getElementById('saveTemplateModal').classList.remove('hidden')" class="text-sm text-blue-600 hover:text-blue-800 font-medium" data-testid="button-save-template">
+                                <i class="fas fa-save mr-1"></i>Save as Template
+                            </button>
+                            <?php if (!empty($footer_templates)): ?>
+                            <button type="button" onclick="document.getElementById('manageTemplatesModal').classList.remove('hidden')" class="text-sm text-gray-500 hover:text-gray-700" data-testid="button-manage-templates">
+                                <i class="fas fa-cog mr-1"></i>Manage Templates
+                            </button>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
 
@@ -254,16 +311,87 @@ try {
     </div>
 </div>
 
+<div id="saveTemplateModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg w-full max-w-md mx-4 shadow-xl">
+        <div class="flex items-center justify-between px-6 py-4 border-b">
+            <h3 class="text-lg font-semibold">Save Footer Template</h3>
+            <button onclick="document.getElementById('saveTemplateModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form method="POST" class="p-6 space-y-4">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="save_footer_template">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Template Name *</label>
+                <input type="text" name="template_name" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g. Net 30 Terms" data-testid="input-template-name">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Footer Content *</label>
+                <textarea name="template_content" id="templateContentField" required rows="4" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="Footer text..." data-testid="textarea-template-content"></textarea>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="checkbox" name="template_default" id="templateDefault" class="rounded border-gray-300" data-testid="checkbox-template-default">
+                <label for="templateDefault" class="text-sm text-gray-700">Set as default footer for new invoices</label>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="document.getElementById('saveTemplateModal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-submit-template">Save Template</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<?php if (!empty($footer_templates)): ?>
+<div id="manageTemplatesModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg w-full max-w-lg mx-4 shadow-xl">
+        <div class="flex items-center justify-between px-6 py-4 border-b">
+            <h3 class="text-lg font-semibold">Manage Footer Templates</h3>
+            <button onclick="document.getElementById('manageTemplatesModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-6 divide-y divide-gray-200 max-h-96 overflow-y-auto">
+            <?php foreach ($footer_templates as $ft): ?>
+            <div class="py-3 flex items-start justify-between gap-3" data-testid="template-row-<?= $ft['id'] ?>">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-900"><?= htmlspecialchars($ft['name']) ?><?= $ft['is_default'] ? ' <span class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1">Default</span>' : '' ?></p>
+                    <p class="text-xs text-gray-500 mt-1 truncate"><?= htmlspecialchars(substr($ft['content'], 0, 100)) ?></p>
+                </div>
+                <form method="POST" class="inline flex-shrink-0" onsubmit="return confirm('Delete this template?')">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="delete_footer_template">
+                    <input type="hidden" name="template_id" value="<?= $ft['id'] ?>">
+                    <button type="submit" class="text-red-500 hover:text-red-700 text-sm" data-testid="button-delete-template-<?= $ft['id'] ?>"><i class="fas fa-trash"></i></button>
+                </form>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
 const products = <?php echo json_encode($products); ?>;
 let lineItemIndex = 0;
+
+function loadFooterTemplate() {
+    var sel = document.getElementById('footerTemplateSelect');
+    if (sel.value) {
+        document.getElementById('footerTextarea').value = sel.value;
+    }
+    sel.selectedIndex = 0;
+}
+
+document.getElementById('saveTemplateModal')?.addEventListener('show', function() {});
+document.querySelector('[data-testid="button-save-template"]')?.addEventListener('click', function() {
+    var footerText = document.getElementById('footerTextarea').value;
+    var tplField = document.getElementById('templateContentField');
+    if (tplField && footerText) tplField.value = footerText;
+});
 
 function addLineItem() {
     const tbody = document.getElementById('lineItemsBody');
     const idx = lineItemIndex++;
     const tr = document.createElement('tr');
     tr.id = 'line-item-' + idx;
-    tr.className = 'border-b border-gray-100';
+    tr.className = 'border-b border-gray-100 relative';
     tr.setAttribute('data-testid', 'row-line-item-' + idx);
     tr.innerHTML = `
         <td class="px-4 py-2">
@@ -276,7 +404,7 @@ function addLineItem() {
                     onblur="setTimeout(() => hideProductSuggestions(${idx}), 200)"
                     autocomplete="off"
                     data-testid="input-item-name-${idx}">
-                <div id="suggestions-${idx}" class="absolute z-20 left-0 right-0 top-full bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto hidden"></div>
+                <div id="suggestions-${idx}" class="absolute z-50 left-0 right-0 top-full bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto hidden"></div>
             </div>
         </td>
         <td class="px-4 py-2">

@@ -159,6 +159,85 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
         $tab = 'meetings';
     }
+
+    if ($action === 'sync_hubspot') {
+        $tab = 'leads';
+        $hs_token = defined('HUBSPOT_TOKEN') ? HUBSPOT_TOKEN : '';
+        if (empty($hs_token)) {
+            $error_msg = 'HubSpot API token is not configured. Set HUBSPOT_TOKEN in environment.';
+        } else {
+            $synced = 0; $hs_errors = 0;
+            $hs_url = 'https://api.hubapi.com/crm/v3/objects/contacts?limit=100&properties=firstname,lastname,email,phone,company,hs_lead_status,lifecyclestage,createdate';
+            $has_more = true;
+            $after = '';
+            while ($has_more) {
+                $fetch_url = $hs_url . ($after ? '&after=' . $after : '');
+                $ctx = stream_context_create(['http' => [
+                    'method' => 'GET',
+                    'header' => "Authorization: Bearer $hs_token\r\nContent-Type: application/json\r\n",
+                    'timeout' => 15,
+                    'ignore_errors' => true
+                ]]);
+                $resp = @file_get_contents($fetch_url, false, $ctx);
+                if (!$resp) { $error_msg = 'Failed to connect to HubSpot API.'; break; }
+                $data = json_decode($resp, true);
+                if (isset($data['status']) && $data['status'] === 'error') {
+                    $error_msg = 'HubSpot API error: ' . ($data['message'] ?? 'Unknown error');
+                    break;
+                }
+                $contacts = $data['results'] ?? [];
+                foreach ($contacts as $c) {
+                    $props = $c['properties'] ?? [];
+                    $first = trim($props['firstname'] ?? '');
+                    $last = trim($props['lastname'] ?? '');
+                    $name = trim("$first $last");
+                    if (!$name) { $hs_errors++; continue; }
+                    $email = trim($props['email'] ?? '');
+                    $phone = trim($props['phone'] ?? '');
+                    $company = trim($props['company'] ?? '');
+                    $hs_status = strtolower(trim($props['hs_lead_status'] ?? ''));
+                    $status_map = [
+                        'new' => 'new', 'open' => 'new', 'in_progress' => 'contacted',
+                        'open_deal' => 'qualified', 'unqualified' => 'lost',
+                        'attempted_to_contact' => 'contacted', 'connected' => 'contacted',
+                        'bad_timing' => 'lost',
+                    ];
+                    $local_status = $status_map[$hs_status] ?? 'new';
+
+                    try {
+                        $existing = null;
+                        if ($email) {
+                            $dup = $pdo->prepare("SELECT id FROM crm_leads WHERE email = ?");
+                            $dup->execute([$email]);
+                            $existing = $dup->fetch(PDO::FETCH_ASSOC);
+                        }
+                        if (!$existing && $name) {
+                            $dup = $pdo->prepare("SELECT id FROM crm_leads WHERE name = ? AND source = 'hubspot'");
+                            $dup->execute([$name]);
+                            $existing = $dup->fetch(PDO::FETCH_ASSOC);
+                        }
+                        if ($existing) {
+                            $pdo->prepare("UPDATE crm_leads SET name = ?, phone = ?, company = ?, source = 'hubspot', status = ?, updated_at = NOW() WHERE id = ?")
+                                ->execute([$name, $phone, $company, $local_status, $existing['id']]);
+                        } else {
+                            $pdo->prepare("INSERT INTO crm_leads (name, email, phone, company, source, status) VALUES (?, ?, ?, ?, 'hubspot', ?)")
+                                ->execute([$name, $email, $phone, $company, $local_status]);
+                        }
+                        $synced++;
+                    } catch (Exception $e) { $hs_errors++; }
+                }
+                $paging = $data['paging']['next'] ?? null;
+                if ($paging && isset($paging['after'])) {
+                    $after = $paging['after'];
+                } else {
+                    $has_more = false;
+                }
+            }
+            if (!$error_msg) {
+                $success_msg = "Synced $synced contacts from HubSpot." . ($hs_errors ? " $hs_errors skipped." : '');
+            }
+        }
+    }
 }
 
 $leads = $pdo->query("SELECT * FROM crm_leads ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC);
@@ -235,9 +314,18 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
 
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-lg font-semibold text-gray-900">All Leads</h2>
-                <button onclick="document.getElementById('add-lead-modal').classList.remove('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition" data-testid="button-add-lead">
-                    <i class="fas fa-plus mr-1"></i>Add Lead
-                </button>
+                <div class="flex items-center gap-2">
+                    <form method="POST" class="inline">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="sync_hubspot">
+                        <button type="submit" class="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition" data-testid="button-sync-hubspot">
+                            <i class="fas fa-sync mr-1"></i>Sync HubSpot
+                        </button>
+                    </form>
+                    <button onclick="document.getElementById('add-lead-modal').classList.remove('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition" data-testid="button-add-lead">
+                        <i class="fas fa-plus mr-1"></i>Add Lead
+                    </button>
+                </div>
             </div>
 
             <div class="bg-white rounded-lg border border-gray-200">

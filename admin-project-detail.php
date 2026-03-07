@@ -76,6 +76,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             ]);
             $success_message = "Note added!";
         } catch (PDOException $e) { $error_message = $e->getMessage(); }
+    } elseif ($action === 'add_time_entry') {
+        try {
+            $hours = floatval($_POST['time_hours'] ?? 0);
+            $desc = trim($_POST['time_description'] ?? '');
+            $billable = isset($_POST['time_billable']) ? true : false;
+            $rate = floatval($_POST['time_rate'] ?? 0);
+            if ($hours > 0) {
+                $pdo->prepare("INSERT INTO project_time_entries (project_id, user_id, user_name, hours, description, billable, rate) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$project_id, $_SESSION['user_id'], $user_name, $hours, $desc, $billable, $rate]);
+                $success_message = "Time entry added!";
+            } else {
+                $error_message = "Hours must be greater than 0.";
+            }
+        } catch (PDOException $e) { $error_message = $e->getMessage(); }
+    } elseif ($action === 'delete_time_entry') {
+        try {
+            $pdo->prepare("DELETE FROM project_time_entries WHERE id = ? AND project_id = ?")->execute([$_POST['time_entry_id'], $project_id]);
+            $success_message = "Time entry deleted.";
+        } catch (PDOException $e) { $error_message = $e->getMessage(); }
     }
 }
 
@@ -94,8 +113,21 @@ try {
     $notes = $notes_stmt->fetchAll();
 
     $clients = $pdo->query("SELECT id, name, company FROM clients ORDER BY name")->fetchAll();
+
+    $time_entries = $pdo->prepare("SELECT * FROM project_time_entries WHERE project_id = ? ORDER BY created_at DESC");
+    $time_entries->execute([$project_id]);
+    $time_entries = $time_entries->fetchAll();
 } catch (PDOException $e) {
     portal_redirect('admin-projects.php');
+}
+
+$total_hours = 0; $billable_hours = 0; $billable_amount = 0;
+foreach (($time_entries ?? []) as $te) {
+    $total_hours += (float)$te['hours'];
+    if ($te['billable']) {
+        $billable_hours += (float)$te['hours'];
+        $billable_amount += (float)$te['hours'] * (float)$te['rate'];
+    }
 }
 
 $task_groups = ['todo' => [], 'in_progress' => [], 'review' => [], 'done' => []];
@@ -226,6 +258,90 @@ $task_status_icons = ['todo' => 'fa-circle text-gray-400', 'in_progress' => 'fa-
                                         <?php endforeach; ?>
                                     <?php endif; ?>
                                 <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-lg border border-gray-200" data-testid="section-time-tracking">
+                        <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                            <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-clock text-green-500 mr-2"></i>Time Tracking</h2>
+                            <div class="flex items-center gap-4 text-sm">
+                                <span class="text-gray-500">Total: <strong class="text-gray-900"><?= number_format($total_hours, 1) ?>h</strong></span>
+                                <span class="text-gray-500">Billable: <strong class="text-green-600">$<?= number_format($billable_amount, 2) ?></strong></span>
+                            </div>
+                        </div>
+                        <div class="p-5">
+                            <div class="bg-gray-50 rounded-lg p-4 mb-4" data-testid="timer-widget">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="text-sm font-semibold text-gray-700"><i class="fas fa-stopwatch mr-1"></i>Timer</h3>
+                                    <span id="timerDisplay" class="text-2xl font-mono font-bold text-gray-900" data-testid="text-timer-display">00:00:00</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" id="timerStartBtn" onclick="startTimer()" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium" data-testid="button-start-timer"><i class="fas fa-play mr-1"></i>Start</button>
+                                    <button type="button" id="timerStopBtn" onclick="stopTimer()" class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium hidden" data-testid="button-stop-timer"><i class="fas fa-stop mr-1"></i>Stop</button>
+                                    <button type="button" id="timerLogBtn" onclick="logTimerEntry()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium hidden" data-testid="button-log-timer"><i class="fas fa-save mr-1"></i>Log Time</button>
+                                    <button type="button" id="timerResetBtn" onclick="resetTimer()" class="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md text-sm font-medium hidden" data-testid="button-reset-timer"><i class="fas fa-redo mr-1"></i>Reset</button>
+                                </div>
+                            </div>
+
+                            <form method="POST" class="bg-gray-50 rounded-lg p-4 mb-4 space-y-3" data-testid="form-add-time">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="add_time_entry">
+                                <input type="hidden" name="time_hours" id="timeHoursInput" value="">
+                                <h3 class="text-sm font-semibold text-gray-700 mb-1"><i class="fas fa-edit mr-1"></i>Manual Entry</h3>
+                                <div class="grid grid-cols-3 gap-3">
+                                    <div>
+                                        <label class="block text-xs text-gray-500 mb-1">Hours *</label>
+                                        <input type="number" id="manualHoursInput" min="0.1" step="0.1" value="1.0" class="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" oninput="document.getElementById('timeHoursInput').value=this.value" data-testid="input-time-hours">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500 mb-1">Rate ($/hr)</label>
+                                        <input type="number" name="time_rate" min="0" step="5" value="150" class="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" data-testid="input-time-rate">
+                                    </div>
+                                    <div class="flex items-end">
+                                        <label class="flex items-center gap-2 text-sm text-gray-700">
+                                            <input type="checkbox" name="time_billable" checked class="rounded border-gray-300" data-testid="checkbox-time-billable">
+                                            Billable
+                                        </label>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">Description</label>
+                                    <input type="text" name="time_description" placeholder="What did you work on?" class="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" data-testid="input-time-description">
+                                </div>
+                                <button type="submit" onclick="if(!document.getElementById('timeHoursInput').value)document.getElementById('timeHoursInput').value=document.getElementById('manualHoursInput').value" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md text-sm font-medium" data-testid="button-add-time"><i class="fas fa-plus mr-1"></i>Add Entry</button>
+                            </form>
+
+                            <?php if (!empty($time_entries)): ?>
+                            <div class="space-y-2">
+                                <?php foreach ($time_entries as $te): ?>
+                                <div class="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-2.5" data-testid="time-entry-<?= $te['id'] ?>">
+                                    <div class="flex-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-sm font-semibold text-gray-900"><?= number_format((float)$te['hours'], 1) ?>h</span>
+                                            <?php if ($te['billable']): ?>
+                                                <span class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">$<?= number_format((float)$te['hours'] * (float)$te['rate'], 2) ?></span>
+                                            <?php else: ?>
+                                                <span class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Non-billable</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <p class="text-xs text-gray-500 mt-0.5">
+                                            <?= htmlspecialchars($te['description'] ?: 'No description') ?>
+                                            &middot; <?= htmlspecialchars($te['user_name'] ?? 'Unknown') ?>
+                                            &middot; <?= date('M d, g:i A', strtotime($te['created_at'])) ?>
+                                        </p>
+                                    </div>
+                                    <form method="POST" class="inline" onsubmit="return confirm('Delete this time entry?')">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="delete_time_entry">
+                                        <input type="hidden" name="time_entry_id" value="<?= $te['id'] ?>">
+                                        <button type="submit" class="text-red-400 hover:text-red-600 text-xs ml-3" data-testid="button-delete-time-<?= $te['id'] ?>"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <?php else: ?>
+                                <p class="text-sm text-gray-400 text-center py-2">No time logged yet</p>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -404,5 +520,62 @@ $task_status_icons = ['todo' => 'fa-circle text-gray-400', 'in_progress' => 'fa-
     </div>
 </div>
 
+<script>
+let timerInterval = null;
+let timerSeconds = 0;
+let timerRunning = false;
+
+function updateTimerDisplay() {
+    var h = Math.floor(timerSeconds / 3600);
+    var m = Math.floor((timerSeconds % 3600) / 60);
+    var s = timerSeconds % 60;
+    document.getElementById('timerDisplay').textContent =
+        String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+}
+
+function startTimer() {
+    if (timerRunning) return;
+    timerRunning = true;
+    document.getElementById('timerStartBtn').classList.add('hidden');
+    document.getElementById('timerStopBtn').classList.remove('hidden');
+    document.getElementById('timerLogBtn').classList.add('hidden');
+    document.getElementById('timerResetBtn').classList.add('hidden');
+    timerInterval = setInterval(function() {
+        timerSeconds++;
+        updateTimerDisplay();
+    }, 1000);
+}
+
+function stopTimer() {
+    timerRunning = false;
+    clearInterval(timerInterval);
+    document.getElementById('timerStartBtn').classList.remove('hidden');
+    document.getElementById('timerStopBtn').classList.add('hidden');
+    if (timerSeconds > 0) {
+        document.getElementById('timerLogBtn').classList.remove('hidden');
+        document.getElementById('timerResetBtn').classList.remove('hidden');
+    }
+}
+
+function resetTimer() {
+    timerSeconds = 0;
+    timerRunning = false;
+    clearInterval(timerInterval);
+    updateTimerDisplay();
+    document.getElementById('timerStartBtn').classList.remove('hidden');
+    document.getElementById('timerStopBtn').classList.add('hidden');
+    document.getElementById('timerLogBtn').classList.add('hidden');
+    document.getElementById('timerResetBtn').classList.add('hidden');
+}
+
+function logTimerEntry() {
+    var hours = Math.round((timerSeconds / 3600) * 100) / 100;
+    if (hours < 0.01) hours = 0.1;
+    document.getElementById('manualHoursInput').value = hours.toFixed(2);
+    document.getElementById('timeHoursInput').value = hours.toFixed(2);
+    resetTimer();
+    document.querySelector('[data-testid="input-time-description"]').focus();
+}
+</script>
 </body>
 </html>

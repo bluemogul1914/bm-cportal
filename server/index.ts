@@ -308,7 +308,8 @@ require '${filePath.replace(/'/g, "\\'")}';
         unlink(tmpFile).catch(() => {});
         if (error) {
           console.error(`PHP POST error (${phpFile}):`, stderr || error.message);
-          return res.status(500).send("Server error");
+          console.error(`PHP POST stdout (${phpFile}):`, stdout?.substring(0, 500));
+          return res.status(500).json({ error: "Internal server error" });
         }
         stdout = extractCsrfToken(stdout, req);
         try {
@@ -1389,6 +1390,31 @@ async function bootstrapPortalDatabase() {
         created_by INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS invoice_footer_templates (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(200) NOT NULL,
+        content TEXT NOT NULL,
+        is_default BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS project_time_entries (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER NOT NULL,
+        task_id INTEGER,
+        user_id INTEGER,
+        user_name VARCHAR(200),
+        hours NUMERIC(6,2) NOT NULL DEFAULT 0,
+        description TEXT,
+        billable BOOLEAN DEFAULT true,
+        rate NUMERIC(8,2) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
