@@ -1541,9 +1541,7 @@ async function bootstrapPortalDatabase() {
       console.log("Created admin user: admin@bluemogul.biz");
     }
 
-    const productCount = await webhookPool.query("SELECT COUNT(*) as cnt FROM products");
-    if (parseInt(productCount.rows[0].cnt) === 0) {
-      const products = [
+    const products = [
         ["Essential IT Support", "Managed IT", "Tier 1", 149.00, "monthly", "8/5 Support, Basic Network Monitoring, Email Support, Patch Management, Monthly Reports, Up to 10 devices", '[\"8/5 Support\", \"Basic Network Monitoring\", \"Email Support\", \"Patch Management\", \"Monthly Reports\", \"Up to 10 devices\"]'],
         ["Business IT Support", "Managed IT", "Tier 2", 249.00, "monthly", "24/7 Support, Full Infrastructure Monitoring, Phone & Email Support, Remote Desktop Support, Security Patches, Weekly Reports, Up to 25 devices", '[\"24/7 Support\", \"Full Infrastructure Monitoring\", \"Phone & Email Support\", \"Remote Desktop Support\", \"Security Patches\", \"Weekly Reports\", \"Up to 25 devices\"]'],
         ["Professional IT Support", "Managed IT", "Tier 3", 449.00, "monthly", "Dedicated Engineer, White Glove Service, Priority Support Queue, 2-Hour Response Time, Proactive Maintenance, Quarterly Business Reviews, Up to 50 devices", '[\"Dedicated Engineer\", \"White Glove Service\", \"Priority Support Queue\", \"2-Hour Response Time\", \"Proactive Maintenance\", \"Quarterly Business Reviews\", \"Up to 50 devices\"]'],
@@ -1584,15 +1582,20 @@ async function bootstrapPortalDatabase() {
         ["On-Site Visit", "Professional Services", null, 175.00, "per-visit", "On-site technical support, 2-hour minimum", '[\"2-Hour Minimum\", \"On-Site Support\", \"Travel Included\"]'],
         ["Emergency On-Site", "Professional Services", null, 350.00, "per-visit", "Same-day emergency on-site support", '[\"Same-Day Response\", \"Emergency Support\", \"Travel Included\", \"After-Hours Available\"]'],
         ["Custom Integration Development", "Professional Services", null, 150.00, "per-hour", "Custom integration development, 10-hour minimum", '[\"Custom Development\", \"API Integrations\", \"Documentation\", \"10-Hour Minimum\"]'],
+        ["SMB Starter Bundle", "Bundle", "Tier 1", 299.00, "monthly", "Essential IT Support + VoIP Starter + Endpoint Protection Basic — bundled at a discount", '[\"Essential IT Support\", \"VoIP Starter (5 Extensions)\", \"Endpoint Protection Basic\", \"Priority Email Support\", \"Monthly Reports\"]'],
+        ["Business Bundle", "Bundle", "Tier 2", 499.00, "monthly", "Business IT Support + VoIP Business + Endpoint Protection Advanced — best value for growing teams", '[\"Business IT Support\", \"VoIP Business (15 Extensions)\", \"Endpoint Protection Advanced\", \"24/7 Support\", \"Weekly Reports\"]'],
+        ["Professional Bundle", "Bundle", "Tier 3", 799.00, "monthly", "Professional IT Support + VoIP Professional + Managed Firewall — full-stack solution", '[\"Professional IT Support\", \"VoIP Professional (50 Extensions)\", \"Managed Firewall\", \"Priority Support Queue\", \"Quarterly Business Reviews\"]'],
+        ["Enterprise Bundle", "Bundle", "Tier 4", 1299.00, "monthly", "Enterprise MSP Complete + VoIP Enterprise + Security Operations Center — white-glove enterprise package", '[\"Unlimited IT Support\", \"VoIP Enterprise (Unlimited Extensions)\", \"Security Operations Center\", \"On-Site Visits\", \"vCIO Services\", \"99.99% SLA\"]'],
+        ["Connectivity + Security Bundle", "Bundle", "Tier 2", 249.00, "monthly", "Business Fiber 500 + Managed Firewall + Endpoint Protection Advanced — secure connectivity for business", '[\"Business Fiber 500 Mbps\", \"Managed Firewall\", \"Endpoint Protection Advanced\", \"Static IP Block (/29)\", \"24/7 Monitoring\"]'],
+        ["Cloud Workspace Bundle", "Bundle", "Tier 2", 349.00, "monthly", "Microsoft 365 Business + Cloud Backup Premium + Hosted Server Medium — complete cloud workspace", '[\"Microsoft 365 Business (per user)\", \"Cloud Backup Premium\", \"Hosted Server - Medium\", \"Managed OS\", \"Priority Support\"]'],
       ];
-      for (const p of products) {
-        await webhookPool.query(
-          "INSERT INTO products (name, category, tier, price, billing_period, description, features) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (name) DO NOTHING",
-          p
-        );
-      }
-      console.log(`Seeded ${products.length} products into database`);
+    for (const p of products) {
+      await webhookPool.query(
+        "INSERT INTO products (name, category, tier, price, billing_period, description, features) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (name) DO NOTHING",
+        p
+      );
     }
+    console.log(`Ensured ${products.length} default products in database`);
 
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS chat_channels (
