@@ -223,7 +223,7 @@ export async function registerRoutes(
       try {
         const stripe = await getUncachableStripeClient();
         const session = await stripe.checkout.sessions.create({
-          payment_method_types: ["card"],
+          payment_method_types: ["card", "klarna", "afterpay_clearpay", "affirm"],
           line_items: [{
             price_data: {
               currency: "usd",
@@ -236,6 +236,7 @@ export async function registerRoutes(
             quantity: 1,
           }],
           mode: "payment",
+          billing_address_collection: "required",
           metadata: { invoice_id: String(invoice_id) },
           success_url: `${req.protocol}://${req.get("host")}/portal/payment-success.php?id=${invoice_id}&paid=1`,
           cancel_url: `${req.protocol}://${req.get("host")}/portal/billing.php`,
