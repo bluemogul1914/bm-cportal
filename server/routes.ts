@@ -223,7 +223,7 @@ export async function registerRoutes(
       try {
         const stripe = await getUncachableStripeClient();
         const session = await stripe.checkout.sessions.create({
-          payment_method_types: ["card"],
+          automatic_payment_methods: { enabled: true },
           line_items: [{
             price_data: {
               currency: "usd",
