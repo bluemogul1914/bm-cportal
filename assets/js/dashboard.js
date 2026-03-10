@@ -98,15 +98,27 @@ function showNotification(message, type = 'info') {
     
     const icon = icons[type] || icons.info;
     
-    notification.innerHTML = `
-        <div class="flex items-center">
-            <i class="fas ${icon} text-2xl mr-3"></i>
-            <p class="font-medium">${message}</p>
-            <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-white hover:text-gray-200">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-    `;
+    const flex = document.createElement('div');
+    flex.className = 'flex items-center';
+
+    const iconEl = document.createElement('i');
+    iconEl.className = `fas ${icon} text-2xl mr-3`;
+    flex.appendChild(iconEl);
+
+    const p = document.createElement('p');
+    p.className = 'font-medium';
+    p.textContent = message;
+    flex.appendChild(p);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'ml-4 text-white hover:text-gray-200';
+    closeBtn.addEventListener('click', () => notification.remove());
+    const closeIcon = document.createElement('i');
+    closeIcon.className = 'fas fa-times';
+    closeBtn.appendChild(closeIcon);
+    flex.appendChild(closeBtn);
+
+    notification.appendChild(flex);
     
     document.body.appendChild(notification);
     
