@@ -36,8 +36,11 @@ function setupEventListeners() {
 async function payInvoice(invoiceId) {
     try {
         const button = event.target;
-        const originalText = button.innerHTML;
-        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        const originalChildren = Array.from(button.childNodes).map(n => n.cloneNode(true));
+        const spinner = document.createElement('i');
+        spinner.className = 'fas fa-spinner fa-spin';
+        const processingText = document.createTextNode(' Processing...');
+        button.replaceChildren(spinner, processingText);
         button.disabled = true;
         
         const response = await fetch('api/create-checkout-session.php', {
@@ -68,7 +71,7 @@ async function payInvoice(invoiceId) {
     } catch (error) {
         console.error('Error processing payment:', error);
         showNotification(error.message || 'Failed to process payment', 'error');
-        button.innerHTML = originalText;
+        button.replaceChildren(...originalChildren);
         button.disabled = false;
     }
 }
