@@ -19,9 +19,8 @@ $success_msg = '';
 $error_msg = '';
 
 function action1_get_token() {
-    $parsed = parse_url(ACTION1_API_URL);
-    $host_base = ($parsed['scheme'] ?? 'https') . '://' . ($parsed['host'] ?? 'app.action1.com');
-    $url = $host_base . '/oauth2/token';
+    $base = rtrim(ACTION1_API_URL, '/');
+    $url = $base . '/oauth2/token';
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,
@@ -194,14 +193,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'test_connection' && $action1_connected) {
         $token_result = action1_get_token();
         if (isset($token_result['error'])) {
-            $error_msg = 'Connection test failed at authentication: ' . $token_result['error'];
+            $error_msg = 'Step 1 (Auth) FAILED: ' . $token_result['error'] . ' — Token URL: ' . rtrim(ACTION1_API_URL, '/') . '/oauth2/token';
         } else {
             $org_result = action1_get_org_id();
             if (isset($org_result['error'])) {
-                $error_msg = 'Authentication succeeded but failed to fetch organizations: ' . $org_result['error'];
+                $error_msg = 'Step 1 (Auth) OK. Step 2 (Org lookup) FAILED: ' . $org_result['error'];
             } else {
                 $org_id = $org_result['org_id'];
-                $success_msg = 'Connection verified. Organization ID: ' . $org_id . '. API token obtained successfully. You can now run Sync Endpoints.';
+                $ep_test = action1_api_request('GET', '/endpoints/managed/' . urlencode($org_id));
+                $ep_count = isset($ep_test['error']) ? ('ERROR: ' . $ep_test['error']) : count($ep_test['items'] ?? []) . ' endpoint(s) found';
+                $success_msg = "Auth OK ✓ | Org ID: {$org_id} ✓ | Endpoint list: {$ep_count}";
+                if (isset($ep_test['error'])) {
+                    $ep_test2 = action1_api_request('GET', '/endpoints/managed/' . urlencode($org_id) . '?fields=*');
+                    $ep_count2 = isset($ep_test2['error']) ? ('ERROR: ' . $ep_test2['error']) : count($ep_test2['items'] ?? []) . ' endpoint(s) with fields=*';
+                    $success_msg .= " | With fields=*: {$ep_count2}";
+                    $error_msg = $success_msg;
+                    $success_msg = '';
+                }
             }
         }
     }
@@ -212,12 +220,27 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $error_msg = 'Endpoint sync failed: ' . $org['error'];
         } else {
             $org_id = $org['org_id'];
-            $api_data = action1_api_request('GET', '/endpoints/managed/' . urlencode($org_id) . '?fields=*');
+            $endpoint_paths = [
+                '/endpoints/managed/' . urlencode($org_id),
+                '/endpoints/managed/' . urlencode($org_id) . '?fields=*',
+                '/endpoints/' . urlencode($org_id),
+                '/endpoints/' . urlencode($org_id) . '?fields=*',
+            ];
+            $api_data = null;
+            $tried_paths = [];
+            foreach ($endpoint_paths as $ep_path) {
+                $resp = action1_api_request('GET', $ep_path);
+                $tried_paths[] = $ep_path . ' → ' . (isset($resp['error']) ? 'error: ' . $resp['error'] : count($resp['items'] ?? (is_array($resp) && !isset($resp['error']) ? $resp : [])) . ' items');
+                if (!isset($resp['error'])) {
+                    $api_data = $resp;
+                    break;
+                }
+            }
 
-            if (isset($api_data['error'])) {
-                $error_msg = 'Endpoint sync failed: ' . $api_data['error'];
+            if ($api_data === null) {
+                $error_msg = 'Endpoint sync failed. Tried paths: ' . implode(' | ', $tried_paths);
             } else {
-                $api_endpoints = $api_data['items'] ?? [];
+                $api_endpoints = $api_data['items'] ?? (is_array($api_data) && isset($api_data[0]) ? $api_data : []);
                 $synced = 0;
                 $next_page = $api_data['next_page'] ?? null;
 
@@ -292,7 +315,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                         $synced++;
                     } catch (Exception $e) {}
                 }
-                $success_msg = "Synced {$synced} endpoints from Action1.";
+                if ($synced === 0) {
+                    $error_msg = "Sync ran but found 0 endpoints. Org ID: {$org_id} | Path used: {$ep_path} | API returned " . count($all_endpoints) . " items before DB insert. Check that your Action1 credentials have endpoint read permissions.";
+                } else {
+                    $success_msg = "Synced {$synced} endpoints from Action1 (Org: {$org_id}).";
+                }
 
                 $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
                     ->execute([$_SESSION['user_id'], 'action1_sync', 'action1_endpoint', 0, "Synced {$synced} endpoints from Action1", $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
