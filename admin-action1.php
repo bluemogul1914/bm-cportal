@@ -19,8 +19,9 @@ $success_msg = '';
 $error_msg = '';
 
 function action1_get_token() {
-    $base = rtrim(ACTION1_API_URL, '/');
-    $url = $base . '/oauth2/token';
+    $parsed = parse_url(ACTION1_API_URL);
+    $host_base = ($parsed['scheme'] ?? 'https') . '://' . ($parsed['host'] ?? 'app.action1.com');
+    $url = $host_base . '/oauth2/token';
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,
@@ -189,6 +190,21 @@ try {
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     require_csrf();
     $action = $_POST['action'] ?? '';
+
+    if ($action === 'test_connection' && $action1_connected) {
+        $token_result = action1_get_token();
+        if (isset($token_result['error'])) {
+            $error_msg = 'Connection test failed at authentication: ' . $token_result['error'];
+        } else {
+            $org_result = action1_get_org_id();
+            if (isset($org_result['error'])) {
+                $error_msg = 'Authentication succeeded but failed to fetch organizations: ' . $org_result['error'];
+            } else {
+                $org_id = $org_result['org_id'];
+                $success_msg = 'Connection verified. Organization ID: ' . $org_id . '. API token obtained successfully. You can now run Sync Endpoints.';
+            }
+        }
+    }
 
     if ($action === 'sync_endpoints' && $action1_connected) {
         $org = action1_get_org_id();
@@ -492,6 +508,13 @@ uasort($client_patch_summary, fn($a, $b) => $b['vulns_critical'] <=> $a['vulns_c
                 </div>
                 <div class="flex items-center gap-3">
                     <?php if ($action1_connected): ?>
+                        <form method="POST" class="inline">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="test_connection">
+                            <button type="submit" class="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-medium transition" data-testid="button-test-connection">
+                                <i class="fas fa-plug mr-1"></i>Test API
+                            </button>
+                        </form>
                         <form method="POST" class="inline">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="sync_endpoints">
