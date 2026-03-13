@@ -1,0 +1,217 @@
+
+Library
+Create apps, documents, images, and more with the agent
+/portal/admin-dashboard.php
+Databases
+Development Database
+57.43MB / 20GB
+Production Database
+58.29MB / 100GB
+Billing Period
+Renews monthly, Mar 21
+Hours of Compute Used
+3.21 hours
+Production
+Status
+Tracy published about 2 hours ago
+Visibility
+Public
+Domain
+https://bluemogul-portal.replit.app
+https://portal.bluemogul.biz
+Type
+Autoscale
+(2 vCPU / 4 GiB RAM / 3 Max)
+See all usage
+Database
+Production database connected
+f70f7e00
+TW
+traceyew
+Tracy
+published 2 days ago
+f70f7e00
+TW
+traceyew
+Tracy
+published 2 days ago
+d47d56db
+TW
+traceyew
+Tracy
+published 6 days ago
+333fc838
+TW
+traceyew
+Tracy
+published 6 days ago
+a53dd216
+TW
+traceyew
+Tracy
+published 6 days ago
+fec3abd0
+TW
+traceyew
+Tracy
+published 6 days ago
+4dea4f10
+TW
+traceyew
+Tracy
+published 6 days ago
+f8d2ab0a
+TW
+traceyew
+Tracy
+published 8 days ago
+b59f2fc0
+TW
+traceyew
+Tracy
+published 8 days ago
+a1682904
+TW
+traceyew
+Tracy
+published 8 days ago
+af4f8292
+TW
+traceyew
+Tracy
+published 10 days ago
+814e7f2e
+TW
+traceyew
+Tracy
+published 10 days ago
+4eec1a7a
+TW
+traceyew
+Tracy
+published 10 days ago
+52ddbe54
+TW
+traceyew
+Tracy
+published 10 days ago
+c6c4b232
+TW
+traceyew
+Tracy
+published 10 days ago
+ed44bc02
+TW
+traceyew
+Tracy
+published 10 days ago
+d7599624
+TW
+traceyew
+Tracy
+published 10 days ago
+5daf381c
+TW
+traceyew
+Tracy
+published 10 days ago
+5daf381c
+TW
+traceyew
+Tracy
+published 10 days ago
+Security and Privacy Scanner
+Beta
+Run a scan to check for potential security risks and privacy leaks in your application. Scans are typically complete within minutes. Learn more
+1 potential vulnerability found.
+Last ran on
+ 
+7:31 pm, Mar 12, 2026
+Security
+Detected subprocess function 'Popen' without a static string. If this data can be controlled by a malicious actor, it may be an instance of command injection. Audit the use of this call to ensure it is not controllable by an external resource. You may consider using 'shlex.escape()'.
+Vulnerability scans are enabled by the following Replit partners:
+Security scans are powered by Semgrep Community Edition.
+Privacy scans are powered by HoundDog.ai.
+Security scanning powered by Semgrep and privacy scanning powered by HoundDog.ai , both running locally on Replit infrastructure. No code or data is transmitted to any third party, including Semgrep or HoundDog.ai.
+Secrets
+SESSION_SECRET
+••••••••
+COOLIFY_TOKEN
+••••••••
+HUBSPOT_TOKEN
+••••••••
+ITFLOW_API_KEY
+••••••••
+MATRIX_PASSWORD
+••••••••
+UISP_API_KEY
+••••••••
+VOIP_PASSWORD
+••••••••
+VOIP_TOKEN
+••••••••
+VOIP_USERNAME
+••••••••
+VULTR_API_KEY
+••••••••
+NEXTCLOUD_URL
+••••••••
+NEXTCLOUD_USER
+••••••••
+NEXTCLOUD_PASSWORD
+••••••••
+ITARIAN_SD_API_KEY
+••••••••
+STRIPE_SECRET_KEY
+••••••••
+STRIPE_PUBLIC_KEY
+••••••••
+STRIPE_WEBHOOK_SECRET
+••••••••
+ITARIAN_API_KEY
+••••••••
+ITARIAN_API_URL
+••••••••
+ACTION1_API_URL
+••••••••
+ACTION1_CLIENT_ID
+••••••••
+ACTION1_API_KEY
+e6d83970a65a9ca860ca1d484a1d0db6
+Configurations
+Configurations are similar to secrets, but should only be used for non-sensitive information. They're useful for having a variable that's different between your published app and when testing on Replit.
+ANYTHINGLLM_URL
+GD7XBBE-PN3MNKA-J44S0AD-HRMGRJB
+FLOWISE_URL
+uo87UsEZxjzUIqJs_nvWy4ZtQ_zN4WC0HKBcZdDyYBA
+ITARIAN_SD_URL
+https://bluemogultech.ticketing-us.itarian.com
+
+npm run dev
+8m
+ • 
+8 minutes ago
+Port :5000 opened on
+Update company and person information on the portal to match the second image
+A recent security scan returned the following vulnerability alert using static code analysis:
+
+XSS Vulnerability: Unsafe DOM Manipulation. User controlled data in methods like innerHTML, outerHTML or document.write is an anti-pattern that can lead to XSS vulnerabilities. Replace with safe DOM methods: Use createElement() + appendChild() + textContent for dynamic content. Avoid use innerHTML with user data: Even escaped data can be risky. If HTML injection is absolutely necessary: Sanitize with DOMPurify library first.
+Location: assets/js/dashboard.js (lines 101-109)
+
+Instructions:
+
+Examine the code at the specified location to understand the vulnerability context
+Decide whether the reported issue is real. Use execution path, context, and impact to judge.
+If you have high confidence that it's exploitable, provide the smallest safe patch. Tell the user it is important to test their app before continuing with their deployment.
+If the issue is a false positive but violates coding best practices, apply the minimal fix to follow recommended patterns. Otherwise, if there's no security risk and the code follows best practices, make no change and explain why.
+How do I import leads from my Replit Project Landing Page?https://replit.com/@traceyew/Cloud-Landing
+
+Action 1 Api. Create a section called Patching in the Admin Section that feed all of the Action 1 information for each clients. Format it as the image as listed. Tha Action 1 is not pulling in the information.
+
+It's still the same look.
+
+Failing
+
+Still failing!
+
+make all the Company/Person info into Portal: Update the information to the second image for the

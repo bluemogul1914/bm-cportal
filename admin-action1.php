@@ -147,6 +147,7 @@ try {
         vulnerabilities_noncritical INTEGER DEFAULT 0,
         reboot_required BOOLEAN DEFAULT FALSE,
         user_name VARCHAR(255) DEFAULT '',
+        comment TEXT DEFAULT '',
         updated_at TIMESTAMP DEFAULT NOW()
     )");
     foreach ([
@@ -156,6 +157,7 @@ try {
         'vulnerabilities_noncritical INTEGER DEFAULT 0',
         'reboot_required BOOLEAN DEFAULT FALSE',
         'user_name VARCHAR(255) DEFAULT \'\'',
+        'comment TEXT DEFAULT \'\'',
     ] as $col_def) {
         $col_name = explode(' ', $col_def)[0];
         try { $pdo->exec("ALTER TABLE action1_endpoints ADD COLUMN IF NOT EXISTS $col_def"); } catch (Exception $e) {}
@@ -201,15 +203,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             } else {
                 $org_id = $org_result['org_id'];
                 $ep_test = action1_api_request('GET', '/endpoints/managed/' . urlencode($org_id));
-                $ep_count = isset($ep_test['error']) ? ('ERROR: ' . $ep_test['error']) : count($ep_test['items'] ?? []) . ' endpoint(s) found';
-                $success_msg = "Auth OK ✓ | Org ID: {$org_id} ✓ | Endpoint list: {$ep_count}";
-                if (isset($ep_test['error'])) {
-                    $ep_test2 = action1_api_request('GET', '/endpoints/managed/' . urlencode($org_id) . '?fields=*');
-                    $ep_count2 = isset($ep_test2['error']) ? ('ERROR: ' . $ep_test2['error']) : count($ep_test2['items'] ?? []) . ' endpoint(s) with fields=*';
-                    $success_msg .= " | With fields=*: {$ep_count2}";
-                    $error_msg = $success_msg;
-                    $success_msg = '';
+                $ep_items = $ep_test['items'] ?? [];
+                $ep_count = isset($ep_test['error']) ? ('ERROR: ' . $ep_test['error']) : count($ep_items) . ' endpoint(s) found';
+                $raw_keys = '';
+                if (!empty($ep_items)) {
+                    $first = $ep_items[0];
+                    $raw_keys = ' | First endpoint fields: ' . implode(', ', array_keys($first));
+                    $raw_keys .= ' | Sample: ' . json_encode(array_slice($first, 0, 8, true));
                 }
+                $success_msg = "Auth OK ✓ | Org: {$org_id} ✓ | {$ep_count}{$raw_keys}";
             }
         }
     }
@@ -285,8 +287,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                         if ($ts && $ts > 0) $last_seen = date('Y-m-d H:i:s', $ts);
                     }
 
-                    $uname = $ep['user'] ?? $ep['user_name'] ?? $ep['username'] ?? '';
+                    $uname = $ep['user'] ?? $ep['user_name'] ?? $ep['username'] ?? $ep['current_user'] ?? $ep['last_user'] ?? $ep['logged_user'] ?? '';
                     if (is_array($uname)) $uname = implode(', ', $uname);
+
+                    $comment = $ep['comment'] ?? $ep['description'] ?? $ep['notes'] ?? '';
+                    if (is_array($comment)) $comment = implode(', ', $comment);
+
+                    if (empty($ep['os_name']) && !empty($ep['os'])) {
+                        $ep['os_name'] = is_array($ep['os']) ? ($ep['os']['name'] ?? '') : $ep['os'];
+                        $ep['os_version'] = $ep['os_version'] ?? (is_array($ep['os']) ? ($ep['os']['version'] ?? '') : '');
+                    }
+                    if (empty($ep['hostname'])) {
+                        $ep['hostname'] = $ep['computer_name'] ?? $ep['device_name'] ?? $ep['machine_name'] ?? '';
+                    }
 
                     try {
                         $pdo->prepare("INSERT INTO action1_endpoints (action1_id, name, hostname, os_name, os_version, ip_address, mac_address, status, last_seen, agent_version, group_name, updated_at)
@@ -313,15 +326,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                             ]);
                         $synced++;
 
-                        foreach ([
-                            "UPDATE action1_endpoints SET user_name = ? WHERE action1_id = ?",
-                            "UPDATE action1_endpoints SET missing_updates = ? WHERE action1_id = ?",
-                            "UPDATE action1_endpoints SET missing_updates_critical = ? WHERE action1_id = ?",
-                            "UPDATE action1_endpoints SET vulnerabilities_critical = ? WHERE action1_id = ?",
-                            "UPDATE action1_endpoints SET vulnerabilities_noncritical = ? WHERE action1_id = ?",
-                            "UPDATE action1_endpoints SET reboot_required = ? WHERE action1_id = ?",
-                        ] as $idx => $upd_sql) {
-                            $val = [$uname, $missing_total, $missing_critical, $vulns_critical, $vulns_noncritical, $reboot_flag][$idx];
+                        $extra_updates = [
+                            "UPDATE action1_endpoints SET user_name = ? WHERE action1_id = ?" => $uname,
+                            "UPDATE action1_endpoints SET missing_updates = ? WHERE action1_id = ?" => $missing_total,
+                            "UPDATE action1_endpoints SET missing_updates_critical = ? WHERE action1_id = ?" => $missing_critical,
+                            "UPDATE action1_endpoints SET vulnerabilities_critical = ? WHERE action1_id = ?" => $vulns_critical,
+                            "UPDATE action1_endpoints SET vulnerabilities_noncritical = ? WHERE action1_id = ?" => $vulns_noncritical,
+                            "UPDATE action1_endpoints SET reboot_required = ? WHERE action1_id = ?" => $reboot_flag,
+                            "UPDATE action1_endpoints SET comment = ? WHERE action1_id = ?" => $comment,
+                        ];
+                        foreach ($extra_updates as $upd_sql => $val) {
                             try { $pdo->prepare($upd_sql)->execute([$val, $ep_id]); } catch (Exception $e) {}
                         }
 
@@ -636,46 +650,92 @@ uasort($client_patch_summary, fn($a, $b) => $b['vulns_critical'] <=> $a['vulns_c
                         </div>
                         <?php if (!empty($db_endpoints)): ?>
                         <div class="overflow-x-auto">
-                            <table class="w-full" data-testid="table-endpoints">
+                            <table class="w-full text-xs" data-testid="table-endpoints">
                                 <thead class="bg-gray-50">
                                     <tr>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Name</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Hostname</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">OS</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">IP Address</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Group</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Last Seen</th>
+                                        <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+                                        <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Comment</th>
+                                        <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">User</th>
+                                        <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                                        <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Reboot</th>
+                                        <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Endpoint Groups</th>
+                                        <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">OS</th>
+                                        <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Vulnerabilities</th>
+                                        <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Missing Updates</th>
                                     </tr>
                                 </thead>
-                                <tbody class="divide-y divide-gray-200">
+                                <tbody class="divide-y divide-gray-100">
                                     <?php foreach ($db_endpoints as $index => $ep): ?>
                                         <?php
                                             $status = strtolower($ep['status'] ?? '');
-                                            $status_class = match(true) {
-                                                $status === 'online' || $status === 'active' || $status === 'connected' => 'bg-green-500',
-                                                $status === 'offline' || $status === 'inactive' || $status === 'disconnected' => 'bg-red-500',
-                                                default => 'bg-gray-400',
-                                            };
-                                            $status_label = match(true) {
-                                                $status === 'online' || $status === 'active' || $status === 'connected' => 'Online',
-                                                $status === 'offline' || $status === 'inactive' || $status === 'disconnected' => 'Offline',
-                                                default => ucfirst($status ?: 'Unknown'),
-                                            };
+                                            $is_connected = in_array($status, ['online','active','connected']);
+                                            $is_offline   = in_array($status, ['offline','inactive','disconnected']);
+                                            $status_class = $is_connected ? 'bg-green-100 text-green-700' : ($is_offline ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600');
+                                            $status_dot   = $is_connected ? 'bg-green-500' : ($is_offline ? 'bg-red-500' : 'bg-gray-400');
+                                            $status_label = $is_connected ? 'Connected' : ($is_offline ? 'Offline' : ucfirst($status ?: 'Unknown'));
+
+                                            $reboot = $ep['reboot_required'] ?? null;
+                                            if ($reboot === '1' || $reboot === 1 || $reboot === true || strtolower((string)$reboot) === 'true') {
+                                                $reboot_html = '<span class="text-orange-600 font-medium">Required</span>';
+                                            } elseif ($reboot === '0' || $reboot === 0 || $reboot === false || strtolower((string)$reboot) === 'false') {
+                                                $reboot_html = '<span class="text-gray-500">Not required</span>';
+                                            } else {
+                                                $reboot_html = '<span class="text-gray-400">—</span>';
+                                            }
+
+                                            $vcrit  = (int)($ep['vulnerabilities_critical'] ?? 0);
+                                            $vnoncrit = (int)($ep['vulnerabilities_noncritical'] ?? 0);
+                                            $vulns_html = '';
+                                            if ($vcrit > 0)    $vulns_html .= '<span class="text-red-600 font-semibold">' . $vcrit . ' critical</span>';
+                                            if ($vcrit > 0 && $vnoncrit > 0) $vulns_html .= ', ';
+                                            if ($vnoncrit > 0) $vulns_html .= '<span class="text-yellow-600">' . $vnoncrit . ' non-critical</span>';
+                                            if (!$vulns_html && ($vcrit === 0 && $vnoncrit === 0) && ($ep['vulnerabilities_critical'] !== null)) $vulns_html = '<span class="text-green-600">None</span>';
+                                            if (!$vulns_html) $vulns_html = '<span class="text-gray-400">—</span>';
+
+                                            $mu_total   = (int)($ep['missing_updates'] ?? 0);
+                                            $mu_crit    = (int)($ep['missing_updates_critical'] ?? 0);
+                                            $mu_noncrit = $mu_total - $mu_crit;
+                                            $mu_html = '';
+                                            if ($mu_crit > 0)    $mu_html .= '<span class="text-orange-600 font-semibold">' . $mu_crit . ' critical</span>';
+                                            if ($mu_crit > 0 && $mu_noncrit > 0) $mu_html .= ', ';
+                                            if ($mu_noncrit > 0) $mu_html .= '<span class="text-yellow-600">' . $mu_noncrit . ' non-critical</span>';
+                                            if (!$mu_html && $mu_total === 0 && $ep['missing_updates'] !== null) $mu_html = '<span class="text-green-600">Up to date</span>';
+                                            if (!$mu_html) $mu_html = '<span class="text-gray-400">—</span>';
+
+                                            $os_str = trim(($ep['os_name'] ?? '') . ($ep['os_version'] ? ' (' . $ep['os_version'] . ')' : ''));
+                                            $comment_str = $ep['comment'] ?? '';
                                         ?>
-                                        <tr class="hover:bg-gray-50 transition" data-testid="endpoint-row-<?php echo $index; ?>">
-                                            <td class="px-4 py-3">
-                                                <span class="inline-flex items-center gap-1.5">
-                                                    <span class="w-2.5 h-2.5 rounded-full <?php echo $status_class; ?> inline-block"></span>
-                                                    <span class="text-xs text-gray-600"><?php echo $status_label; ?></span>
+                                        <tr class="hover:bg-blue-50/30 transition" data-testid="endpoint-row-<?php echo $index; ?>">
+                                            <td class="px-3 py-3">
+                                                <span class="font-semibold text-gray-900"><?php echo htmlspecialchars($ep['name'] ?? ''); ?></span>
+                                            </td>
+                                            <td class="px-3 py-3 text-gray-500"><?php echo $comment_str ? htmlspecialchars($comment_str) : '<span class="text-gray-300">None</span>'; ?></td>
+                                            <td class="px-3 py-3 text-gray-700">
+                                                <?php if ($ep['user_name']): ?>
+                                                    <code class="bg-gray-100 px-1 py-0.5 rounded text-xs"><?php echo htmlspecialchars($ep['user_name']); ?></code>
+                                                <?php else: ?>
+                                                    <span class="text-gray-300">—</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="px-3 py-3">
+                                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium <?php echo $status_class; ?>">
+                                                    <span class="w-1.5 h-1.5 rounded-full <?php echo $status_dot; ?>"></span>
+                                                    <?php echo $status_label; ?>
                                                 </span>
                                             </td>
-                                            <td class="px-4 py-3 text-sm font-medium text-gray-900"><?php echo htmlspecialchars($ep['name'] ?? ''); ?></td>
-                                            <td class="px-4 py-3 text-sm text-gray-600"><?php echo htmlspecialchars($ep['hostname'] ?? ''); ?></td>
-                                            <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars(($ep['os_name'] ?? '') . ($ep['os_version'] ? ' ' . $ep['os_version'] : '')); ?></td>
-                                            <td class="px-4 py-3"><code class="text-xs font-mono text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded"><?php echo htmlspecialchars($ep['ip_address'] ?? 'N/A'); ?></code></td>
-                                            <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars($ep['group_name'] ?? ''); ?></td>
-                                            <td class="px-4 py-3 text-xs text-gray-500"><?php echo isset($ep['last_seen']) && $ep['last_seen'] ? date('M d, g:i A', strtotime($ep['last_seen'])) : 'Never'; ?></td>
+                                            <td class="px-3 py-3"><?php echo $reboot_html; ?></td>
+                                            <td class="px-3 py-3 text-gray-600">
+                                                <?php if ($ep['group_name']): ?>
+                                                    <?php foreach (explode(',', $ep['group_name']) as $grp): ?>
+                                                        <span class="inline-block bg-blue-50 text-blue-700 border border-blue-200 text-xs px-1.5 py-0.5 rounded mr-1 mb-0.5"><?php echo htmlspecialchars(trim($grp)); ?></span>
+                                                    <?php endforeach; ?>
+                                                <?php else: ?>
+                                                    <span class="text-gray-300">—</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="px-3 py-3 text-gray-600"><?php echo $os_str ? htmlspecialchars($os_str) : '<span class="text-gray-300">—</span>'; ?></td>
+                                            <td class="px-3 py-3"><?php echo $vulns_html; ?></td>
+                                            <td class="px-3 py-3"><?php echo $mu_html; ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
