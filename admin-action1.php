@@ -252,6 +252,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     $next_page = $page_data['next_page'] ?? null;
                 }
 
+                $db_errors = [];
                 foreach ($all_endpoints as $ep) {
                     $ep_id = $ep['id'] ?? '';
                     if (!$ep_id) continue;
@@ -267,7 +268,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                         : (int)$updates;
 
                     $reboot_raw = strtolower((string)($ep['reboot'] ?? $ep['reboot_required'] ?? ''));
-                    $reboot_required = ($reboot_raw === 'required' || $reboot_raw === 'true' || $reboot_raw === '1');
+                    $reboot_flag = ($reboot_raw === 'required' || $reboot_raw === 'true' || $reboot_raw === '1') ? 1 : 0;
 
                     $grp = $ep['endpoint_groups'] ?? $ep['endpoint_group'] ?? $ep['group_name'] ?? '';
                     if (is_array($grp)) $grp = implode(', ', $grp);
@@ -277,21 +278,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     if (!$ip) $ip = $ep['internal_addresses'] ?? '';
                     if (is_array($ip)) $ip = implode(', ', $ip);
 
+                    $raw_last_seen = $ep['last_seen'] ?? $ep['last_seen_at'] ?? null;
+                    $last_seen = null;
+                    if ($raw_last_seen) {
+                        $ts = is_numeric($raw_last_seen) ? (int)$raw_last_seen : strtotime($raw_last_seen);
+                        if ($ts && $ts > 0) $last_seen = date('Y-m-d H:i:s', $ts);
+                    }
+
+                    $uname = $ep['user'] ?? $ep['user_name'] ?? $ep['username'] ?? '';
+                    if (is_array($uname)) $uname = implode(', ', $uname);
+
                     try {
-                        $pdo->prepare("INSERT INTO action1_endpoints (action1_id, name, hostname, os_name, os_version, ip_address, mac_address, status, last_seen, agent_version, group_name, user_name, missing_updates, missing_updates_critical, vulnerabilities_critical, vulnerabilities_noncritical, reboot_required, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                        $pdo->prepare("INSERT INTO action1_endpoints (action1_id, name, hostname, os_name, os_version, ip_address, mac_address, status, last_seen, agent_version, group_name, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                             ON CONFLICT (action1_id) DO UPDATE SET
                                 name = EXCLUDED.name, hostname = EXCLUDED.hostname,
                                 os_name = EXCLUDED.os_name, os_version = EXCLUDED.os_version,
                                 ip_address = EXCLUDED.ip_address, mac_address = EXCLUDED.mac_address,
                                 status = EXCLUDED.status, last_seen = EXCLUDED.last_seen,
                                 agent_version = EXCLUDED.agent_version, group_name = EXCLUDED.group_name,
-                                user_name = EXCLUDED.user_name,
-                                missing_updates = EXCLUDED.missing_updates,
-                                missing_updates_critical = EXCLUDED.missing_updates_critical,
-                                vulnerabilities_critical = EXCLUDED.vulnerabilities_critical,
-                                vulnerabilities_noncritical = EXCLUDED.vulnerabilities_noncritical,
-                                reboot_required = EXCLUDED.reboot_required,
                                 updated_at = NOW()")
                             ->execute([
                                 $ep_id,
@@ -302,21 +307,31 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                                 $ip,
                                 $ep['mac_address'] ?? '',
                                 $ep['status'] ?? $ep['online_status'] ?? 'unknown',
-                                $ep['last_seen'] ?? $ep['last_seen_at'] ?? null,
+                                $last_seen,
                                 $ep['agent_version'] ?? '',
                                 $grp,
-                                $ep['user'] ?? $ep['user_name'] ?? '',
-                                $missing_total,
-                                $missing_critical,
-                                $vulns_critical,
-                                $vulns_noncritical,
-                                $reboot_required ? 'true' : 'false',
                             ]);
                         $synced++;
-                    } catch (Exception $e) {}
+
+                        foreach ([
+                            "UPDATE action1_endpoints SET user_name = ? WHERE action1_id = ?",
+                            "UPDATE action1_endpoints SET missing_updates = ? WHERE action1_id = ?",
+                            "UPDATE action1_endpoints SET missing_updates_critical = ? WHERE action1_id = ?",
+                            "UPDATE action1_endpoints SET vulnerabilities_critical = ? WHERE action1_id = ?",
+                            "UPDATE action1_endpoints SET vulnerabilities_noncritical = ? WHERE action1_id = ?",
+                            "UPDATE action1_endpoints SET reboot_required = ? WHERE action1_id = ?",
+                        ] as $idx => $upd_sql) {
+                            $val = [$uname, $missing_total, $missing_critical, $vulns_critical, $vulns_noncritical, $reboot_flag][$idx];
+                            try { $pdo->prepare($upd_sql)->execute([$val, $ep_id]); } catch (Exception $e) {}
+                        }
+
+                    } catch (Exception $e) {
+                        $db_errors[] = substr($e->getMessage(), 0, 120);
+                    }
                 }
                 if ($synced === 0) {
-                    $error_msg = "Sync ran but found 0 endpoints. Org ID: {$org_id} | Path used: {$ep_path} | API returned " . count($all_endpoints) . " items before DB insert. Check that your Action1 credentials have endpoint read permissions.";
+                    $db_err_detail = !empty($db_errors) ? ' DB error: ' . $db_errors[0] : ' (no DB errors captured — columns may be missing)';
+                    $error_msg = "API returned " . count($all_endpoints) . " endpoint(s) but none saved to DB. Org: {$org_id}{$db_err_detail}";
                 } else {
                     $success_msg = "Synced {$synced} endpoints from Action1 (Org: {$org_id}).";
                 }
