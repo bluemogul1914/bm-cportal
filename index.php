@@ -49,8 +49,8 @@
             <img src="/assets/img/logo.png" alt="Blue Mogul" class="h-12 drop-shadow-lg">
         </div>
 
-        <div class="flex-1 flex flex-col items-center justify-center px-12 py-10">
-            <div class="w-full">
+        <div class="flex-1 flex flex-col items-center justify-center px-8 py-10">
+            <div class="w-full max-w-md">
 
                 <!-- Desktop: logo + heading -->
                 <div class="hidden lg:block text-center mb-8 animate-fadeInUp">
