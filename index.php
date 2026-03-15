@@ -42,7 +42,7 @@
 <body class="min-h-screen flex bg-white font-sans">
 
     <!-- Left panel — login form -->
-    <div class="w-full lg:w-1/2 xl:w-2/5 flex flex-col min-h-screen bg-gradient-to-b from-blue-mogul-secondary to-blue-mogul-primary lg:bg-none lg:bg-white">
+    <div class="w-full lg:w-1/2 flex flex-col min-h-screen bg-gradient-to-b from-blue-mogul-secondary to-blue-mogul-primary lg:bg-none lg:bg-white">
 
         <!-- Mobile: top logo bar -->
         <div class="lg:hidden flex items-center justify-center pt-10 pb-4 px-8">
@@ -50,7 +50,7 @@
         </div>
 
         <div class="flex-1 flex flex-col items-center justify-center px-8 py-10">
-            <div class="w-full max-w-sm">
+            <div class="w-full max-w-md">
 
                 <!-- Desktop: logo + heading -->
                 <div class="hidden lg:block text-center mb-8 animate-fadeInUp">
@@ -213,7 +213,7 @@
     </div>
 
     <!-- Right panel — marketing image -->
-    <div class="hidden lg:flex lg:w-1/2 xl:w-3/5 relative flex-col overflow-hidden">
+    <div class="hidden lg:flex lg:w-1/2 relative flex-col overflow-hidden">
         <img
             src="/assets/img/blue-mogul-banner.png"
             alt="Blue Mogul – High Speed Internet"
