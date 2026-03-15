@@ -220,13 +220,6 @@
             class="absolute inset-0 w-full h-full object-cover"
         >
         <div class="absolute inset-0 bg-blue-mogul-secondary/20"></div>
-        <div class="relative mt-auto p-8">
-            <div class="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl px-6 py-4 inline-block">
-                <p class="text-white/70 text-xs uppercase tracking-widest font-semibold mb-0.5">Blue Mogul</p>
-                <p class="text-white font-bold text-lg leading-tight">Client Portal</p>
-                <p class="text-white/60 text-xs mt-1">Managed Services &amp; High Speed Internet</p>
-            </div>
-        </div>
     </div>
 
     <script src="/assets/js/login.js"></script>
