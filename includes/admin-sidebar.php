@@ -84,6 +84,11 @@
                     <span>Action1 RMM</span>
                 </a>
 
+                <a href="admin-frontier.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-frontier.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-frontier">
+                    <i class="fas fa-network-wired w-5 text-orange-400"></i>
+                    <span>Frontier ASR</span>
+                </a>
+
                 <a href="admin-itflow.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-itflow.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                     <i class="fas fa-ticket-alt w-5"></i>
                     <span>ITFlow</span>
