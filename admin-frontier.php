@@ -10,7 +10,10 @@ $user_email = $_SESSION['user_email'] ?? '';
 
 $pdo = getDB();
 
-// ── Create tables ─────────────────────────────────────────────────────────────
+// ── Create / migrate tables ───────────────────────────────────────────────────
+try { $pdo->exec("ALTER TABLE frontier_orders ADD COLUMN IF NOT EXISTS product_id INTEGER"); } catch (Exception $e) {}
+try { $pdo->exec("ALTER TABLE frontier_orders ADD COLUMN IF NOT EXISTS monthly_price NUMERIC(10,2)"); } catch (Exception $e) {}
+
 $pdo->exec("CREATE TABLE IF NOT EXISTS frontier_orders (
     id               SERIAL PRIMARY KEY,
     pon              VARCHAR(50) UNIQUE NOT NULL,
@@ -97,7 +100,11 @@ if ($action === 'save_settings' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($action === 'submit_order' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $tab = 'orders';
     try {
-        $client_id = (int)($_POST['client_id'] ?? 0) ?: null;
+        $client_id   = (int)($_POST['client_id']   ?? 0) ?: null;
+        $product_id  = (int)($_POST['product_id']  ?? 0) ?: null;
+        $monthly_price = (float)($_POST['monthly_price'] ?? 0);
+        $product_name  = trim($_POST['product_name'] ?? 'Broadband Service');
+
         $orderData = [
             'activity_code'   => $_POST['activity_code']   ?? 'N',
             'address_line1'   => $_POST['address_line1']   ?? '',
@@ -119,15 +126,39 @@ if ($action === 'submit_order' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $pon = $orderManager->create($orderData, $client_id);
         $orderData['pon'] = $pon;
 
+        // ── Save product & price to order ────────────────────────────────────
+        if ($product_id || $monthly_price > 0) {
+            $pdo->prepare("UPDATE frontier_orders SET product_id=?, monthly_price=?, updated_at=NOW() WHERE pon=?")
+                ->execute([$product_id, $monthly_price ?: null, $pon]);
+        }
+
+        // ── Create invoice immediately (payment required before activation) ──
+        $invoiceId = null;
+        if ($client_id && $monthly_price > 0) {
+            try {
+                $addr = trim("{$orderData['address_line1']}, {$orderData['city']}, {$orderData['state']} {$orderData['zip']}");
+                $invoiceId = createBroadbandInvoice($pdo, $client_id, $pon, $product_name, $monthly_price, $addr);
+                $pdo->prepare("UPDATE frontier_orders SET invoice_id=?, updated_at=NOW() WHERE pon=?")
+                    ->execute([$invoiceId, $pon]);
+                $pdo->prepare("INSERT INTO frontier_logs (level, message) VALUES ('info', ?)")
+                    ->execute(["Invoice #{$invoiceId} created for PON {$pon} — {$product_name} \${$monthly_price}/mo"]);
+            } catch (Exception $ie) {
+                $pdo->prepare("INSERT INTO frontier_logs (level, message) VALUES ('warn', ?)")
+                    ->execute(["Invoice creation failed for {$pon}: " . $ie->getMessage()]);
+            }
+        }
+
         $result = $client->sendOrder($orderData);
 
         if (isset($result['error'])) {
             $pdo->prepare("UPDATE frontier_orders SET status='ERROR', remarks=?, updated_at=NOW() WHERE pon=?")
                 ->execute([$result['error'], $pon]);
             $error_msg = "Order submitted (PON: {$pon}) but Frontier returned error: " . $result['error'];
+            if ($invoiceId) $error_msg .= " Invoice #{$invoiceId} created — collect payment then retry.";
         } else {
             $orderManager->updateFromFrontierResponse($pon, $result);
-            $success_msg = "Order submitted successfully. PON: {$pon} | Status: " . ($result['status'] ?? 'RECEIVED');
+            $success_msg = "✅ Order submitted. PON: <strong>{$pon}</strong> | Status: " . ($result['status'] ?? 'RECEIVED');
+            if ($invoiceId) $success_msg .= " | <a href=\"admin-invoice-detail.php?id={$invoiceId}\" class=\"underline font-semibold\">Invoice #{$invoiceId}</a> created — send to client for payment.";
         }
 
         $pdo->prepare("INSERT INTO frontier_logs (level, message) VALUES ('info', ?)")
@@ -171,11 +202,33 @@ if ($action === 'prequalify' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function createBroadbandInvoice(PDO $pdo, int $clientId, string $pon, string $productName, float $price, string $address): int {
+    $stmt = $pdo->prepare("SELECT COALESCE(MAX(CAST(REPLACE(invoice_number,'INV-','') AS INTEGER)),0)+1 as n FROM invoices WHERE invoice_number ~ '^INV-[0-9]{3,5}$'");
+    $stmt->execute();
+    $next = (int)$stmt->fetch(PDO::FETCH_ASSOC)['n'];
+    $invoiceNum = 'INV-' . str_pad($next, 5, '0', STR_PAD_LEFT);
+    $due   = date('Y-m-d', strtotime('+30 days'));
+    $notes = "Broadband order PON: {$pon}\nPayment required before service activation.\nService address: {$address}";
+    $items = json_encode([[
+        'description' => $productName . ' — ' . $address,
+        'qty'         => 1,
+        'unit_price'  => $price,
+        'tax_rate'    => 0,
+        'amount'      => $price,
+        'tax_amount'  => 0,
+    ]]);
+    $stmt = $pdo->prepare("INSERT INTO invoices (client_id, invoice_number, amount, tax, total, status, due_date, notes, items, created_at) VALUES (?,?,?,0,?,'unpaid',?,?,?::jsonb,NOW())");
+    $stmt->execute([$clientId, $invoiceNum, $price, $price, $due, $notes, $items]);
+    return (int)$pdo->lastInsertId();
+}
+
 // ── Data for display ──────────────────────────────────────────────────────────
-$orders  = $orderManager->recent(100);
-$counts  = $orderManager->counts();
-$clients = $pdo->query("SELECT id, name, company FROM clients ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
-$logs    = $pdo->query("SELECT * FROM frontier_logs ORDER BY created_at DESC LIMIT 100")->fetchAll(PDO::FETCH_ASSOC);
+$orders           = $orderManager->recent(100);
+$counts           = $orderManager->counts();
+$clients          = $pdo->query("SELECT id, name, company FROM clients ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+$logs             = $pdo->query("SELECT * FROM frontier_logs ORDER BY created_at DESC LIMIT 100")->fetchAll(PDO::FETCH_ASSOC);
+$internetProducts = $pdo->query("SELECT id, name, price, description FROM products WHERE category='Internet' ORDER BY CAST(price AS NUMERIC) ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $host    = $_SERVER['HTTP_HOST'] ?? 'portal.bluemogul.biz';
@@ -697,6 +750,54 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                 <form method="POST" action="?tab=orders">
                     <?= csrf_field() ?>
                     <input type="hidden" name="_action" value="submit_order">
+                    <input type="hidden" name="product_id"    id="hidden-product-id"    value="">
+                    <input type="hidden" name="product_name"  id="hidden-product-name"  value="">
+                    <input type="hidden" name="monthly_price" id="hidden-monthly-price" value="">
+
+                    <!-- Invoice notice -->
+                    <div class="mb-5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex gap-3 items-start text-sm text-amber-800">
+                        <i class="fas fa-file-invoice-dollar text-amber-500 mt-0.5 flex-shrink-0"></i>
+                        <div>
+                            <span class="font-semibold">An invoice will be generated immediately on submission.</span>
+                            Payment must be collected before Frontier activates the service. The invoice is sent as <em>unpaid</em> — send it to the client and confirm payment before the service due date.
+                        </div>
+                    </div>
+
+                    <!-- Service Plan & Pricing -->
+                    <div class="mb-5">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2"><i class="fas fa-wifi text-orange-400 mr-1"></i>Service Plan</label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-3" id="product-grid">
+                            <?php foreach ($internetProducts as $prod): ?>
+                            <label class="product-card cursor-pointer flex items-center gap-3 border border-gray-200 rounded-xl px-4 py-3 hover:border-orange-400 hover:bg-orange-50 transition has-[:checked]:border-orange-500 has-[:checked]:bg-orange-50 has-[:checked]:ring-2 has-[:checked]:ring-orange-300"
+                                   data-testid="product-card-<?php echo $prod['id']; ?>">
+                                <input type="radio" name="_product_radio" value="<?php echo $prod['id']; ?>"
+                                    data-id="<?php echo $prod['id']; ?>"
+                                    data-name="<?php echo htmlspecialchars($prod['name'], ENT_QUOTES); ?>"
+                                    data-price="<?php echo number_format((float)$prod['price'], 2, '.', ''); ?>"
+                                    data-desc="<?php echo htmlspecialchars($prod['description'] ?? '', ENT_QUOTES); ?>"
+                                    class="product-radio sr-only"
+                                    onchange="selectProduct(this)">
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm font-semibold text-gray-900 leading-tight"><?php echo htmlspecialchars($prod['name']); ?></p>
+                                    <p class="text-xs text-gray-400 truncate mt-0.5"><?php echo htmlspecialchars(strtok($prod['description'] ?? '', ',') ?: ''); ?></p>
+                                </div>
+                                <span class="text-sm font-bold text-orange-600 flex-shrink-0">$<?php echo number_format((float)$prod['price'], 0); ?>/mo</span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <!-- Selected plan summary -->
+                        <div id="plan-summary" class="hidden bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center justify-between gap-4">
+                            <div>
+                                <p class="text-sm font-semibold text-green-800" id="plan-name-display"></p>
+                                <p class="text-xs text-green-600 mt-0.5" id="plan-desc-display"></p>
+                            </div>
+                            <div class="text-right flex-shrink-0">
+                                <p class="text-lg font-bold text-green-700" id="plan-price-display"></p>
+                                <p class="text-xs text-green-600">monthly</p>
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- Client & Order type -->
                     <div class="grid grid-cols-2 gap-4 mb-4">
@@ -785,6 +886,26 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                 </form>
             </div>
         </div>
+
+        <script>
+        function selectProduct(radio) {
+            document.getElementById('hidden-product-id').value    = radio.dataset.id;
+            document.getElementById('hidden-product-name').value  = radio.dataset.name;
+            document.getElementById('hidden-monthly-price').value = radio.dataset.price;
+            var summary = document.getElementById('plan-summary');
+            document.getElementById('plan-name-display').textContent  = radio.dataset.name;
+            document.getElementById('plan-desc-display').textContent  = radio.dataset.desc;
+            document.getElementById('plan-price-display').textContent = '$' + parseFloat(radio.dataset.price).toFixed(2) + '/mo';
+            summary.classList.remove('hidden');
+            // Highlight selected card
+            document.querySelectorAll('.product-card').forEach(function(lbl) {
+                lbl.classList.remove('border-orange-500','ring-2','ring-orange-300','bg-orange-50');
+                lbl.classList.add('border-gray-200');
+            });
+            radio.closest('.product-card').classList.remove('border-gray-200');
+            radio.closest('.product-card').classList.add('border-orange-500','ring-2','ring-orange-300','bg-orange-50');
+        }
+        </script>
 
         <!-- LOGS TAB -->
         <?php elseif ($tab === 'logs'): ?>

@@ -53,22 +53,48 @@ if ($action === 'receive') {
         if ($status === 'COMP' || $status === 'COMPLETED') {
             $order = $orderMgr->get($pon);
             if ($order && $order['client_id'] && !$order['invoice_id']) {
+                // No invoice was created at submission time — create one now
                 try {
-                    $cid   = (int)$order['client_id'];
-                    $today = date('Y-m-d');
-                    $due   = date('Y-m-d', strtotime('+30 days'));
-                    $desc  = 'Frontier Broadband Service — PON: ' . $pon
-                           . ' | Circuit: ' . ($parsed['circuit_id'] ?? 'N/A')
-                           . ' | ' . trim("{$order['address_line1']}, {$order['city']}, {$order['state']}");
+                    $cid         = (int)$order['client_id'];
+                    $due         = date('Y-m-d', strtotime('+30 days'));
+                    $addr        = trim("{$order['address_line1']}, {$order['city']}, {$order['state']} {$order['zip']}");
+                    $productName = 'Broadband Service';
+                    $price       = (float)($order['monthly_price'] ?? 0);
 
-                    $pdo->prepare("INSERT INTO invoices (client_id, status, issue_date, due_date, notes, created_at, updated_at) VALUES (?,?,?,?,?,NOW(),NOW())")
-                        ->execute([$cid, 'unpaid', $today, $due, $desc]);
+                    // Try to get product name from products table if we have a product_id
+                    if (!empty($order['product_id'])) {
+                        $prow = $pdo->prepare("SELECT name, price FROM products WHERE id=?");
+                        $prow->execute([$order['product_id']]);
+                        $pr = $prow->fetch(PDO::FETCH_ASSOC);
+                        if ($pr) { $productName = $pr['name']; if (!$price) $price = (float)$pr['price']; }
+                    }
+
+                    if ($price <= 0) $price = 0; // invoice even with $0 if needed
+                    $notes = "Frontier Broadband Service — PON: {$pon}\nCircuit: " . ($parsed['circuit_id'] ?? 'N/A') . "\nAddress: {$addr}";
+                    $items = json_encode([[
+                        'description' => $productName . ' — ' . $addr,
+                        'qty'         => 1,
+                        'unit_price'  => $price,
+                        'tax_rate'    => 0,
+                        'amount'      => $price,
+                        'tax_amount'  => 0,
+                    ]]);
+
+                    $nstmt = $pdo->prepare("SELECT COALESCE(MAX(CAST(REPLACE(invoice_number,'INV-','') AS INTEGER)),0)+1 as n FROM invoices WHERE invoice_number ~ '^INV-[0-9]{3,5}$'");
+                    $nstmt->execute();
+                    $next = (int)$nstmt->fetch(PDO::FETCH_ASSOC)['n'];
+                    $invoiceNum = 'INV-' . str_pad($next, 5, '0', STR_PAD_LEFT);
+
+                    $pdo->prepare("INSERT INTO invoices (client_id, invoice_number, amount, tax, total, status, due_date, notes, items, created_at) VALUES (?,?,?,0,?,'unpaid',?,?,?::jsonb,NOW())")
+                        ->execute([$cid, $invoiceNum, $price, $price, $due, $notes, $items]);
                     $invoiceId = $pdo->lastInsertId();
                     $pdo->prepare("UPDATE frontier_orders SET invoice_id=?, updated_at=NOW() WHERE pon=?")->execute([$invoiceId, $pon]);
-                    $log('info', "Invoice #{$invoiceId} auto-created for client {$cid}");
+                    $log('info', "Invoice #{$invoiceId} ({$invoiceNum}) auto-created on COMP for client {$cid}");
                 } catch (Exception $e) {
-                    $log('error', 'Invoice auto-create failed: ' . $e->getMessage());
+                    $log('error', 'Invoice auto-create on COMP failed: ' . $e->getMessage());
                 }
+            } elseif ($order && $order['invoice_id']) {
+                $log('info', "PON {$pon} COMP — invoice #{$order['invoice_id']} already exists");
             }
         }
     }
