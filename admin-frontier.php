@@ -194,9 +194,10 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
 </head>
 <body class="bg-gray-50 font-sans">
 
+<div class="flex h-screen overflow-hidden">
 <?php include 'includes/admin-sidebar.php'; ?>
 
-<div class="ml-64 min-h-screen flex flex-col">
+<div class="flex-1 overflow-y-auto flex flex-col">
     <!-- Header -->
     <div class="bg-white border-b border-gray-200 px-8 py-5 flex items-center justify-between">
         <div>
@@ -598,7 +599,8 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
         <?php endif; ?>
 
     </div><!-- /px-8 -->
-</div><!-- /ml-64 -->
+</div><!-- /flex-1 -->
+</div><!-- /flex h-screen -->
 
 </body>
 </html>
