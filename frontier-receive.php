@@ -4,7 +4,7 @@
  * Provide this URL to Frontier Connectivity Management:
  *   https://portal.bluemogul.biz/portal/frontier-receive.php?action=receive
  */
-require_once __DIR__ . '/config.php';
+require_once 'config.php';
 
 $pdo = getDB();
 
@@ -13,7 +13,7 @@ try {
     $pdo->exec("CREATE TABLE IF NOT EXISTS frontier_logs (id SERIAL PRIMARY KEY, level VARCHAR(20) DEFAULT 'info', message TEXT, created_at TIMESTAMP DEFAULT NOW())");
 } catch (Exception $e) {}
 
-require_once __DIR__ . '/includes/frontier/PortalOrderManager.php';
+require_once 'includes/frontier/PortalOrderManager.php';
 
 $action   = $_GET['action'] ?? 'receive';
 $rawBody  = file_get_contents('php://input');

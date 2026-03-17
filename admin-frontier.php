@@ -1,6 +1,12 @@
 <?php
-require_once __DIR__ . '/config.php';
-requireAdmin();
+require_once 'config.php';
+
+if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
+    portal_redirect('/portal');
+}
+
+$user_name  = $_SESSION['user_name']  ?? 'Admin';
+$user_email = $_SESSION['user_email'] ?? '';
 
 $pdo = getDB();
 
@@ -39,8 +45,8 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS frontier_logs (
     created_at TIMESTAMP DEFAULT NOW()
 )");
 
-require_once __DIR__ . '/includes/frontier/FrontierASRClient.php';
-require_once __DIR__ . '/includes/frontier/PortalOrderManager.php';
+require_once 'includes/frontier/FrontierASRClient.php';
+require_once 'includes/frontier/PortalOrderManager.php';
 
 // ── Load/save config ──────────────────────────────────────────────────────────
 $configKey = 'frontier_asr_config';
