@@ -48,12 +48,21 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS frontier_logs (
 require_once 'includes/frontier/FrontierASRClient.php';
 require_once 'includes/frontier/PortalOrderManager.php';
 
+// Ensure settings table exists before querying it
+try {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS settings (key VARCHAR(255) PRIMARY KEY, value TEXT)");
+} catch (Exception $e) {}
+
 // ── Load/save config ──────────────────────────────────────────────────────────
 $configKey = 'frontier_asr_config';
-$configRow = $pdo->prepare("SELECT value FROM settings WHERE key = ?");
-$configRow->execute([$configKey]);
-$row = $configRow->fetch(PDO::FETCH_ASSOC);
-$config = $row ? (json_decode($row['value'], true) ?: []) : [];
+try {
+    $configRow = $pdo->prepare("SELECT value FROM settings WHERE key = ?");
+    $configRow->execute([$configKey]);
+    $row = $configRow->fetch(PDO::FETCH_ASSOC);
+    $config = $row ? (json_decode($row['value'], true) ?: []) : [];
+} catch (Exception $e) {
+    $config = [];
+}
 $config = array_merge([
     'environment'   => 'TEST',
     'ccna'          => 'BMR',
@@ -68,11 +77,6 @@ $orderManager = new PortalOrderManager($pdo);
 $success_msg = '';
 $error_msg   = '';
 $tab = $_GET['tab'] ?? 'dashboard';
-
-// Ensure settings table exists
-try {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS settings (key VARCHAR(255) PRIMARY KEY, value TEXT)");
-} catch (Exception $e) {}
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 $action = $_POST['_action'] ?? $_GET['action'] ?? '';
