@@ -231,7 +231,7 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
 
         <!-- Tabs -->
         <div class="flex gap-1 mb-6 border-b border-gray-200">
-            <?php foreach (['dashboard'=>'Dashboard','prequalify'=>'Pre-Qualify','orders'=>'New Order','logs'=>'Logs','settings'=>'Settings'] as $t => $label): ?>
+            <?php foreach (['dashboard'=>'Dashboard','track'=>'Track Orders','prequalify'=>'Pre-Qualify','orders'=>'New Order','logs'=>'Logs','settings'=>'Settings'] as $t => $label): ?>
                 <a href="?tab=<?php echo $t; ?>"
                    class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition <?php echo $tab === $t ? 'border-orange-500 text-orange-600' : 'border-transparent text-gray-500 hover:text-gray-700'; ?>">
                     <?php echo $label; ?>
@@ -327,6 +327,320 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
             <?php endif; ?>
         </div>
 
+        <!-- TRACK ORDERS TAB -->
+        <?php elseif ($tab === 'track'): ?>
+
+        <?php
+        $filterStatus = $_GET['status'] ?? '';
+        $filterSearch = trim($_GET['q'] ?? '');
+        $trackOrders  = $orders; // already fetched (recent 100)
+
+        // If we need more than 100 for tracking, re-query with filter
+        $whereClause = "1=1";
+        $params = [];
+        if ($filterStatus) { $whereClause .= " AND fo.status = ?"; $params[] = $filterStatus; }
+        if ($filterSearch) { $whereClause .= " AND (fo.pon ILIKE ? OR fo.address_line1 ILIKE ? OR fo.city ILIKE ? OR c.name ILIKE ?)"; $params[] = "%{$filterSearch}%"; $params[] = "%{$filterSearch}%"; $params[] = "%{$filterSearch}%"; $params[] = "%{$filterSearch}%"; }
+
+        $trackQ = $pdo->prepare("SELECT fo.*, c.name as client_name, c.company as client_company FROM frontier_orders fo LEFT JOIN clients c ON fo.client_id = c.id WHERE {$whereClause} ORDER BY fo.created_at DESC LIMIT 200");
+        $trackQ->execute($params);
+        $trackOrders = $trackQ->fetchAll(PDO::FETCH_ASSOC);
+
+        $allStatuses = ['PENDING','RECEIVED','COMPLETED','ERROR','CANCELLED'];
+        $statusColors = [
+            'COMPLETED' => ['bg'=>'bg-green-100','text'=>'text-green-700','icon'=>'fa-check-circle'],
+            'ERROR'     => ['bg'=>'bg-red-100',  'text'=>'text-red-700',  'icon'=>'fa-times-circle'],
+            'CANCELLED' => ['bg'=>'bg-gray-100', 'text'=>'text-gray-600', 'icon'=>'fa-ban'],
+            'RECEIVED'  => ['bg'=>'bg-blue-100', 'text'=>'text-blue-700', 'icon'=>'fa-paper-plane'],
+            'PENDING'   => ['bg'=>'bg-yellow-100','text'=>'text-yellow-700','icon'=>'fa-clock'],
+        ];
+        ?>
+
+        <!-- Filter bar -->
+        <div class="bg-white border border-gray-200 rounded-xl p-4 mb-5 flex flex-wrap gap-3 items-center">
+            <form method="GET" action="" class="flex flex-wrap gap-3 items-center w-full">
+                <input type="hidden" name="tab" value="track">
+                <input type="text" name="q" value="<?php echo htmlspecialchars($filterSearch); ?>"
+                    placeholder="Search PON, address, client…"
+                    class="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px] focus:outline-none focus:ring-2 focus:ring-orange-300" data-testid="input-track-search">
+                <div class="flex gap-1 flex-wrap">
+                    <a href="?tab=track<?php echo $filterSearch ? '&q='.urlencode($filterSearch) : ''; ?>"
+                       class="px-3 py-1.5 text-xs font-medium rounded-lg <?php echo !$filterStatus ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'; ?>">
+                        All (<?php echo count($trackOrders); ?>)
+                    </a>
+                    <?php foreach ($allStatuses as $st):
+                        $cnt = $pdo->query("SELECT COUNT(*) FROM frontier_orders WHERE status='".addslashes($st)."'")->fetchColumn();
+                    ?>
+                    <a href="?tab=track&status=<?php echo $st; ?><?php echo $filterSearch ? '&q='.urlencode($filterSearch) : ''; ?>"
+                       class="px-3 py-1.5 text-xs font-medium rounded-lg <?php echo $filterStatus===$st ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'; ?>">
+                        <?php echo ucfirst(strtolower($st)); ?> (<?php echo $cnt; ?>)
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+                <button type="submit" class="px-4 py-2 bg-orange-500 text-white text-xs font-semibold rounded-lg hover:bg-orange-600 transition" data-testid="button-track-search">Search</button>
+            </form>
+        </div>
+
+        <!-- Orders list -->
+        <?php if (empty($trackOrders)): ?>
+        <div class="bg-white border border-gray-200 rounded-xl p-12 text-center text-gray-400">
+            <i class="fas fa-search text-4xl mb-3 block text-gray-200"></i>
+            <p class="text-sm">No orders match your criteria.</p>
+        </div>
+        <?php else: ?>
+        <div class="space-y-3" id="track-orders-list">
+        <?php foreach ($trackOrders as $idx => $ord):
+            $sc     = $statusColors[$ord['status']] ?? ['bg'=>'bg-gray-100','text'=>'text-gray-600','icon'=>'fa-circle'];
+            $errors = json_decode($ord['errors'] ?? '[]', true) ?: [];
+            $resp   = $ord['raw_response'] ?? '';
+            $req    = $ord['raw_request']  ?? '';
+
+            // Parse key fields from raw SOAP response
+            $respCircuit  = '';
+            $respDueDate  = '';
+            $respStatus   = '';
+            $respErrors   = [];
+            if ($resp) {
+                if (preg_match('/<CircuitID[^>]*>([^<]+)<\/CircuitID>/i', $resp, $m)) $respCircuit = $m[1];
+                if (preg_match('/<DueDate[^>]*>([^<]+)<\/DueDate>/i', $resp, $m))     $respDueDate = $m[1];
+                if (preg_match('/<Status[^>]*>([^<]+)<\/Status>/i', $resp, $m))       $respStatus  = $m[1];
+                preg_match_all('/<ErrorMessage[^>]*>([^<]+)<\/ErrorMessage>/i', $resp, $em);
+                $respErrors = $em[1] ?? [];
+                preg_match_all('/<ErrorDescription[^>]*>([^<]+)<\/ErrorDescription>/i', $resp, $ed);
+                if (!empty($ed[1])) $respErrors = array_merge($respErrors, $ed[1]);
+            }
+            if (empty($respErrors)) $respErrors = $errors;
+
+            $actLabel = match($ord['activity_code'] ?? 'N') {
+                'N'=>'New Install', 'C'=>'Change', 'D'=>'Disconnect', 'T'=>'Transfer', default => $ord['activity_code'] ?? 'N'
+            };
+        ?>
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="order-card-<?php echo (int)$ord['id']; ?>">
+            <!-- Collapsed header row -->
+            <div class="px-5 py-4 flex items-center gap-4 cursor-pointer hover:bg-gray-50 transition order-toggle" onclick="toggleOrder(<?php echo (int)$ord['id']; ?>)" data-testid="button-expand-order-<?php echo (int)$ord['id']; ?>">
+                <!-- Status icon -->
+                <span class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 <?php echo $sc['bg'].' '.$sc['text']; ?>">
+                    <i class="fas <?php echo $sc['icon']; ?>"></i>
+                </span>
+                <!-- PON + client -->
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-mono text-sm font-bold text-gray-900" data-testid="text-pon-<?php echo (int)$ord['id']; ?>"><?php echo htmlspecialchars($ord['pon']); ?></span>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold <?php echo $sc['bg'].' '.$sc['text']; ?>"><?php echo htmlspecialchars($ord['status']); ?></span>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600"><?php echo htmlspecialchars($actLabel); ?></span>
+                        <?php if (!empty($respErrors)): ?>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-600"><i class="fas fa-exclamation-circle mr-1"></i><?php echo count($respErrors); ?> error(s)</span>
+                        <?php endif; ?>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-0.5 truncate">
+                        <?php if ($ord['client_name']): ?><span class="font-medium text-gray-700"><?php echo htmlspecialchars($ord['client_name']); ?></span> &mdash; <?php endif; ?>
+                        <?php echo htmlspecialchars(trim("{$ord['address_line1']}, {$ord['city']}, {$ord['state']} {$ord['zip']}")); ?>
+                    </p>
+                </div>
+                <!-- Quick meta -->
+                <div class="hidden sm:flex flex-col items-end gap-1 flex-shrink-0 text-right">
+                    <?php if ($ord['circuit_id']): ?>
+                    <span class="font-mono text-xs text-blue-700 font-semibold" data-testid="text-circuit-<?php echo (int)$ord['id']; ?>"><?php echo htmlspecialchars($ord['circuit_id']); ?></span>
+                    <?php endif; ?>
+                    <span class="text-xs text-gray-400"><?php echo $ord['created_at'] ? date('M d, Y', strtotime($ord['created_at'])) : '—'; ?></span>
+                    <?php if ($ord['desired_due_date']): ?>
+                    <span class="text-[10px] text-gray-400">Due <?php echo date('M d, Y', strtotime($ord['desired_due_date'])); ?></span>
+                    <?php endif; ?>
+                </div>
+                <i class="fas fa-chevron-down text-gray-400 text-xs transition-transform order-chevron-<?php echo (int)$ord['id']; ?>"></i>
+            </div>
+
+            <!-- Expanded detail panel (hidden by default) -->
+            <div id="order-detail-<?php echo (int)$ord['id']; ?>" class="hidden border-t border-gray-100">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-gray-100">
+
+                    <!-- Left: Order details -->
+                    <div class="p-5">
+                        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3"><i class="fas fa-file-alt text-orange-400 mr-1"></i>Order Details</h3>
+                        <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                            <dt class="text-gray-500">PON</dt>
+                            <dd class="font-mono font-semibold text-gray-900"><?php echo htmlspecialchars($ord['pon']); ?></dd>
+
+                            <dt class="text-gray-500">Activity</dt>
+                            <dd class="text-gray-800"><?php echo htmlspecialchars($actLabel); ?></dd>
+
+                            <dt class="text-gray-500">Address</dt>
+                            <dd class="text-gray-800 col-span-1"><?php echo htmlspecialchars($ord['address_line1']); ?></dd>
+
+                            <dt class="text-gray-500">City / State</dt>
+                            <dd class="text-gray-800"><?php echo htmlspecialchars("{$ord['city']}, {$ord['state']} {$ord['zip']}"); ?></dd>
+
+                            <?php if ($ord['account_number']): ?>
+                            <dt class="text-gray-500">Account #</dt>
+                            <dd class="font-mono text-gray-800"><?php echo htmlspecialchars($ord['account_number']); ?></dd>
+                            <?php endif; ?>
+
+                            <?php if ($ord['circuit_id']): ?>
+                            <dt class="text-gray-500">Circuit ID</dt>
+                            <dd class="font-mono text-blue-700 font-semibold"><?php echo htmlspecialchars($ord['circuit_id']); ?></dd>
+                            <?php endif; ?>
+
+                            <?php if ($ord['desired_due_date']): ?>
+                            <dt class="text-gray-500">Desired Due</dt>
+                            <dd class="text-gray-800"><?php echo date('M d, Y', strtotime($ord['desired_due_date'])); ?></dd>
+                            <?php endif; ?>
+
+                            <?php if ($ord['contact_name']): ?>
+                            <dt class="text-gray-500">Contact</dt>
+                            <dd class="text-gray-800"><?php echo htmlspecialchars($ord['contact_name']); ?></dd>
+                            <?php endif; ?>
+
+                            <?php if ($ord['contact_phone']): ?>
+                            <dt class="text-gray-500">Phone</dt>
+                            <dd class="text-gray-800"><?php echo htmlspecialchars($ord['contact_phone']); ?></dd>
+                            <?php endif; ?>
+
+                            <?php if ($ord['contact_email']): ?>
+                            <dt class="text-gray-500">Email</dt>
+                            <dd class="text-gray-800 break-all"><?php echo htmlspecialchars($ord['contact_email']); ?></dd>
+                            <?php endif; ?>
+
+                            <dt class="text-gray-500">Submitted</dt>
+                            <dd class="text-gray-800"><?php echo $ord['created_at'] ? date('M d, Y g:ia', strtotime($ord['created_at'])) : '—'; ?></dd>
+
+                            <?php if ($ord['updated_at'] && $ord['updated_at'] !== $ord['created_at']): ?>
+                            <dt class="text-gray-500">Updated</dt>
+                            <dd class="text-gray-800"><?php echo date('M d, Y g:ia', strtotime($ord['updated_at'])); ?></dd>
+                            <?php endif; ?>
+                        </dl>
+
+                        <!-- Client link -->
+                        <?php if ($ord['client_id']): ?>
+                        <div class="mt-4 pt-3 border-t border-gray-100 flex gap-2 flex-wrap">
+                            <a href="admin-client-detail.php?id=<?php echo (int)$ord['client_id']; ?>&tab=broadband"
+                               class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition" data-testid="link-client-<?php echo (int)$ord['id']; ?>">
+                                <i class="fas fa-user"></i> <?php echo htmlspecialchars($ord['client_name']); ?>
+                            </a>
+                            <?php if ($ord['invoice_id']): ?>
+                            <a href="admin-invoice-detail.php?id=<?php echo (int)$ord['invoice_id']; ?>"
+                               class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition" data-testid="link-invoice-<?php echo (int)$ord['id']; ?>">
+                                <i class="fas fa-file-invoice-dollar"></i> Invoice #<?php echo (int)$ord['invoice_id']; ?>
+                            </a>
+                            <?php endif; ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- Right: Frontier response -->
+                    <div class="p-5">
+                        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3"><i class="fas fa-satellite-dish text-orange-400 mr-1"></i>Frontier Response</h3>
+
+                        <?php if ($ord['status'] === 'PENDING' && !$resp): ?>
+                        <div class="flex items-center gap-2 text-yellow-600 text-sm bg-yellow-50 rounded-lg px-4 py-3">
+                            <i class="fas fa-clock"></i>
+                            <span>Awaiting Frontier confirmation. No response received yet.</span>
+                        </div>
+                        <?php else: ?>
+
+                        <!-- Status from Frontier -->
+                        <div class="flex items-center gap-2 mb-4">
+                            <span class="px-3 py-1 rounded-full text-xs font-bold <?php echo $sc['bg'].' '.$sc['text']; ?>">
+                                <i class="fas <?php echo $sc['icon']; ?> mr-1"></i><?php echo htmlspecialchars($ord['status']); ?>
+                            </span>
+                            <?php if ($respStatus && $respStatus !== $ord['status']): ?>
+                            <span class="text-xs text-gray-500">(Frontier: <?php echo htmlspecialchars($respStatus); ?>)</span>
+                            <?php endif; ?>
+                        </div>
+
+                        <?php if ($respCircuit): ?>
+                        <div class="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <p class="text-xs font-medium text-blue-600 uppercase tracking-wide mb-1">Circuit ID Assigned</p>
+                            <p class="font-mono text-sm font-bold text-blue-800"><?php echo htmlspecialchars($respCircuit); ?></p>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if ($respDueDate): ?>
+                        <div class="mb-3 text-sm">
+                            <span class="text-gray-500">Frontier Due Date: </span>
+                            <span class="font-semibold text-gray-800"><?php echo htmlspecialchars($respDueDate); ?></span>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($respErrors)): ?>
+                        <div class="mb-3">
+                            <p class="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2"><i class="fas fa-exclamation-triangle mr-1"></i>Errors from Frontier</p>
+                            <ul class="space-y-1">
+                                <?php foreach ($respErrors as $err): ?>
+                                <li class="text-xs bg-red-50 border border-red-100 text-red-700 rounded px-3 py-2"><?php echo htmlspecialchars($err); ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if ($ord['remarks']): ?>
+                        <div class="mb-3">
+                            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Remarks</p>
+                            <p class="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2"><?php echo nl2br(htmlspecialchars($ord['remarks'])); ?></p>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if ($ord['billing_result']): ?>
+                        <div class="mb-3">
+                            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Billing Result</p>
+                            <?php $br = json_decode($ord['billing_result'], true); ?>
+                            <p class="text-xs text-gray-600 bg-gray-50 rounded px-3 py-2">
+                                <?php echo htmlspecialchars(is_array($br) ? ($br['message'] ?? json_encode($br)) : $ord['billing_result']); ?>
+                            </p>
+                        </div>
+                        <?php endif; ?>
+
+                        <!-- Raw response toggle -->
+                        <?php if ($resp): ?>
+                        <div class="mt-3">
+                            <button onclick="toggleRaw(<?php echo (int)$ord['id']; ?>)"
+                                class="text-xs text-gray-400 hover:text-gray-600 underline" data-testid="button-raw-<?php echo (int)$ord['id']; ?>">
+                                Show raw Frontier response
+                            </button>
+                            <pre id="raw-resp-<?php echo (int)$ord['id']; ?>" class="hidden mt-2 bg-gray-900 text-green-400 text-[10px] rounded-lg p-3 overflow-x-auto max-h-48 leading-relaxed"><?php echo htmlspecialchars($resp); ?></pre>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php endif; // end if PENDING ?>
+                    </div>
+                </div>
+
+                <!-- Raw request toggle -->
+                <?php if ($req): ?>
+                <div class="border-t border-gray-100 px-5 py-3">
+                    <button onclick="toggleRawReq(<?php echo (int)$ord['id']; ?>)"
+                        class="text-xs text-gray-400 hover:text-gray-600 underline" data-testid="button-rawreq-<?php echo (int)$ord['id']; ?>">
+                        Show raw request sent to Frontier
+                    </button>
+                    <pre id="raw-req-<?php echo (int)$ord['id']; ?>" class="hidden mt-2 bg-gray-900 text-cyan-400 text-[10px] rounded-lg p-3 overflow-x-auto max-h-40 leading-relaxed"><?php echo htmlspecialchars($req); ?></pre>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+        </div><!-- /track-orders-list -->
+        <?php endif; ?>
+
+        <script>
+        function toggleOrder(id) {
+            var panel = document.getElementById('order-detail-' + id);
+            var chevron = document.querySelector('.order-chevron-' + id);
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                if (chevron) chevron.style.transform = 'rotate(180deg)';
+            } else {
+                panel.classList.add('hidden');
+                if (chevron) chevron.style.transform = '';
+            }
+        }
+        function toggleRaw(id) {
+            var el = document.getElementById('raw-resp-' + id);
+            el.classList.toggle('hidden');
+        }
+        function toggleRawReq(id) {
+            var el = document.getElementById('raw-req-' + id);
+            el.classList.toggle('hidden');
+        }
+        </script>
+
         <!-- PRE-QUALIFY TAB -->
         <?php elseif ($tab === 'prequalify'): ?>
         <div class="max-w-2xl">
@@ -388,10 +702,11 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                     <div class="grid grid-cols-2 gap-4 mb-4">
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Client</label>
+                            <?php $preselectedClientId = (int)($_GET['client_id'] ?? 0); ?>
                             <select name="client_id" data-testid="select-client" class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
                                 <option value="">— Select client —</option>
                                 <?php foreach ($clients as $cl): ?>
-                                    <option value="<?php echo $cl['id']; ?>"><?php echo htmlspecialchars($cl['company'] ?: $cl['name']); ?></option>
+                                    <option value="<?php echo $cl['id']; ?>" <?php echo $preselectedClientId === (int)$cl['id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($cl['company'] ?: $cl['name']); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>

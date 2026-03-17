@@ -242,6 +242,13 @@ try {
         $cloud_instances = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (\Exception $e) {}
 
+    $broadband_orders = [];
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM frontier_orders WHERE client_id = ? ORDER BY created_at DESC");
+        $stmt->execute([$client_id]);
+        $broadband_orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (\Exception $e) { $broadband_orders = []; }
+
     $client_notes = $client['notes'] ?? '';
     $client_tags = [];
     if (preg_match('/\[TAGS:(.*?)\]/', $client_notes, $m)) {
@@ -344,14 +351,15 @@ $show_map = $has_location || $has_address;
             <div class="px-6 pb-2 flex gap-1 overflow-x-auto">
                 <?php
                 $tabs = [
-                    'overview' => 'Overview',
-                    'invoices' => 'Invoices',
-                    'payments' => 'Payments',
-                    'documents' => 'Documents',
-                    'tickets' => 'Tickets',
-                    'network' => 'Network',
-                    'cloud' => 'Cloud',
-                    'projects' => 'Projects',
+                    'overview'   => 'Overview',
+                    'invoices'   => 'Invoices',
+                    'payments'   => 'Payments',
+                    'documents'  => 'Documents',
+                    'tickets'    => 'Tickets',
+                    'broadband'  => 'Broadband' . (count($broadband_orders) ? ' (' . count($broadband_orders) . ')' : ''),
+                    'network'    => 'Network',
+                    'cloud'      => 'Cloud',
+                    'projects'   => 'Projects',
                 ];
                 foreach ($tabs as $tk => $tv):
                     $tab_active = ($active_tab === $tk) ? 'border-b-2 border-primary text-primary font-medium' : 'text-gray-500 hover:text-gray-700';
@@ -1229,6 +1237,133 @@ $show_map = $has_location || $has_address;
                     </a>
                     <?php endforeach; ?>
                 </div>
+                <?php endif; ?>
+            </div>
+
+            <?php elseif ($active_tab === 'broadband'): ?>
+
+            <?php
+            $bbStatusColors = [
+                'COMPLETED' => ['bg'=>'bg-green-100','text'=>'text-green-700'],
+                'ERROR'     => ['bg'=>'bg-red-100',  'text'=>'text-red-700'],
+                'CANCELLED' => ['bg'=>'bg-gray-100', 'text'=>'text-gray-600'],
+                'RECEIVED'  => ['bg'=>'bg-blue-100', 'text'=>'text-blue-700'],
+                'PENDING'   => ['bg'=>'bg-yellow-100','text'=>'text-yellow-700'],
+            ];
+            ?>
+
+            <div class="bg-white rounded-lg border border-gray-200 mb-4">
+                <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900">
+                        <i class="fas fa-network-wired text-orange-500 mr-2"></i>
+                        Broadband Orders (<?php echo count($broadband_orders); ?>)
+                    </h2>
+                    <a href="admin-frontier.php?tab=orders&client_id=<?php echo $client_id; ?>"
+                       class="px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition"
+                       data-testid="button-new-broadband-order">
+                        <i class="fas fa-plus mr-1"></i>New Order
+                    </a>
+                </div>
+
+                <?php if (empty($broadband_orders)): ?>
+                <div class="p-8 text-center text-gray-400">
+                    <i class="fas fa-wifi text-4xl mb-3 block text-gray-200"></i>
+                    <p class="text-sm">No broadband orders yet for this client.</p>
+                    <a href="admin-frontier.php?tab=orders&client_id=<?php echo $client_id; ?>"
+                       class="mt-3 inline-block px-4 py-2 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">
+                        Submit First Order
+                    </a>
+                </div>
+                <?php else: ?>
+                <div class="divide-y divide-gray-100">
+                <?php foreach ($broadband_orders as $bord):
+                    $bsc = $bbStatusColors[$bord['status']] ?? ['bg'=>'bg-gray-100','text'=>'text-gray-600'];
+                    $berrors = json_decode($bord['errors'] ?? '[]', true) ?: [];
+
+                    // Parse Frontier response
+                    $bresp = $bord['raw_response'] ?? '';
+                    $bCircuit = $bord['circuit_id'] ?? '';
+                    $bRespErrors = [];
+                    if ($bresp) {
+                        if (!$bCircuit && preg_match('/<CircuitID[^>]*>([^<]+)<\/CircuitID>/i', $bresp, $bm)) $bCircuit = $bm[1];
+                        preg_match_all('/<ErrorMessage[^>]*>([^<]+)<\/ErrorMessage>/i', $bresp, $bem);
+                        preg_match_all('/<ErrorDescription[^>]*>([^<]+)<\/ErrorDescription>/i', $bresp, $bed);
+                        $bRespErrors = array_merge($bem[1] ?? [], $bed[1] ?? []);
+                    }
+                    if (empty($bRespErrors)) $bRespErrors = $berrors;
+
+                    $bActLabel = match($bord['activity_code'] ?? 'N') {
+                        'N'=>'New Install','C'=>'Change','D'=>'Disconnect','T'=>'Transfer',default=>$bord['activity_code']??'N'
+                    };
+                ?>
+                <div class="px-5 py-4" data-testid="broadband-order-<?php echo (int)$bord['id']; ?>">
+                    <div class="flex items-start gap-4">
+                        <!-- Status pill + icon -->
+                        <div class="flex-shrink-0 pt-0.5">
+                            <span class="px-2.5 py-1 rounded-full text-[11px] font-bold <?php echo $bsc['bg'].' '.$bsc['text']; ?>">
+                                <?php echo htmlspecialchars($bord['status']); ?>
+                            </span>
+                        </div>
+
+                        <!-- Main info -->
+                        <div class="flex-1 min-w-0">
+                            <div class="flex flex-wrap items-center gap-2 mb-1">
+                                <span class="font-mono text-sm font-bold text-gray-900" data-testid="text-bb-pon-<?php echo (int)$bord['id']; ?>"><?php echo htmlspecialchars($bord['pon']); ?></span>
+                                <span class="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium"><?php echo htmlspecialchars($bActLabel); ?></span>
+                                <?php if ($bCircuit): ?>
+                                <span class="text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-mono font-semibold" data-testid="text-bb-circuit-<?php echo (int)$bord['id']; ?>"><?php echo htmlspecialchars($bCircuit); ?></span>
+                                <?php endif; ?>
+                            </div>
+                            <p class="text-sm text-gray-700">
+                                <?php echo htmlspecialchars(trim("{$bord['address_line1']}, {$bord['city']}, {$bord['state']} {$bord['zip']}")); ?>
+                            </p>
+
+                            <!-- Frontier feedback -->
+                            <?php if ($bord['status'] === 'COMPLETED' && $bCircuit): ?>
+                            <div class="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-800">
+                                <i class="fas fa-check-circle text-green-500"></i>
+                                <span>Service active &mdash; Circuit: <strong><?php echo htmlspecialchars($bCircuit); ?></strong></span>
+                            </div>
+                            <?php elseif (!empty($bRespErrors)): ?>
+                            <div class="mt-2 space-y-1">
+                                <?php foreach ($bRespErrors as $berr): ?>
+                                <div class="inline-flex items-center gap-1.5 px-3 py-1 bg-red-50 border border-red-100 rounded text-xs text-red-700">
+                                    <i class="fas fa-exclamation-circle text-red-400"></i>
+                                    <?php echo htmlspecialchars($berr); ?>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <?php elseif ($bord['status'] === 'PENDING'): ?>
+                            <div class="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-yellow-50 border border-yellow-100 rounded text-xs text-yellow-700">
+                                <i class="fas fa-clock text-yellow-400"></i>
+                                Awaiting Frontier confirmation
+                            </div>
+                            <?php elseif ($bord['remarks']): ?>
+                            <p class="mt-2 text-xs text-gray-500 italic"><?php echo htmlspecialchars($bord['remarks']); ?></p>
+                            <?php endif; ?>
+                        </div>
+
+                        <!-- Right meta -->
+                        <div class="flex-shrink-0 text-right text-xs text-gray-400 space-y-1">
+                            <p><?php echo $bord['created_at'] ? date('M d, Y', strtotime($bord['created_at'])) : '—'; ?></p>
+                            <?php if ($bord['desired_due_date']): ?>
+                            <p class="text-gray-500">Due <?php echo date('M d', strtotime($bord['desired_due_date'])); ?></p>
+                            <?php endif; ?>
+                            <?php if ($bord['invoice_id']): ?>
+                            <a href="admin-invoice-detail.php?id=<?php echo (int)$bord['invoice_id']; ?>"
+                               class="text-blue-600 hover:underline block" data-testid="link-bb-invoice-<?php echo (int)$bord['id']; ?>">
+                                Invoice #<?php echo (int)$bord['invoice_id']; ?>
+                            </a>
+                            <?php endif; ?>
+                            <a href="admin-frontier.php?tab=track&q=<?php echo urlencode($bord['pon']); ?>"
+                               class="text-orange-600 hover:underline block" data-testid="link-bb-track-<?php echo (int)$bord['id']; ?>">
+                                View in Frontier
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                </div><!-- /divide-y -->
                 <?php endif; ?>
             </div>
 
