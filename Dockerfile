@@ -1,4 +1,6 @@
-FROM node:20-bookworm AS builder
+FROM node:20-alpine AS builder
+
+RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 
@@ -8,16 +10,19 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:20-bookworm-slim AS runner
+FROM node:20-alpine AS runner
 
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     php \
     php-pgsql \
     php-curl \
     php-mbstring \
+    php-dom \
+    php-openssl \
+    php-session \
+    php-tokenizer \
     php-xml \
-    --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+    php-simplexml
 
 WORKDIR /app
 
