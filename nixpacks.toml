@@ -3,13 +3,13 @@ NODE_ENV = "production"
 PORT = "3000"
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "php83", "php83Packages.pgsql", "php83Packages.curl"]
+nixPkgs = ["nodejs_20", "php83", "php83Extensions.pdo_pgsql", "php83Extensions.curl"]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm ci --omit=dev"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["echo pre-built dist in repo - skipping build"]
 
 [start]
 cmd = "node dist/index.cjs"
