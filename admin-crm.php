@@ -605,8 +605,12 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
             }
             $detail_id = intval($_GET['cid'] ?? 0);
             $detail_company = null;
+            $company_contacts = [];
             if ($detail_id) {
                 foreach ($companies as $c) { if ($c['id'] == $detail_id) { $detail_company = $c; break; } }
+                if ($detail_company) {
+                    try { $company_contacts = $pdo->prepare("SELECT id, name, email, phone, company, client_code FROM clients WHERE crm_company_id = ? ORDER BY name")->execute([$detail_id]) ? $pdo->query("SELECT id, name, email, phone, company, client_code FROM clients WHERE crm_company_id = $detail_id ORDER BY name")->fetchAll(PDO::FETCH_ASSOC) : []; } catch(\Exception $e) {}
+                }
             }
             ?>
             <?php if ($detail_company): ?>
@@ -702,6 +706,36 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                             </div>
                             <?php endforeach; ?>
                         </div>
+                    </div>
+                    <div class="bg-white rounded-xl border border-gray-200 p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-gray-900">Contacts (<?= count($company_contacts) ?>)</h3>
+                            <a href="admin-clients.php" class="text-xs text-blue-600 hover:underline">+ Add</a>
+                        </div>
+                        <?php if (empty($company_contacts)): ?>
+                        <p class="text-xs text-gray-400 italic">No contacts linked yet. Link a contact from their client detail page.</p>
+                        <?php else: ?>
+                        <div class="space-y-3">
+                            <?php foreach ($company_contacts as $ct): ?>
+                            <div class="flex items-start gap-2" data-testid="contact-item-<?= $ct['id'] ?>">
+                                <div class="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600 flex-shrink-0 mt-0.5">
+                                    <?= strtoupper(substr($ct['name'], 0, 1)) ?>
+                                </div>
+                                <div class="min-w-0">
+                                    <a href="admin-client-detail.php?id=<?= $ct['id'] ?>" class="text-sm font-semibold text-gray-900 hover:text-blue-600 truncate block" data-testid="link-contact-<?= $ct['id'] ?>"><?= htmlspecialchars($ct['name']) ?></a>
+                                    <?php $cc = !empty($ct['client_code']) ? $ct['client_code'] : ('BL' . (100000 + $ct['id'])); ?>
+                                    <span class="text-[10px] font-mono text-blue-500"><?= $cc ?></span>
+                                    <?php if ($ct['email']): ?>
+                                    <a href="mailto:<?= htmlspecialchars($ct['email']) ?>" class="text-[11px] text-gray-400 hover:text-blue-500 truncate block"><?= htmlspecialchars($ct['email']) ?></a>
+                                    <?php endif; ?>
+                                    <?php if ($ct['phone']): ?>
+                                    <span class="text-[11px] text-gray-400"><?= htmlspecialchars($ct['phone']) ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div class="bg-white rounded-xl border border-gray-200 p-5">
                         <div class="flex items-center justify-between mb-3">

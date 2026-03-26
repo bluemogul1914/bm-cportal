@@ -112,6 +112,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
     }
 
+    if ($action === 'link_company') {
+        $cid = intval($_POST['crm_company_id'] ?? 0) ?: null;
+        try {
+            $pdo->prepare("UPDATE clients SET crm_company_id = ? WHERE id = ?")->execute([$cid, $client_id]);
+            if ($cid) {
+                $co_name = $pdo->prepare("SELECT name FROM crm_companies WHERE id = ?")->execute([$cid]) ? $pdo->query("SELECT name FROM crm_companies WHERE id = $cid")->fetchColumn() : '';
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?,?,?,?,?,?)")
+                    ->execute([$user_id, 'company_linked', 'client', $client_id, 'Linked to company: ' . $co_name, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+                $success_msg = 'Company linked successfully.';
+            } else {
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?,?,?,?,?,?)")
+                    ->execute([$user_id, 'company_unlinked', 'client', $client_id, 'Removed company link', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+                $success_msg = 'Company link removed.';
+            }
+        } catch (\Exception $e) { $error_msg = 'Failed to update company link.'; }
+    }
+
     if ($action === 'send_portal_invite') {
         require_once 'includes/email.php';
         try {
@@ -169,7 +186,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 }
 
 try {
-    $stmt = $pdo->prepare("SELECT c.*, u.email as user_email, u.created_at as user_created_at FROM clients c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ?");
+    $stmt = $pdo->prepare("SELECT c.*, u.email as user_email, u.created_at as user_created_at, co.name as crm_company_name, co.id as crm_company_id_linked FROM clients c LEFT JOIN users u ON c.user_id = u.id LEFT JOIN crm_companies co ON c.crm_company_id = co.id WHERE c.id = ?");
     $stmt->execute([$client_id]);
     $client = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$client) {
@@ -248,6 +265,9 @@ try {
         $stmt->execute([$client_id]);
         $broadband_orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (\Exception $e) { $broadband_orders = []; }
+
+    $all_crm_companies = [];
+    try { $all_crm_companies = $pdo->query("SELECT id, name FROM crm_companies ORDER BY name")->fetchAll(PDO::FETCH_ASSOC); } catch(\Exception $e) {}
 
     $client_notes = $client['notes'] ?? '';
     $client_tags = [];
@@ -613,12 +633,22 @@ $show_map = $has_location || $has_address;
                                             <?php $display_code = !empty($client['client_code']) ? $client['client_code'] : ('BL' . (100000 + $client_id)); ?>
                                             <p class="font-mono font-semibold text-blue-700 text-sm" data-testid="text-client-id"><?php echo htmlspecialchars($display_code); ?></p>
                                         </div>
-                                        <?php if ($client['company']): ?>
                                         <div>
                                             <span class="text-[10px] text-gray-400 uppercase">Company</span>
-                                            <p class="font-medium text-gray-700"><?php echo htmlspecialchars($client['company']); ?></p>
+                                            <?php if (!empty($client['crm_company_id_linked'])): ?>
+                                            <div class="flex items-center gap-1 mt-0.5">
+                                                <a href="admin-crm.php?tab=companies&cid=<?= $client['crm_company_id_linked'] ?>" class="text-sm font-semibold text-blue-600 hover:underline" data-testid="link-crm-company"><i class="fas fa-building mr-1 text-xs"></i><?= htmlspecialchars($client['crm_company_name']) ?></a>
+                                                <button onclick="document.getElementById('link-company-modal').classList.remove('hidden')" class="text-[11px] text-gray-400 hover:text-gray-600 ml-1" title="Change"><i class="fas fa-pen"></i></button>
+                                            </div>
+                                            <?php elseif ($client['company']): ?>
+                                            <div class="flex items-center gap-1 mt-0.5">
+                                                <p class="text-sm font-medium text-gray-700"><?= htmlspecialchars($client['company']) ?></p>
+                                                <button onclick="document.getElementById('link-company-modal').classList.remove('hidden')" class="text-[11px] text-gray-400 hover:text-blue-500 ml-1" title="Link to CRM Company"><i class="fas fa-link"></i></button>
+                                            </div>
+                                            <?php else: ?>
+                                            <button onclick="document.getElementById('link-company-modal').classList.remove('hidden')" class="text-sm text-blue-500 hover:underline mt-0.5 flex items-center gap-1" data-testid="button-link-company"><i class="fas fa-link text-xs"></i> Link company</button>
+                                            <?php endif; ?>
                                         </div>
-                                        <?php endif; ?>
                                     </div>
                                     <div class="mt-2">
                                         <span class="text-[10px] text-gray-400 uppercase">Email</span>
@@ -1432,5 +1462,35 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <?php endif; ?>
+
+<!-- Link Company Modal -->
+<div id="link-company-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl w-full max-w-sm shadow-2xl">
+        <div class="flex items-center justify-between px-5 py-4 border-b">
+            <h3 class="text-base font-semibold text-gray-900"><i class="fas fa-building text-blue-500 mr-2"></i>Link CRM Company</h3>
+            <button onclick="document.getElementById('link-company-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form method="POST" class="p-5 space-y-4">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="action" value="link_company">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Select Company</label>
+                <select name="crm_company_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-link-company">
+                    <option value="">— None (unlink) —</option>
+                    <?php foreach ($all_crm_companies as $co): ?>
+                    <option value="<?= $co['id'] ?>" <?= (!empty($client['crm_company_id_linked']) && $client['crm_company_id_linked'] == $co['id']) ? 'selected' : '' ?>><?= htmlspecialchars($co['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if (empty($all_crm_companies)): ?>
+                <p class="text-xs text-amber-600 mt-1"><i class="fas fa-info-circle mr-1"></i>No companies yet. <a href="admin-crm.php?tab=companies" class="underline">Add one in CRM</a></p>
+                <?php endif; ?>
+            </div>
+            <div class="flex justify-end gap-3">
+                <button type="button" onclick="document.getElementById('link-company-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-submit-link-company">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
 </body>
 </html>

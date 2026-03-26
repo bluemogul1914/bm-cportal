@@ -1854,6 +1854,8 @@ async function bootstrapPortalDatabase() {
       )
     `);
 
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS crm_company_id INTEGER REFERENCES crm_companies(id) ON DELETE SET NULL`).catch(() => {});
+
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS crm_companies (
         id SERIAL PRIMARY KEY,
