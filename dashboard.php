@@ -405,31 +405,22 @@ try {
                         <h2 class="text-lg font-semibold text-gray-900">Quick Actions</h2>
                     </div>
                     <div class="divide-y divide-gray-100">
-                        <a href="<?php echo defined('ITFLOW_URL') ? ITFLOW_URL : '#'; ?>" target="_blank" class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition group">
-                            <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 transition">
-                                <i class="fas fa-external-link-alt text-blue-600"></i>
+                        <a href="tickets.php" class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition group">
+                            <div class="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0 group-hover:bg-orange-100 transition">
+                                <i class="fas fa-ticket-alt text-orange-600"></i>
                             </div>
                             <div>
-                                <p class="font-semibold text-gray-900 text-sm">Open ITFlow</p>
-                                <p class="text-xs text-gray-500">Access full ITFlow management system</p>
+                                <p class="font-semibold text-gray-900 text-sm">Open Tickets</p>
+                                <p class="text-xs text-gray-500">View and manage your support tickets</p>
                             </div>
                         </a>
-                        <a href="<?php echo defined('UISP_URL') ? UISP_URL : '#'; ?>" target="_blank" class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition group">
+                        <a href="products.php" class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition group">
                             <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 transition">
-                                <i class="fas fa-external-link-alt text-blue-600"></i>
+                                <i class="fas fa-shopping-cart text-blue-600"></i>
                             </div>
                             <div>
-                                <p class="font-semibold text-gray-900 text-sm">Open UISP</p>
-                                <p class="text-xs text-gray-500">Access UISP network management</p>
-                            </div>
-                        </a>
-                        <a href="settings.php" class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition group">
-                            <div class="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 group-hover:bg-gray-200 transition">
-                                <i class="fas fa-cog text-gray-600"></i>
-                            </div>
-                            <div>
-                                <p class="font-semibold text-gray-900 text-sm">Portal Settings</p>
-                                <p class="text-xs text-gray-500">Configure API connections</p>
+                                <p class="font-semibold text-gray-900 text-sm">Order Products</p>
+                                <p class="text-xs text-gray-500">Browse and order available products</p>
                             </div>
                         </a>
                     </div>
