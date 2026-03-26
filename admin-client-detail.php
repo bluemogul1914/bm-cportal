@@ -609,8 +609,9 @@ $show_map = $has_location || $has_address;
 
                                     <div class="grid grid-cols-2 gap-y-2 text-sm mt-3">
                                         <div>
-                                            <span class="text-[10px] text-gray-400 uppercase">ID</span>
-                                            <p class="font-medium text-gray-700" data-testid="text-client-id"><?php echo $client_id; ?></p>
+                                            <span class="text-[10px] text-gray-400 uppercase">Client ID</span>
+                                            <?php $display_code = !empty($client['client_code']) ? $client['client_code'] : ('BL' . (100000 + $client_id)); ?>
+                                            <p class="font-mono font-semibold text-blue-700 text-sm" data-testid="text-client-id"><?php echo htmlspecialchars($display_code); ?></p>
                                         </div>
                                         <?php if ($client['company']): ?>
                                         <div>

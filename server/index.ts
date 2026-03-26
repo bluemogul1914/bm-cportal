@@ -1848,8 +1848,34 @@ async function bootstrapPortalDatabase() {
         location VARCHAR(300),
         notes TEXT,
         status VARCHAR(20) DEFAULT 'scheduled',
+        calendar_link VARCHAR(500),
         created_by INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS crm_companies (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(300) NOT NULL,
+        phone VARCHAR(50),
+        email VARCHAR(200),
+        website VARCHAR(300),
+        city VARCHAR(100),
+        state VARCHAR(100),
+        country VARCHAR(100) DEFAULT 'United States',
+        address VARCHAR(300),
+        postal_code VARCHAR(20),
+        industry VARCHAR(100),
+        employee_count VARCHAR(30),
+        company_owner VARCHAR(200),
+        lifecycle_stage VARCHAR(50) DEFAULT 'lead',
+        lead_status VARCHAR(50),
+        last_contacted TIMESTAMP,
+        notes TEXT,
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 

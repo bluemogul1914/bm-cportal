@@ -40,6 +40,42 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $tab = 'leads';
     }
 
+    if ($action === 'add_company') {
+        $cname = trim($_POST['company_name'] ?? '');
+        $phone = trim($_POST['company_phone'] ?? '');
+        $email = trim($_POST['company_email'] ?? '');
+        $website = trim($_POST['company_website'] ?? '');
+        $city = trim($_POST['company_city'] ?? '');
+        $state = trim($_POST['company_state'] ?? '');
+        $country = trim($_POST['company_country'] ?? 'United States');
+        $address = trim($_POST['company_address'] ?? '');
+        $postal_code = trim($_POST['company_postal_code'] ?? '');
+        $industry = trim($_POST['company_industry'] ?? '');
+        $employee_count = trim($_POST['company_employee_count'] ?? '');
+        $owner = trim($_POST['company_owner'] ?? '');
+        $lifecycle = $_POST['company_lifecycle'] ?? 'lead';
+        $notes = trim($_POST['company_notes'] ?? '');
+        if ($cname) {
+            $pdo->prepare("INSERT INTO crm_companies (name, phone, email, website, city, state, country, address, postal_code, industry, employee_count, company_owner, lifecycle_stage, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+                ->execute([$cname, $phone ?: null, $email ?: null, $website ?: null, $city ?: null, $state ?: null, $country, $address ?: null, $postal_code ?: null, $industry ?: null, $employee_count ?: null, $owner ?: null, $lifecycle, $notes ?: null, $_SESSION['user_id']]);
+            $success_msg = "Company '$cname' added.";
+        } else { $error_msg = 'Company name is required.'; }
+        $tab = 'companies';
+    }
+
+    if ($action === 'delete_company') {
+        $cid = intval($_POST['company_id'] ?? 0);
+        if ($cid) { $pdo->prepare("DELETE FROM crm_companies WHERE id = ?")->execute([$cid]); $success_msg = 'Company deleted.'; }
+        $tab = 'companies';
+    }
+
+    if ($action === 'update_company_lifecycle') {
+        $cid = intval($_POST['company_id'] ?? 0);
+        $stage = $_POST['lifecycle_stage'] ?? 'lead';
+        if ($cid) { $pdo->prepare("UPDATE crm_companies SET lifecycle_stage = ?, updated_at = NOW() WHERE id = ?")->execute([$stage, $cid]); }
+        $tab = 'companies';
+    }
+
     if ($action === 'add_deal') {
         $title = trim($_POST['deal_title'] ?? '');
         $lead_id = intval($_POST['deal_lead_id'] ?? 0) ?: null;
@@ -308,6 +344,8 @@ $deals = [];
 try { $deals = $pdo->query("SELECT d.*, l.name as lead_name, c.name as client_name, c.company as client_company FROM crm_deals d LEFT JOIN crm_leads l ON d.lead_id = l.id LEFT JOIN clients c ON d.client_id = c.id ORDER BY d.updated_at DESC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
 $social_posts = [];
 try { $social_posts = $pdo->query("SELECT * FROM crm_social_posts ORDER BY created_at DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
+$companies = [];
+try { $companies = $pdo->query("SELECT * FROM crm_companies ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
 
 $clients_list = [];
 try { $clients_list = $pdo->query("SELECT id, name, company FROM clients WHERE status = 'active' ORDER BY company, name")->fetchAll(PDO::FETCH_ASSOC); } catch (Exception $e) {}
@@ -345,7 +383,7 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                 </div>
             </div>
             <div class="px-6 flex gap-1 border-t border-gray-100 overflow-x-auto">
-                <?php foreach (['leads' => 'Leads', 'deals' => '<i class="fas fa-handshake mr-1"></i>Deals', 'campaigns' => 'Campaigns', 'marketing' => '<i class="fas fa-share-alt mr-1"></i>Marketing', 'meetings' => 'Meetings', 'inbox' => 'Inbox'] as $k => $v): ?>
+                <?php foreach (['leads' => 'Leads', 'companies' => '<i class="fas fa-building mr-1"></i>Companies', 'deals' => '<i class="fas fa-handshake mr-1"></i>Deals', 'campaigns' => 'Campaigns', 'marketing' => '<i class="fas fa-share-alt mr-1"></i>Marketing', 'meetings' => 'Meetings', 'inbox' => 'Inbox'] as $k => $v): ?>
                     <a href="?tab=<?= $k ?>" class="px-4 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap <?= $tab === $k ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700' ?>" data-testid="tab-<?= $k ?>"><?= $v ?></a>
                 <?php endforeach; ?>
             </div>
@@ -552,6 +590,346 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                     </form>
                 </div>
             </div>
+            <?php endif; ?>
+
+            <?php if ($tab === 'companies'): ?>
+            <?php
+            $company_search = $_GET['csearch'] ?? '';
+            $filtered_companies = $companies;
+            if ($company_search) {
+                $filtered_companies = array_filter($companies, fn($c) =>
+                    stripos($c['name'], $company_search) !== false ||
+                    stripos($c['city'] ?? '', $company_search) !== false ||
+                    stripos($c['industry'] ?? '', $company_search) !== false
+                );
+            }
+            $detail_id = intval($_GET['cid'] ?? 0);
+            $detail_company = null;
+            if ($detail_id) {
+                foreach ($companies as $c) { if ($c['id'] == $detail_id) { $detail_company = $c; break; } }
+            }
+            ?>
+            <?php if ($detail_company): ?>
+            <!-- Company Detail View -->
+            <div class="mb-4 flex items-center gap-2">
+                <a href="?tab=companies" class="text-sm text-blue-600 hover:underline"><i class="fas fa-arrow-left mr-1"></i>Companies</a>
+                <span class="text-gray-400">/</span>
+                <span class="text-sm font-semibold text-gray-900"><?= htmlspecialchars($detail_company['name']) ?></span>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 space-y-4">
+                    <div class="bg-white rounded-xl border border-gray-200">
+                        <div class="px-6 py-4 border-b border-gray-100">
+                            <div class="flex items-center gap-3">
+                                <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center font-bold text-xl text-blue-600">
+                                    <?= strtoupper(substr($detail_company['name'], 0, 1)) ?>
+                                </div>
+                                <div>
+                                    <h2 class="text-xl font-bold text-gray-900"><?= htmlspecialchars($detail_company['name']) ?></h2>
+                                    <?php if ($detail_company['industry']): ?>
+                                    <p class="text-sm text-gray-500"><?= htmlspecialchars($detail_company['industry']) ?></p>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-6">
+                            <div class="flex gap-2 mb-6 border-b border-gray-100 pb-4">
+                                <a href="?tab=companies&cid=<?= $detail_company['id'] ?>&cv=about" class="px-3 py-1.5 text-sm font-medium rounded-md <?= ($_GET['cv'] ?? 'about') !== 'activities' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700' ?>">About</a>
+                                <a href="?tab=companies&cid=<?= $detail_company['id'] ?>&cv=activities" class="px-3 py-1.5 text-sm font-medium rounded-md <?= ($_GET['cv'] ?? '') === 'activities' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700' ?>">Activities</a>
+                            </div>
+                            <?php if (($_GET['cv'] ?? 'about') === 'activities'): ?>
+                            <div class="text-center py-12 text-gray-400">
+                                <i class="fas fa-history text-4xl mb-3 block"></i>
+                                <p class="font-medium">No activities yet</p>
+                                <p class="text-sm mt-1">Add notes, emails, calls, and tasks to track engagement</p>
+                            </div>
+                            <?php else: ?>
+                            <div>
+                                <h3 class="text-sm font-semibold text-gray-900 mb-3">Company Profile</h3>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <?php $fields = [
+                                        'City' => $detail_company['city'],
+                                        'Street Address' => $detail_company['address'],
+                                        'Postal Code' => $detail_company['postal_code'],
+                                        'State/Region' => $detail_company['state'],
+                                        'Country/Region' => $detail_company['country'],
+                                        'Industry' => $detail_company['industry'],
+                                        'Employees' => $detail_company['employee_count'],
+                                        'Website' => $detail_company['website'],
+                                        'Phone' => $detail_company['phone'],
+                                        'Email' => $detail_company['email'],
+                                    ];
+                                    foreach ($fields as $label => $value): if (!$value) continue; ?>
+                                    <div>
+                                        <p class="text-xs text-gray-400 uppercase font-semibold"><?= $label ?></p>
+                                        <?php if ($label === 'Website'): ?>
+                                        <a href="<?= htmlspecialchars($value) ?>" target="_blank" class="text-sm text-blue-600 hover:underline"><?= htmlspecialchars($value) ?></a>
+                                        <?php elseif ($label === 'Email'): ?>
+                                        <a href="mailto:<?= htmlspecialchars($value) ?>" class="text-sm text-blue-600 hover:underline"><?= htmlspecialchars($value) ?></a>
+                                        <?php else: ?>
+                                        <p class="text-sm text-gray-700"><?= htmlspecialchars($value) ?></p>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php endforeach; ?>
+                                </div>
+                                <?php if ($detail_company['notes']): ?>
+                                <div class="mt-4 pt-4 border-t border-gray-100">
+                                    <p class="text-xs text-gray-400 uppercase font-semibold mb-1">Notes</p>
+                                    <p class="text-sm text-gray-700"><?= nl2br(htmlspecialchars($detail_company['notes'])) ?></p>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <div class="bg-white rounded-xl border border-gray-200 p-5">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-4">Key Information</h3>
+                        <div class="space-y-3">
+                            <?php $kv = [
+                                'Company Owner' => $detail_company['company_owner'],
+                                'City' => $detail_company['city'],
+                                'Lifecycle Stage' => ucfirst($detail_company['lifecycle_stage'] ?? ''),
+                                'Lead Status' => $detail_company['lead_status'],
+                                'Industry' => $detail_company['industry'],
+                                'Last Contacted' => $detail_company['last_contacted'] ? date('M d, Y', strtotime($detail_company['last_contacted'])) : null,
+                            ];
+                            foreach ($kv as $k => $v): ?>
+                            <div>
+                                <p class="text-[11px] text-gray-400 uppercase font-semibold"><?= $k ?></p>
+                                <p class="text-sm text-gray-700 mt-0.5"><?= $v ? htmlspecialchars($v) : '<span class="text-gray-300">—</span>' ?></p>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl border border-gray-200 p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-gray-900">Deals (0)</h3>
+                            <a href="?tab=deals" class="text-xs text-blue-600 hover:underline">+ Add</a>
+                        </div>
+                        <p class="text-xs text-gray-400 italic">Track the revenue opportunities associated with this record.</p>
+                    </div>
+                    <div class="bg-white rounded-xl border border-gray-200 p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-gray-900">Tickets (0)</h3>
+                            <a href="admin-tickets.php" class="text-xs text-blue-600 hover:underline">+ Add</a>
+                        </div>
+                        <p class="text-xs text-gray-400 italic">Track customer requests associated with this record.</p>
+                    </div>
+                    <div class="bg-white rounded-xl border border-gray-200 p-5">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-semibold text-gray-900">Actions</h3>
+                        </div>
+                        <form method="POST" onsubmit="return confirm('Delete this company?')">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="delete_company">
+                            <input type="hidden" name="company_id" value="<?= $detail_company['id'] ?>">
+                            <button type="submit" class="w-full px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-sm rounded-lg transition" data-testid="button-delete-company-<?= $detail_company['id'] ?>">
+                                <i class="fas fa-trash mr-2"></i>Delete Company
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <?php else: ?>
+            <!-- Companies List View -->
+            <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-lg font-semibold text-gray-900">Companies</h2>
+                    <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-semibold"><?= count($filtered_companies) ?></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <form method="GET" class="flex gap-2">
+                        <input type="hidden" name="tab" value="companies">
+                        <input type="text" name="csearch" value="<?= htmlspecialchars($company_search) ?>" placeholder="Search companies..." class="px-3 py-2 border border-gray-300 rounded-lg text-sm w-52 focus:ring-2 focus:ring-blue-400" data-testid="input-company-search">
+                        <button type="submit" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm"><i class="fas fa-search"></i></button>
+                        <?php if ($company_search): ?>
+                        <a href="?tab=companies" class="px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-600 rounded-lg text-sm"><i class="fas fa-times"></i></a>
+                        <?php endif; ?>
+                    </form>
+                    <button onclick="document.getElementById('add-company-modal').classList.remove('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-add-company">
+                        <i class="fas fa-plus mr-1"></i>Add Company
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <?php if (empty($filtered_companies)): ?>
+                    <div class="p-12 text-center text-gray-400">
+                        <i class="fas fa-building text-5xl mb-4 block opacity-30"></i>
+                        <p class="font-semibold text-gray-600">No companies yet</p>
+                        <p class="text-sm mt-1">Add your first company to start tracking</p>
+                    </div>
+                <?php else: ?>
+                <div class="overflow-x-auto">
+                    <table class="w-full" data-testid="table-companies">
+                        <thead class="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                                <th class="px-4 py-3 text-left"><input type="checkbox" class="rounded border-gray-300"></th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Company Name</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Create Date</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Phone</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">City</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Country/Region</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Industry</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Stage</th>
+                                <th class="px-4 py-3"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <?php foreach ($filtered_companies as $co):
+                                $lc_colors = ['lead'=>'blue','prospect'=>'purple','customer'=>'green','churned'=>'red','other'=>'gray'];
+                                $lc = $co['lifecycle_stage'] ?? 'lead';
+                                $lcc = $lc_colors[$lc] ?? 'gray';
+                            ?>
+                            <tr class="hover:bg-gray-50 transition" data-testid="company-row-<?= $co['id'] ?>">
+                                <td class="px-4 py-3"><input type="checkbox" class="rounded border-gray-300"></td>
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center font-bold text-sm text-blue-600 flex-shrink-0">
+                                            <?= strtoupper(substr($co['name'], 0, 1)) ?>
+                                        </div>
+                                        <a href="?tab=companies&cid=<?= $co['id'] ?>" class="text-sm font-semibold text-blue-600 hover:underline" data-testid="link-company-<?= $co['id'] ?>"><?= htmlspecialchars($co['name']) ?></a>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3 text-sm text-gray-600"><?= date('M d, Y g:i A T', strtotime($co['created_at'])) ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-600"><?= $co['phone'] ? htmlspecialchars($co['phone']) : '<span class="text-gray-300">—</span>' ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-600"><?= $co['city'] ? htmlspecialchars($co['city']) : '<span class="text-gray-300">—</span>' ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-600"><?= $co['country'] ? htmlspecialchars($co['country']) : '<span class="text-gray-300">—</span>' ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-600"><?= $co['industry'] ? htmlspecialchars($co['industry']) : '<span class="text-gray-300">—</span>' ?></td>
+                                <td class="px-4 py-3">
+                                    <form method="POST" class="inline">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="update_company_lifecycle">
+                                        <input type="hidden" name="company_id" value="<?= $co['id'] ?>">
+                                        <select name="lifecycle_stage" onchange="this.form.submit()" class="text-xs border rounded px-2 py-1 bg-<?= $lcc ?>-50 text-<?= $lcc ?>-700 border-<?= $lcc ?>-200" data-testid="select-company-lifecycle-<?= $co['id'] ?>">
+                                            <?php foreach (['lead'=>'Lead','prospect'=>'Prospect','customer'=>'Customer','churned'=>'Churned','other'=>'Other'] as $ls => $lsl): ?>
+                                                <option value="<?= $ls ?>" <?= ($co['lifecycle_stage'] ?? 'lead') === $ls ? 'selected' : '' ?>><?= $lsl ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </form>
+                                </td>
+                                <td class="px-4 py-3 text-right">
+                                    <div class="flex items-center gap-2 justify-end">
+                                        <a href="?tab=companies&cid=<?= $co['id'] ?>" class="text-blue-600 hover:text-blue-800 text-sm" title="View" data-testid="button-view-company-<?= $co['id'] ?>"><i class="fas fa-eye"></i></a>
+                                        <form method="POST" class="inline" onsubmit="return confirm('Delete this company?')">
+                                            <?= csrf_field() ?>
+                                            <input type="hidden" name="action" value="delete_company">
+                                            <input type="hidden" name="company_id" value="<?= $co['id'] ?>">
+                                            <button type="submit" class="text-red-400 hover:text-red-600 text-sm" data-testid="button-delete-company-<?= $co['id'] ?>"><i class="fas fa-trash"></i></button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="px-4 py-2 border-t border-gray-100 text-xs text-gray-500">
+                    Showing <?= count($filtered_companies) ?> <?= count($filtered_companies) === 1 ? 'company' : 'companies' ?> &nbsp;·&nbsp; 25 per page
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- Add Company Modal -->
+            <div id="add-company-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div class="bg-white rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+                    <div class="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
+                        <h3 class="text-lg font-semibold">Add Company</h3>
+                        <button onclick="document.getElementById('add-company-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+                    </div>
+                    <form method="POST" class="p-6 space-y-4 overflow-y-auto">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="add_company">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
+                            <input type="text" name="company_name" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-name">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                                <input type="text" name="company_phone" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-phone">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                                <input type="email" name="company_email" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-email">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Website</label>
+                                <input type="url" name="company_website" placeholder="https://" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-website">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Industry</label>
+                                <select name="company_industry" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-company-industry">
+                                    <option value="">-- Select --</option>
+                                    <option>Technology</option><option>Healthcare</option><option>Finance</option>
+                                    <option>Education</option><option>Manufacturing</option><option>Retail</option>
+                                    <option>Real Estate</option><option>Government</option>
+                                    <option>Consumer Services</option><option>Health, Wellness and Fitness</option>
+                                    <option>Management Consulting</option><option>Cosmetics</option>
+                                    <option>Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">City</label>
+                                <input type="text" name="company_city" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-city">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">State/Region</label>
+                                <input type="text" name="company_state" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-state">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
+                                <input type="text" name="company_postal_code" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-postal">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Country/Region</label>
+                                <input type="text" name="company_country" value="United States" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-country">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Employees</label>
+                                <select name="company_employee_count" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-company-employees">
+                                    <option value="">-- Select --</option>
+                                    <option>1-10</option><option>11-50</option><option>51-200</option><option>201-500</option><option>500+</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Company Owner</label>
+                                <input type="text" name="company_owner" placeholder="Assigned to..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-owner">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Lifecycle Stage</label>
+                                <select name="company_lifecycle" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-company-lifecycle">
+                                    <option value="lead">Lead</option>
+                                    <option value="prospect">Prospect</option>
+                                    <option value="customer">Customer</option>
+                                    <option value="churned">Churned</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                            <textarea name="company_notes" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="textarea-company-notes"></textarea>
+                        </div>
+                        <div class="flex justify-end gap-3 pt-2">
+                            <button type="button" onclick="document.getElementById('add-company-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-submit-company">Add Company</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <?php endif; ?>
             <?php endif; ?>
 
             <?php if ($tab === 'deals'): ?>
