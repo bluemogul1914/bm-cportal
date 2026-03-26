@@ -107,6 +107,101 @@
     </div>
 </div>
 
+<!-- Chatbot Widget -->
+<div id="chatbot-widget" class="fixed bottom-6 right-6 z-50">
+    <button id="chatbot-toggle" onclick="toggleChatbot()" class="w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center transition hover:scale-105" data-testid="button-chatbot-toggle" title="Need help?">
+        <i id="chatbot-icon" class="fas fa-comments text-xl"></i>
+    </button>
+    <div id="chatbot-panel" class="hidden absolute bottom-16 right-0 w-80 bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden" style="height:420px;">
+        <div class="bg-blue-600 text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
+                    <i class="fas fa-robot text-sm"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-semibold">Blue Mogul Support</p>
+                    <p class="text-xs text-blue-200">Online</p>
+                </div>
+            </div>
+            <button onclick="toggleChatbot()" class="text-blue-200 hover:text-white"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="chatbot-messages" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+            <div class="flex gap-2">
+                <div class="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0"><i class="fas fa-robot text-blue-500 text-xs"></i></div>
+                <div class="bg-white rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-gray-700 shadow-sm max-w-[85%]">
+                    Hi! I'm your Blue Mogul assistant. How can I help you today?
+                </div>
+            </div>
+        </div>
+        <div class="flex-shrink-0 px-3 py-2 bg-white border-t border-gray-100">
+            <div class="flex gap-2">
+                <input type="text" id="chatbot-input" placeholder="Type a message..." class="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-400" data-testid="input-chatbot-message" onkeydown="if(event.key==='Enter')sendChatMessage()">
+                <button onclick="sendChatMessage()" class="w-9 h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center flex-shrink-0" data-testid="button-chatbot-send">
+                    <i class="fas fa-paper-plane text-xs"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+function toggleChatbot() {
+    const panel = document.getElementById('chatbot-panel');
+    const icon = document.getElementById('chatbot-icon');
+    panel.classList.toggle('hidden');
+    icon.className = panel.classList.contains('hidden') ? 'fas fa-comments text-xl' : 'fas fa-times text-xl';
+    if (!panel.classList.contains('hidden')) {
+        document.getElementById('chatbot-input').focus();
+    }
+}
+async function sendChatMessage() {
+    const input = document.getElementById('chatbot-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+    const container = document.getElementById('chatbot-messages');
+    container.insertAdjacentHTML('beforeend', `
+        <div class="flex gap-2 justify-end">
+            <div class="bg-blue-600 text-white rounded-2xl rounded-tr-sm px-3 py-2 text-sm max-w-[85%]">${escapeHtml(msg)}</div>
+        </div>`);
+    container.scrollTop = container.scrollHeight;
+    const typing = document.createElement('div');
+    typing.id = 'chatbot-typing';
+    typing.className = 'flex gap-2';
+    typing.innerHTML = `<div class="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0"><i class="fas fa-robot text-blue-500 text-xs"></i></div>
+        <div class="bg-white rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-gray-500 shadow-sm"><i class="fas fa-ellipsis-h"></i></div>`;
+    container.appendChild(typing);
+    container.scrollTop = container.scrollHeight;
+    try {
+        const resp = await fetch('/api/chatbot/message', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({message: msg})
+        });
+        const data = await resp.json();
+        document.getElementById('chatbot-typing')?.remove();
+        const reply = data.reply || 'I\'m here to help! For urgent issues, please open a support ticket.';
+        container.insertAdjacentHTML('beforeend', `
+            <div class="flex gap-2">
+                <div class="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0"><i class="fas fa-robot text-blue-500 text-xs"></i></div>
+                <div class="bg-white rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-gray-700 shadow-sm max-w-[85%]">${escapeHtml(reply)}</div>
+            </div>`);
+    } catch(e) {
+        document.getElementById('chatbot-typing')?.remove();
+        container.insertAdjacentHTML('beforeend', `
+            <div class="flex gap-2">
+                <div class="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0"><i class="fas fa-robot text-blue-500 text-xs"></i></div>
+                <div class="bg-white rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-red-500 shadow-sm max-w-[85%]">Sorry, I couldn't connect. Please try again.</div>
+            </div>`);
+    }
+    container.scrollTop = container.scrollHeight;
+}
+function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(str));
+    return d.innerHTML;
+}
+</script>
+
 <style>
 .bg-secondary {
     background-color: #0d1b3e;

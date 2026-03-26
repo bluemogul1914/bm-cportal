@@ -140,38 +140,150 @@ $is_admin = $_SESSION['is_admin'] ?? false;
                         </div>
                         <div>
                             <h2 class="text-lg font-semibold text-gray-900">Two-Factor Authentication</h2>
-                            <p class="text-sm text-gray-500 mt-0.5">Add an extra layer of security to your account</p>
+                            <p class="text-sm text-gray-500 mt-0.5">Add an extra layer of security using an authenticator app</p>
                         </div>
                     </div>
-                    <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-100 text-indigo-700" data-testid="badge-2fa-coming-soon">
-                        <i class="fas fa-clock mr-1.5"></i>Coming Soon
+                    <span id="2fa-status-badge" class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600">
+                        <span id="2fa-status-dot" class="w-2 h-2 rounded-full bg-gray-400 mr-1.5"></span>
+                        <span id="2fa-status-text">Checking...</span>
                     </span>
                 </div>
-                <div class="p-6">
-                    <div class="flex items-start gap-4">
-                        <div class="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                            <i class="fas fa-mobile-alt text-gray-400 text-lg"></i>
-                        </div>
-                        <div class="flex-1">
-                            <h3 class="text-sm font-medium text-gray-900 mb-1">Authenticator App</h3>
-                            <p class="text-sm text-gray-600 mb-2">
-                                Two-factor authentication adds an additional layer of security by requiring a verification code from your authenticator app (such as Google Authenticator or Authy) when signing in.
-                            </p>
-                            <p class="text-sm text-gray-500 mb-4">
-                                When enabled, you'll need to enter a 6-digit code from your authenticator app each time you log in, in addition to your password. This helps protect your account even if your password is compromised.
-                            </p>
-                            <div class="flex items-center gap-3 flex-wrap">
-                                <button disabled class="inline-flex items-center bg-gray-100 text-gray-400 px-4 py-2 rounded-md font-medium text-sm cursor-not-allowed" data-testid="button-enable-2fa">
-                                    <i class="fas fa-lock mr-2"></i>Enable Two-Factor Authentication
-                                </button>
-                                <span class="text-xs text-gray-400">
-                                    <i class="fas fa-info-circle mr-1"></i>This feature is under development
-                                </span>
+                <div class="p-6" id="2fa-panel">
+                    <div id="2fa-loading" class="text-sm text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Loading 2FA status...</div>
+
+                    <div id="2fa-enabled-view" class="hidden">
+                        <div class="flex items-start gap-4">
+                            <div class="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-shield-check text-green-600 text-lg"></i>
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="text-sm font-semibold text-gray-900 mb-1">2FA is Enabled</h3>
+                                <p class="text-sm text-gray-600 mb-4">Your account is protected with two-factor authentication. You will be prompted for a 6-digit code from your authenticator app when logging in.</p>
+                                <div class="flex items-center gap-3">
+                                    <button onclick="show2FADisable()" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-md text-sm font-medium transition" data-testid="button-disable-2fa">
+                                        <i class="fas fa-lock-open mr-2"></i>Disable 2FA
+                                    </button>
+                                </div>
+                                <div id="2fa-disable-form" class="hidden mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                                    <p class="text-sm text-red-700 mb-3">Enter your current 6-digit authenticator code to confirm disabling 2FA:</p>
+                                    <div class="flex gap-3">
+                                        <input type="text" id="disable-token" maxlength="6" placeholder="000000" class="px-3 py-2 border border-red-300 rounded-md text-sm font-mono w-32 focus:ring-2 focus:ring-red-400" data-testid="input-disable-token">
+                                        <button onclick="disable2FA()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium" data-testid="button-confirm-disable">Confirm Disable</button>
+                                    </div>
+                                    <p id="disable-error" class="text-xs text-red-600 mt-2 hidden"></p>
+                                </div>
                             </div>
                         </div>
                     </div>
+
+                    <div id="2fa-setup-view" class="hidden">
+                        <div class="flex items-start gap-4 mb-4">
+                            <div class="w-12 h-12 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-mobile-alt text-indigo-600 text-lg"></i>
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="text-sm font-semibold text-gray-900 mb-1">Set Up Authenticator App</h3>
+                                <p class="text-sm text-gray-600">Scan the QR code below with Google Authenticator, Authy, or any TOTP-compatible app, then enter the 6-digit code to activate.</p>
+                            </div>
+                        </div>
+                        <div id="2fa-qr-area" class="hidden">
+                            <div class="flex flex-col md:flex-row gap-6 items-start">
+                                <div class="flex-shrink-0">
+                                    <img id="2fa-qr-img" src="" alt="QR Code" class="w-48 h-48 border border-gray-200 rounded-lg p-2 bg-white">
+                                    <p class="text-xs text-gray-500 mt-2 text-center">Scan with your app</p>
+                                </div>
+                                <div class="flex-1">
+                                    <p class="text-xs text-gray-500 mb-1 font-medium">Or enter this code manually:</p>
+                                    <p id="2fa-secret-display" class="font-mono text-sm bg-gray-100 px-3 py-2 rounded text-gray-800 break-all mb-4"></p>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Enter the 6-digit code from your app:</label>
+                                    <div class="flex gap-3">
+                                        <input type="text" id="totp-token" maxlength="6" placeholder="000000" class="px-3 py-2 border border-gray-300 rounded-md text-sm font-mono w-32 focus:ring-2 focus:ring-indigo-400" data-testid="input-totp-token">
+                                        <button onclick="enable2FA()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-medium" data-testid="button-verify-enable">Verify & Enable</button>
+                                    </div>
+                                    <p id="totp-error" class="text-xs text-red-600 mt-2 hidden"></p>
+                                    <p id="totp-success" class="text-xs text-green-600 mt-2 hidden"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <button id="btn-start-2fa-setup" onclick="setup2FA()" class="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-medium transition" data-testid="button-enable-2fa">
+                            <i class="fas fa-lock mr-2"></i>Enable Two-Factor Authentication
+                        </button>
+                    </div>
                 </div>
             </div>
+            <script>
+            async function check2FAStatus() {
+                try {
+                    const r = await fetch('/api/2fa/setup');
+                    const d = await r.json();
+                    document.getElementById('2fa-loading').classList.add('hidden');
+                    const badge = document.getElementById('2fa-status-badge');
+                    const dot = document.getElementById('2fa-status-dot');
+                    const txt = document.getElementById('2fa-status-text');
+                    if (d.enabled) {
+                        badge.className = 'inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-green-100 text-green-700';
+                        dot.className = 'w-2 h-2 rounded-full bg-green-500 mr-1.5';
+                        txt.textContent = 'Enabled';
+                        document.getElementById('2fa-enabled-view').classList.remove('hidden');
+                    } else {
+                        badge.className = 'inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600';
+                        dot.className = 'w-2 h-2 rounded-full bg-gray-400 mr-1.5';
+                        txt.textContent = 'Not Enabled';
+                        document.getElementById('2fa-setup-view').classList.remove('hidden');
+                    }
+                } catch(e) {
+                    document.getElementById('2fa-loading').textContent = 'Error loading 2FA status.';
+                }
+            }
+            async function setup2FA() {
+                document.getElementById('btn-start-2fa-setup').disabled = true;
+                document.getElementById('btn-start-2fa-setup').innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Loading...';
+                try {
+                    const r = await fetch('/api/2fa/setup');
+                    const d = await r.json();
+                    if (d.qr_url) {
+                        document.getElementById('2fa-qr-img').src = d.qr_url;
+                        document.getElementById('2fa-secret-display').textContent = d.secret;
+                        document.getElementById('2fa-qr-area').classList.remove('hidden');
+                        document.getElementById('btn-start-2fa-setup').classList.add('hidden');
+                    }
+                } catch(e) { alert('Error loading setup. Please try again.'); }
+            }
+            async function enable2FA() {
+                const token = document.getElementById('totp-token').value.trim();
+                const errEl = document.getElementById('totp-error');
+                const sucEl = document.getElementById('totp-success');
+                errEl.classList.add('hidden');
+                sucEl.classList.add('hidden');
+                if (!/^\d{6}$/.test(token)) { errEl.textContent = 'Enter a 6-digit code.'; errEl.classList.remove('hidden'); return; }
+                try {
+                    const r = await fetch('/api/2fa/enable', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token}) });
+                    const d = await r.json();
+                    if (d.success) {
+                        sucEl.textContent = '✓ 2FA enabled! Your account is now secured.';
+                        sucEl.classList.remove('hidden');
+                        setTimeout(() => location.reload(), 1500);
+                    } else {
+                        errEl.textContent = d.error || 'Invalid code. Try again.';
+                        errEl.classList.remove('hidden');
+                    }
+                } catch(e) { errEl.textContent = 'Network error.'; errEl.classList.remove('hidden'); }
+            }
+            function show2FADisable() { document.getElementById('2fa-disable-form').classList.remove('hidden'); }
+            async function disable2FA() {
+                const token = document.getElementById('disable-token').value.trim();
+                const errEl = document.getElementById('disable-error');
+                errEl.classList.add('hidden');
+                if (!/^\d{6}$/.test(token)) { errEl.textContent = 'Enter a 6-digit code.'; errEl.classList.remove('hidden'); return; }
+                try {
+                    const r = await fetch('/api/2fa/disable', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token}) });
+                    const d = await r.json();
+                    if (d.success) { location.reload(); }
+                    else { errEl.textContent = d.error || 'Invalid code.'; errEl.classList.remove('hidden'); }
+                } catch(e) { errEl.textContent = 'Network error.'; errEl.classList.remove('hidden'); }
+            }
+            check2FAStatus();
+            </script>
 
             <!-- Section 3: Theme Preference -->
             <div class="bg-white rounded-lg border border-gray-200" data-testid="section-theme">

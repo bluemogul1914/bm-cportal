@@ -28,6 +28,33 @@ The application is built with a React frontend using Tailwind CSS and shadcn/ui 
     - PHP execution and snippet management.
     - Stripe integration for payments and subscriptions.
     - Webhooks for AI Agent integration (logging, ticket creation, device updates, notifications, project management).
+    - File upload endpoints: `/api/upload/ticket-attachment`, `/api/upload/avatar`, `/api/upload/article-pdf`.
+    - TOTP 2FA API: `/api/2fa/setup`, `/api/2fa/enable`, `/api/2fa/disable` (HMAC-SHA1, no external libs).
+    - CRM Deals CRUD API, Social Posts API, Chatbot message API (`/api/chatbot/message`).
+
+## Recent Feature Updates (March 2026)
+
+### Client Portal
+- **Avatar Upload**: Profile page supports click-to-change avatar via Express multer upload endpoint.
+- **2FA**: Settings page has fully functional TOTP 2FA setup (QR code, enable/disable with token verification).
+- **Chatbot Widget**: Floating chat bubble on all client portal pages (via client-sidebar.php), calls `/api/chatbot/message`.
+- **Ticket File Attachment**: Ticket submission supports file uploads via Express API.
+
+### Admin Panel  
+- **Ticket Groups**: Tickets now have group badges (General/Sales/Billing/Support), group filter in search, and group selector in create form.
+- **CRM Deals/Pipeline**: New Deals tab with Kanban pipeline board (Prospecting → Proposal → Negotiation → Won/Lost).
+- **CRM Marketing**: New Marketing tab with social media post scheduling and stats overview.
+- **CRM Lead Expansion**: Lead add form now includes industry, employee count, service interest, geography, lead score, next action date.
+- **CRM Meetings**: Nextcloud calendar link field added to meeting scheduling form.
+- **Knowledge Base Editor**: Rich text WYSIWYG editor with formatting toolbar + Raw HTML toggle + PDF upload (inserts download link).
+- **Client List**: Shows BL-format client_code badge and contact_person field in client table.
+
+## Database Notes
+- `users` table: `avatar_path`, `totp_secret`, `totp_enabled` columns added.
+- `clients` table: `client_code` (BL100000 format, auto-generated), `contact_person`, `voip_did`, `voip_username`, `voip_account_id` columns.
+- `crm_leads` table: `industry`, `employee_count`, `service_interest`, `geography`, `lead_score`, `next_action_date` columns.
+- `crm_deals`, `crm_social_posts`, `ticket_groups` tables created.
+- `tickets` table: `ticket_group`, `attachment_path` columns added.
     - Dedicated API for AI Agent management (listing, metrics, activity, ROI, triggering).
     - Project management API.
 

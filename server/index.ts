@@ -518,6 +518,319 @@ app.get("/api/documents/download/:id", async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// Ticket Attachment Upload
+// ═══════════════════════════════════════════════════════════════
+
+const ticketsUploadDir = join(projectRoot, "uploads", "tickets");
+const avatarsUploadDir = join(projectRoot, "uploads", "avatars");
+const articlesUploadDir = join(projectRoot, "uploads", "knowledge");
+[ticketsUploadDir, avatarsUploadDir, articlesUploadDir].forEach(d => {
+  if (!existsSync(d)) mkdirSync(d, { recursive: true });
+});
+
+const makeUploader = (dest: string, allowedExts: string[]) =>
+  multer({
+    storage: multer.diskStorage({
+      destination: (_req, _file, cb) => cb(null, dest),
+      filename: (_req, file, cb) => {
+        const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+        cb(null, `${Date.now()}_${randomUUID().slice(0, 8)}_${safeName}`);
+      },
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      const ext = "." + (file.originalname.split(".").pop() || "").toLowerCase();
+      allowedExts.includes(ext) ? cb(null, true) : cb(new Error(`Not allowed: ${ext}`));
+    },
+  });
+
+const ticketUploader = makeUploader(ticketsUploadDir, [".pdf", ".gif", ".jpeg", ".jpg", ".txt", ".png"]);
+const avatarUploader = makeUploader(avatarsUploadDir, [".jpg", ".jpeg", ".gif", ".png"]);
+const articleUploader = makeUploader(articlesUploadDir, [".pdf"]);
+
+app.post("/api/upload/ticket-attachment", ticketUploader.single("attachment"), async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
+  const ticketId = parseInt(req.body.ticket_id || "0");
+  if (!ticketId) return res.status(400).json({ error: "ticket_id required" });
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: "No file uploaded" });
+  try {
+    const clientResult = await webhookPool.query("SELECT id FROM clients WHERE user_id = $1", [sess.user_id]);
+    const clientId = clientResult.rows[0]?.id || sess.user_id;
+    let ticketCheck;
+    if (sess.is_admin) {
+      ticketCheck = await webhookPool.query("SELECT id FROM tickets WHERE id = $1", [ticketId]);
+    } else {
+      ticketCheck = await webhookPool.query("SELECT id FROM tickets WHERE id = $1 AND client_id = $2", [ticketId, clientId]);
+    }
+    if (!ticketCheck.rows[0]) return res.status(403).json({ error: "Ticket not found" });
+    const relPath = `uploads/tickets/${file.filename}`;
+    await webhookPool.query(
+      "UPDATE tickets SET attachment_path = $1, attachment_name = $2, attachment_mime = $3, updated_at = NOW() WHERE id = $4",
+      [relPath, file.originalname, file.mimetype, ticketId]
+    );
+    res.json({ success: true, path: "/" + relPath, name: file.originalname });
+  } catch (e: any) {
+    console.error("Ticket attachment error:", e.message);
+    res.status(500).json({ error: "Upload failed" });
+  }
+});
+
+app.post("/api/upload/avatar", avatarUploader.single("avatar"), async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: "No file uploaded" });
+  try {
+    const relPath = `uploads/avatars/${file.filename}`;
+    await webhookPool.query("UPDATE users SET avatar_path = $1 WHERE id = $2", [relPath, sess.user_id]);
+    if ((req.session as any).portalUser) {
+      (req.session as any).portalUser.avatar_path = relPath;
+    }
+    res.json({ success: true, path: "/" + relPath });
+  } catch (e: any) {
+    console.error("Avatar upload error:", e.message);
+    res.status(500).json({ error: "Upload failed" });
+  }
+});
+
+app.post("/api/upload/article-pdf", articleUploader.single("pdf"), async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id || !sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: "No file uploaded" });
+  const articleId = parseInt(req.body.article_id || "0");
+  try {
+    const relPath = `uploads/knowledge/${file.filename}`;
+    if (articleId) {
+      await webhookPool.query("UPDATE knowledge_articles SET pdf_path = $1, updated_at = NOW() WHERE id = $2", [relPath, articleId]);
+    }
+    res.json({ success: true, path: "/" + relPath, name: file.originalname, article_id: articleId });
+  } catch (e: any) {
+    console.error("Article PDF upload error:", e.message);
+    res.status(500).json({ error: "Upload failed" });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Two-Factor Authentication (TOTP)
+// ═══════════════════════════════════════════════════════════════
+
+import { createHmac as _createHmac } from "crypto";
+
+function base32Decode(secret: string): Buffer {
+  const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0, value = 0;
+  const output: number[] = [];
+  for (const ch of secret.toUpperCase().replace(/=+$/, "")) {
+    const idx = B32.indexOf(ch);
+    if (idx === -1) continue;
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) { output.push((value >>> (bits - 8)) & 0xff); bits -= 8; }
+  }
+  return Buffer.from(output);
+}
+
+function generateTotpCode(secret: string, counter: number): string {
+  const key = base32Decode(secret);
+  const buf = Buffer.alloc(8);
+  buf.writeUInt32BE(Math.floor(counter / 0x100000000), 0);
+  buf.writeUInt32BE(counter >>> 0, 4);
+  const hmac = _createHmac("sha1", key).update(buf).digest();
+  const offset = hmac[19] & 0x0f;
+  const code = ((hmac[offset] & 0x7f) << 24) | (hmac[offset+1] << 16) | (hmac[offset+2] << 8) | hmac[offset+3];
+  return String(code % 1000000).padStart(6, "0");
+}
+
+function verifyTotp(secret: string, token: string): boolean {
+  const t = Math.floor(Date.now() / 30000);
+  for (let i = -1; i <= 1; i++) {
+    if (generateTotpCode(secret, t + i) === token) return true;
+  }
+  return false;
+}
+
+function generateBase32Secret(): string {
+  const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let s = "";
+  for (let i = 0; i < 16; i++) s += B32[Math.floor(Math.random() * 32)];
+  return s;
+}
+
+app.get("/api/2fa/setup", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
+  try {
+    const result = await webhookPool.query("SELECT email, totp_enabled, totp_secret FROM users WHERE id = $1", [sess.user_id]);
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: "User not found" });
+    if (user.totp_enabled) return res.json({ enabled: true });
+    const secret = generateBase32Secret();
+    await webhookPool.query("UPDATE users SET totp_secret = $1 WHERE id = $2", [secret, sess.user_id]);
+    const label = encodeURIComponent(`BlueMogul:${user.email}`);
+    const issuer = encodeURIComponent("BlueMogul");
+    const uri = `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
+    const qr = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uri)}`;
+    res.json({ enabled: false, secret, qr_url: qr, uri });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/2fa/enable", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: "token required" });
+  try {
+    const result = await webhookPool.query("SELECT totp_secret FROM users WHERE id = $1", [sess.user_id]);
+    const secret = result.rows[0]?.totp_secret;
+    if (!secret) return res.status(400).json({ error: "No TOTP secret found. Setup first." });
+    if (!verifyTotp(secret, token.toString().trim())) return res.status(400).json({ error: "Invalid code. Please try again." });
+    await webhookPool.query("UPDATE users SET totp_enabled = true WHERE id = $1", [sess.user_id]);
+    res.json({ success: true, message: "2FA enabled successfully." });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/2fa/disable", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: "token required" });
+  try {
+    const result = await webhookPool.query("SELECT totp_secret FROM users WHERE id = $1", [sess.user_id]);
+    const secret = result.rows[0]?.totp_secret;
+    if (!secret || !verifyTotp(secret, token.toString().trim())) return res.status(400).json({ error: "Invalid code." });
+    await webhookPool.query("UPDATE users SET totp_enabled = false, totp_secret = NULL WHERE id = $1", [sess.user_id]);
+    res.json({ success: true, message: "2FA disabled." });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// CRM Deals API
+// ═══════════════════════════════════════════════════════════════
+
+app.get("/api/crm/deals", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+  try {
+    const result = await webhookPool.query(
+      `SELECT d.*, l.name as lead_name, c.name as client_name, c.company as client_company FROM crm_deals d
+       LEFT JOIN crm_leads l ON d.lead_id = l.id LEFT JOIN clients c ON d.client_id = c.id ORDER BY d.created_at DESC`
+    );
+    res.json({ deals: result.rows });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/crm/deals", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+  const { title, stage, value, probability, expected_close, assigned_to, notes, lead_id, client_id } = req.body;
+  if (!title) return res.status(400).json({ error: "title required" });
+  try {
+    const result = await webhookPool.query(
+      "INSERT INTO crm_deals (title, lead_id, client_id, stage, value, probability, expected_close, assigned_to, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
+      [title, lead_id || null, client_id || null, stage || "prospecting", value || 0, probability || 0, expected_close || null, assigned_to || null, notes || null, sess.user_id]
+    );
+    res.json({ success: true, deal: result.rows[0] });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch("/api/crm/deals/:id", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+  const { stage } = req.body;
+  try {
+    await webhookPool.query("UPDATE crm_deals SET stage = $1, updated_at = NOW() WHERE id = $2", [stage, req.params.id]);
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/api/crm/deals/:id", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+  try {
+    await webhookPool.query("DELETE FROM crm_deals WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Social Media Posts API
+// ═══════════════════════════════════════════════════════════════
+
+app.get("/api/crm/social-posts", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+  try {
+    const result = await webhookPool.query("SELECT * FROM crm_social_posts ORDER BY created_at DESC LIMIT 100");
+    res.json({ posts: result.rows });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/crm/social-posts", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+  const { platform, content, scheduled_at } = req.body;
+  if (!platform || !content) return res.status(400).json({ error: "platform and content required" });
+  try {
+    const result = await webhookPool.query(
+      "INSERT INTO crm_social_posts (platform, content, scheduled_at, status, created_by) VALUES ($1,$2,$3,'draft',$4) RETURNING *",
+      [platform, content, scheduled_at || null, sess.user_id]
+    );
+    res.json({ success: true, post: result.rows[0] });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/api/crm/social-posts/:id", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+  try {
+    await webhookPool.query("DELETE FROM crm_social_posts WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Chatbot API
+// ═══════════════════════════════════════════════════════════════
+
+app.post("/api/chatbot/message", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
+  const { message } = req.body;
+  if (!message) return res.status(400).json({ error: "message required" });
+  const msg = message.toLowerCase().trim();
+  let reply = "";
+  if (msg.includes("ticket") || msg.includes("support")) {
+    reply = "To create a support ticket, click the 'New Ticket' button on the Tickets page. Our team typically responds within 24 hours.";
+  } else if (msg.includes("invoice") || msg.includes("bill") || msg.includes("payment")) {
+    reply = "You can view and pay your invoices on the Billing page. We accept all major credit cards via Stripe. If you have billing questions, please open a Billing ticket.";
+  } else if (msg.includes("service") || msg.includes("product")) {
+    reply = "You can browse available products and services on the Products page. Need something custom? Open a Sales ticket and our team will reach out.";
+  } else if (msg.includes("voip") || msg.includes("phone") || msg.includes("voice")) {
+    reply = "For VoIP/Voice services, visit the Voice Services page to check your balance and manage your account. For issues, open a Support ticket.";
+  } else if (msg.includes("password") || msg.includes("account") || msg.includes("login")) {
+    reply = "To change your password, go to My Profile. For login issues, use the 'Forgot Password' link on the login page.";
+  } else if (msg.includes("hello") || msg.includes("hi") || msg.includes("hey")) {
+    reply = "Hi there! I'm the Blue Mogul support bot. I can help you with tickets, billing, services, VoIP, and account questions. What can I help you with?";
+  } else if (msg.includes("hours") || msg.includes("open") || msg.includes("contact")) {
+    reply = "Blue Mogul support is available Monday–Friday, 8am–6pm CST. For urgent issues outside business hours, please open a ticket marked Urgent.";
+  } else if (msg.includes("internet") || msg.includes("fiber") || msg.includes("broadband")) {
+    reply = "For internet/fiber service inquiries, please open a Sales ticket or visit the Products page to explore available plans.";
+  } else {
+    reply = "I'm not sure I understand. You can:\n• Open a **Support Ticket** for technical issues\n• Visit **Billing** for invoice questions\n• Check **Products** for new services\n• Or type 'hours' to see our support hours.";
+  }
+  res.json({ reply, timestamp: new Date().toISOString() });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // Chat API — Standalone portal messaging system
 // ═══════════════════════════════════════════════════════════════
 

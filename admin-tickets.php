@@ -23,14 +23,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $priority = $_POST['priority'] ?? 'medium';
         $client_id = intval($_POST['client_id'] ?? 0);
         $assigned_to = trim($_POST['assigned_to'] ?? '');
+        $ticket_group = $_POST['ticket_group'] ?? 'general';
+        if (!in_array($ticket_group, ['general','sales','billing','support'])) $ticket_group = 'general';
 
         if (empty($subject) || $client_id <= 0) {
             $error_message = 'Subject and client are required.';
         } else {
             try {
                 $pdo = getDB();
-                $stmt = $pdo->prepare("INSERT INTO tickets (client_id, subject, description, status, priority, assigned_to, source, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, ?, 'admin', NOW(), NOW()) RETURNING id");
-                $stmt->execute([$client_id, $subject, $description, $priority, $assigned_to ?: null]);
+                $stmt = $pdo->prepare("INSERT INTO tickets (client_id, subject, description, status, priority, ticket_group, assigned_to, source, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, ?, ?, 'admin', NOW(), NOW()) RETURNING id");
+                $stmt->execute([$client_id, $subject, $description, $priority, $ticket_group, $assigned_to ?: null]);
                 $new_id = $stmt->fetchColumn();
                 $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
                     ->execute([$user_id, 'ticket_created', 'ticket', $new_id, 'Created ticket: ' . $subject, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
@@ -62,6 +64,8 @@ $search = $_GET['search'] ?? '';
 $status_filter = $_GET['status'] ?? '';
 $priority_filter = $_GET['priority'] ?? '';
 $source_filter = $_GET['source'] ?? '';
+$group_filter = $_GET['group'] ?? '';
+$agent_filter = $_GET['agent'] ?? '';
 
 try {
     $pdo = getDB();
@@ -74,6 +78,8 @@ try {
     if ($status_filter) { $where_clauses[] = "t.status = ?"; $params[] = $status_filter; }
     if ($priority_filter) { $where_clauses[] = "t.priority = ?"; $params[] = $priority_filter; }
     if ($source_filter) { $where_clauses[] = "t.source = ?"; $params[] = $source_filter; }
+    if ($group_filter) { $where_clauses[] = "t.ticket_group = ?"; $params[] = $group_filter; }
+    if ($agent_filter) { $where_clauses[] = "t.assigned_to ILIKE ?"; $params[] = "%$agent_filter%"; }
     $where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses) : "";
 
     $count_stmt = $pdo->prepare("SELECT COUNT(*) as count FROM tickets t LEFT JOIN clients c ON t.client_id = c.id $where_sql");
@@ -206,6 +212,13 @@ try {
                         <option value="portal" <?php echo $source_filter === 'portal' ? 'selected' : ''; ?>>Portal</option>
                         <option value="admin" <?php echo $source_filter === 'admin' ? 'selected' : ''; ?>>Admin</option>
                     </select>
+                    <select name="group" class="px-4 py-2 border border-gray-300 rounded-md" data-testid="select-group-filter">
+                        <option value="">All Groups</option>
+                        <option value="general" <?php echo $group_filter === 'general' ? 'selected' : ''; ?>>General</option>
+                        <option value="sales" <?php echo $group_filter === 'sales' ? 'selected' : ''; ?>>Sales</option>
+                        <option value="billing" <?php echo $group_filter === 'billing' ? 'selected' : ''; ?>>Billing</option>
+                        <option value="support" <?php echo $group_filter === 'support' ? 'selected' : ''; ?>>Support</option>
+                    </select>
                     <button type="submit" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium" data-testid="button-search">
                         <i class="fas fa-search mr-2"></i>Search
                     </button>
@@ -252,7 +265,7 @@ try {
                         <div class="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition" data-testid="ticket-row-<?php echo $tid; ?>">
                             <div class="flex items-start justify-between">
                                 <div class="flex-1">
-                                    <div class="flex items-center gap-3 mb-2">
+                                    <div class="flex items-center gap-3 mb-2 flex-wrap">
                                         <span class="px-3 py-1 text-xs font-medium rounded-full <?php
                                             echo match($priority_text) {
                                                 'urgent' => 'bg-red-200 text-red-800',
@@ -263,6 +276,12 @@ try {
                                             };
                                         ?>">
                                             <i class="fas fa-exclamation-circle mr-1"></i><?php echo ucfirst($priority_text); ?>
+                                        </span>
+                                        <?php $t_group = $ticket['ticket_group'] ?? 'general';
+                                        $group_colors = ['general'=>'bg-gray-100 text-gray-600','sales'=>'bg-blue-100 text-blue-700','billing'=>'bg-orange-100 text-orange-700','support'=>'bg-purple-100 text-purple-700'];
+                                        $gc = $group_colors[$t_group] ?? 'bg-gray-100 text-gray-600'; ?>
+                                        <span class="px-2 py-1 text-xs font-medium rounded-full <?php echo $gc; ?>" data-testid="badge-group-<?php echo $tid; ?>">
+                                            <i class="fas fa-tag mr-1"></i><?php echo ucfirst($t_group); ?>
                                         </span>
                                         <span class="px-3 py-1 text-xs font-medium rounded-full <?php
                                             echo match($status) {
@@ -382,18 +401,29 @@ try {
                 <label class="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
                 <input type="text" name="subject" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" placeholder="Brief description of the issue" data-testid="input-subject">
             </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                <select name="priority" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-priority">
-                    <option value="low">Low</option>
-                    <option value="medium" selected>Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                </select>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Group</label>
+                    <select name="ticket_group" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-ticket-group">
+                        <option value="general">General</option>
+                        <option value="sales">Sales</option>
+                        <option value="billing">Billing</option>
+                        <option value="support">Support</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                    <select name="priority" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-priority">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                    </select>
+                </div>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Assigned To</label>
-                <input type="text" name="assigned_to" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" placeholder="Staff name (optional)" data-testid="input-assigned-to">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Assigned Agent</label>
+                <input type="text" name="assigned_to" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" placeholder="Agent name (optional)" data-testid="input-assigned-to">
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>

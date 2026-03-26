@@ -207,11 +207,18 @@ try {
                                                         <?php if (!empty($client['company']) && $client['company'] !== $client['name']): ?>
                                                             <p class="text-xs text-gray-500 mt-0.5"><i class="fas fa-user text-gray-400 mr-1"></i><?php echo htmlspecialchars($client['name']); ?></p>
                                                         <?php endif; ?>
+                                                        <?php if (!empty($client['contact_person'])): ?>
+                                                            <p class="text-xs text-blue-500 mt-0.5"><i class="fas fa-id-badge text-blue-300 mr-1"></i><?php echo htmlspecialchars($client['contact_person']); ?></p>
+                                                        <?php endif; ?>
                                                         <div class="flex items-center gap-2 mt-1">
                                                             <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium <?php echo ($client['status'] ?? 'active') === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; ?>">
                                                                 <?php echo ucfirst($client['status'] ?? 'active'); ?>
                                                             </span>
-                                                            <span class="text-[10px] text-gray-400">ID: #<?php echo $client['id']; ?></span>
+                                                            <?php if (!empty($client['client_code'])): ?>
+                                                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-blue-50 text-blue-700 border border-blue-200" data-testid="badge-client-code-<?php echo $client['id']; ?>"><?php echo htmlspecialchars($client['client_code']); ?></span>
+                                                            <?php else: ?>
+                                                                <span class="text-[10px] text-gray-400">ID: #<?php echo $client['id']; ?></span>
+                                                            <?php endif; ?>
                                                         </div>
                                                         <p class="text-[10px] text-gray-400 mt-0.5">Created: <?php echo date('Y-m-d', strtotime($client['created_at'])); ?></p>
                                                     </div>

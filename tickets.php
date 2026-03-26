@@ -17,11 +17,14 @@ $tickets = [];
 $status_counts = [];
 $total_tickets = 0;
 
+$last_ticket_id = 0;
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_ticket') {
     require_csrf();
     $subject = trim($_POST['subject'] ?? '');
     $description = trim($_POST['description'] ?? '');
     $priority = $_POST['priority'] ?? 'medium';
+    $ticket_group = $_POST['ticket_group'] ?? 'general';
+    if (!in_array($ticket_group, ['general','sales','billing','support'])) $ticket_group = 'general';
 
     if (empty($subject)) {
         $error_msg = 'Subject is required.';
@@ -33,15 +36,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
             $client = $stmt->fetch(PDO::FETCH_ASSOC);
             $client_id = $client ? $client['id'] : $user_id;
 
-            $stmt = $pdo->prepare("INSERT INTO tickets (client_id, subject, description, status, priority, source, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, 'portal', NOW(), NOW()) RETURNING id");
-            $stmt->execute([$client_id, $subject, $description, $priority]);
+            $stmt = $pdo->prepare("INSERT INTO tickets (client_id, subject, description, status, priority, ticket_group, source, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, ?, 'portal', NOW(), NOW()) RETURNING id");
+            $stmt->execute([$client_id, $subject, $description, $priority, $ticket_group]);
             $new_ticket_id = $stmt->fetchColumn();
+            $last_ticket_id = $new_ticket_id;
             $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
                 ->execute([$user_id, 'ticket_created', 'ticket', $new_ticket_id, 'Created ticket: ' . $subject, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             if (!empty($user_email)) {
                 notify_ticket_created($new_ticket_id, $subject, $user_email, $user_name);
             }
-            $success_msg = 'Ticket created successfully!';
+            $success_msg = "Ticket #$new_ticket_id created successfully!";
         } catch (PDOException $e) {
             error_log("Ticket creation error: " . $e->getMessage());
             $error_msg = 'Failed to create ticket. Please try again.';
@@ -112,7 +116,19 @@ try {
 
         <div class="p-6">
             <?php if ($success_msg): ?>
-                <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md mb-6 flex items-center" data-testid="alert-success"><i class="fas fa-check-circle mr-2"></i><?php echo htmlspecialchars($success_msg); ?></div>
+                <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md mb-6" data-testid="alert-success">
+                    <div class="flex items-center mb-2"><i class="fas fa-check-circle mr-2"></i><?php echo htmlspecialchars($success_msg); ?></div>
+                    <?php if ($last_ticket_id): ?>
+                    <div class="mt-3 pt-3 border-t border-green-200">
+                        <p class="text-sm font-medium text-green-800 mb-2"><i class="fas fa-paperclip mr-1"></i>Attach a file to ticket #<?php echo $last_ticket_id; ?> (optional)</p>
+                        <div class="flex items-center gap-3">
+                            <input type="file" id="ticket-attach-file" accept=".pdf,.gif,.jpeg,.jpg,.txt,.png" class="text-sm text-green-700 file:mr-2 file:py-1 file:px-3 file:border file:border-green-300 file:rounded file:text-xs file:bg-green-50 file:text-green-700" data-testid="input-ticket-attachment">
+                            <button onclick="uploadTicketAttachment(<?php echo $last_ticket_id; ?>)" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded transition" data-testid="button-upload-attachment">Upload File</button>
+                        </div>
+                        <p id="attach-status" class="text-xs mt-1 text-green-600"></p>
+                    </div>
+                    <?php endif; ?>
+                </div>
             <?php endif; ?>
             <?php if ($error_msg): ?>
                 <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-6 flex items-center" data-testid="alert-error"><i class="fas fa-exclamation-circle mr-2"></i><?php echo htmlspecialchars($error_msg); ?></div>
@@ -226,14 +242,25 @@ try {
                 <label class="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
                 <input type="text" name="subject" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" placeholder="Brief description of your issue" data-testid="input-subject">
             </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                <select name="priority" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-priority">
-                    <option value="low">Low</option>
-                    <option value="medium" selected>Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                </select>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                    <select name="ticket_group" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-group">
+                        <option value="general">General</option>
+                        <option value="sales">Sales</option>
+                        <option value="billing">Billing</option>
+                        <option value="support">Support</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                    <select name="priority" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-priority">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                    </select>
+                </div>
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -250,6 +277,35 @@ try {
 document.getElementById('create-modal').addEventListener('click', function(e) {
     if (e.target === this) this.classList.add('hidden');
 });
+async function uploadTicketAttachment(ticketId) {
+    const input = document.getElementById('ticket-attach-file');
+    const status = document.getElementById('attach-status');
+    if (!input || !input.files || !input.files[0]) {
+        status.textContent = 'Please select a file first.';
+        status.className = 'text-xs mt-1 text-red-600';
+        return;
+    }
+    const fd = new FormData();
+    fd.append('attachment', input.files[0]);
+    fd.append('ticket_id', ticketId);
+    status.textContent = 'Uploading...';
+    status.className = 'text-xs mt-1 text-green-600';
+    try {
+        const resp = await fetch('/api/upload/ticket-attachment', { method: 'POST', body: fd });
+        const data = await resp.json();
+        if (data.success) {
+            status.textContent = '✓ File "' + data.name + '" attached successfully.';
+            status.className = 'text-xs mt-1 text-green-700 font-medium';
+            input.disabled = true;
+        } else {
+            status.textContent = 'Error: ' + (data.error || 'Upload failed');
+            status.className = 'text-xs mt-1 text-red-600';
+        }
+    } catch(e) {
+        status.textContent = 'Network error. Please try again.';
+        status.className = 'text-xs mt-1 text-red-600';
+    }
+}
 </script>
 </body>
 </html>

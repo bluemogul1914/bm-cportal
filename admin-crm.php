@@ -24,14 +24,69 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $company = trim($_POST['lead_company'] ?? '');
         $source = $_POST['lead_source'] ?? 'manual';
         $notes = trim($_POST['lead_notes'] ?? '');
+        $industry = trim($_POST['lead_industry'] ?? '');
+        $employee_count = trim($_POST['lead_employee_count'] ?? '');
+        $service_interest = trim($_POST['lead_service_interest'] ?? '');
+        $geography = trim($_POST['lead_geography'] ?? '');
+        $lead_score = intval($_POST['lead_score'] ?? 0);
+        $next_action_date = $_POST['lead_next_action_date'] ?? null;
         if ($name) {
-            $pdo->prepare("INSERT INTO crm_leads (name, email, phone, company, source, notes) VALUES (?, ?, ?, ?, ?, ?)")
-                ->execute([$name, $email, $phone, $company, $source, $notes]);
+            $pdo->prepare("INSERT INTO crm_leads (name, email, phone, company, source, notes, industry, employee_count, service_interest, geography, lead_score, next_action_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                ->execute([$name, $email, $phone, $company, $source, $notes, $industry ?: null, $employee_count ?: null, $service_interest ?: null, $geography ?: null, $lead_score, $next_action_date ?: null]);
             $success_msg = "Lead '$name' added successfully.";
         } else {
             $error_msg = 'Lead name is required.';
         }
         $tab = 'leads';
+    }
+
+    if ($action === 'add_deal') {
+        $title = trim($_POST['deal_title'] ?? '');
+        $lead_id = intval($_POST['deal_lead_id'] ?? 0) ?: null;
+        $client_id = intval($_POST['deal_client_id'] ?? 0) ?: null;
+        $stage = $_POST['deal_stage'] ?? 'prospecting';
+        $value = floatval($_POST['deal_value'] ?? 0);
+        $close_date = $_POST['deal_close_date'] ?? null;
+        $notes = trim($_POST['deal_notes'] ?? '');
+        if ($title) {
+            $pdo->prepare("INSERT INTO crm_deals (title, lead_id, client_id, stage, value, expected_close_date, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                ->execute([$title, $lead_id, $client_id, $stage, $value, $close_date ?: null, $notes, $_SESSION['user_id']]);
+            $success_msg = "Deal '$title' created.";
+        } else { $error_msg = 'Deal title is required.'; }
+        $tab = 'deals';
+    }
+
+    if ($action === 'update_deal_stage') {
+        $deal_id = intval($_POST['deal_id'] ?? 0);
+        $stage = $_POST['stage'] ?? 'prospecting';
+        if ($deal_id) {
+            $pdo->prepare("UPDATE crm_deals SET stage = ?, updated_at = NOW() WHERE id = ?")->execute([$stage, $deal_id]);
+        }
+        $tab = 'deals';
+    }
+
+    if ($action === 'delete_deal') {
+        $deal_id = intval($_POST['deal_id'] ?? 0);
+        if ($deal_id) { $pdo->prepare("DELETE FROM crm_deals WHERE id = ?")->execute([$deal_id]); }
+        $tab = 'deals';
+    }
+
+    if ($action === 'add_social_post') {
+        $platform = $_POST['post_platform'] ?? 'facebook';
+        $content = trim($_POST['post_content'] ?? '');
+        $scheduled_at = $_POST['post_scheduled_at'] ?? null;
+        if ($content) {
+            $pdo->prepare("INSERT INTO crm_social_posts (platform, content, scheduled_at, status, created_by) VALUES (?, ?, ?, 'scheduled', ?)")
+                ->execute([$platform, $content, $scheduled_at ?: null, $_SESSION['user_id']]);
+            $success_msg = 'Social post scheduled.';
+        }
+        $tab = 'marketing';
+    }
+
+    if ($action === 'delete_social_post') {
+        $post_id = intval($_POST['post_id'] ?? 0);
+        if ($post_id) { $pdo->prepare("DELETE FROM crm_social_posts WHERE id = ?")->execute([$post_id]); }
+        $tab = 'marketing';
     }
 
     if ($action === 'update_lead_status') {
@@ -124,6 +179,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $duration = (int)($_POST['meeting_duration'] ?? 60);
         $location = trim($_POST['meeting_location'] ?? '');
         $notes = trim($_POST['meeting_notes'] ?? '');
+        $calendar_link = trim($_POST['meeting_calendar_link'] ?? '');
         if ($title && $date) {
             $scheduled = $date . ' ' . $time . ':00';
             if ($client_id && !$client_name) {
@@ -132,8 +188,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 $c = $c->fetch(PDO::FETCH_ASSOC);
                 $client_name = $c ? ($c['company'] ?: $c['name']) : '';
             }
-            $pdo->prepare("INSERT INTO crm_meetings (title, client_id, client_name, meeting_type, scheduled_at, duration_minutes, location, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-                ->execute([$title, $client_id ?: null, $client_name, $type, $scheduled, $duration, $location, $notes, $_SESSION['user_id']]);
+            try {
+                $pdo->prepare("INSERT INTO crm_meetings (title, client_id, client_name, meeting_type, scheduled_at, duration_minutes, location, notes, calendar_link, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$title, $client_id ?: null, $client_name, $type, $scheduled, $duration, $location, $notes, $calendar_link ?: null, $_SESSION['user_id']]);
+            } catch (PDOException $e) {
+                $pdo->prepare("INSERT INTO crm_meetings (title, client_id, client_name, meeting_type, scheduled_at, duration_minutes, location, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$title, $client_id ?: null, $client_name, $type, $scheduled, $duration, $location, $notes, $_SESSION['user_id']]);
+            }
             $success_msg = "Meeting '$title' scheduled.";
         } else {
             $error_msg = 'Meeting title and date are required.';
@@ -243,6 +304,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 $leads = $pdo->query("SELECT * FROM crm_leads ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC);
 $campaigns = $pdo->query("SELECT * FROM crm_campaigns ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC);
 $meetings = $pdo->query("SELECT * FROM crm_meetings ORDER BY scheduled_at DESC")->fetchAll(PDO::FETCH_ASSOC);
+$deals = [];
+try { $deals = $pdo->query("SELECT d.*, l.name as lead_name, c.name as client_name, c.company as client_company FROM crm_deals d LEFT JOIN crm_leads l ON d.lead_id = l.id LEFT JOIN clients c ON d.client_id = c.id ORDER BY d.updated_at DESC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
+$social_posts = [];
+try { $social_posts = $pdo->query("SELECT * FROM crm_social_posts ORDER BY created_at DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
 
 $clients_list = [];
 try { $clients_list = $pdo->query("SELECT id, name, company FROM clients WHERE status = 'active' ORDER BY company, name")->fetchAll(PDO::FETCH_ASSOC); } catch (Exception $e) {}
@@ -279,9 +344,9 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                     <p class="text-sm text-gray-500 mt-0.5">Leads, campaigns, meetings, and inbox</p>
                 </div>
             </div>
-            <div class="px-6 flex gap-1 border-t border-gray-100">
-                <?php foreach (['leads' => 'Leads', 'campaigns' => 'Campaigns', 'meetings' => 'Meetings', 'inbox' => 'Inbox'] as $k => $v): ?>
-                    <a href="?tab=<?= $k ?>" class="px-4 py-3 text-sm font-medium border-b-2 transition <?= $tab === $k ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700' ?>" data-testid="tab-<?= $k ?>"><?= $v ?></a>
+            <div class="px-6 flex gap-1 border-t border-gray-100 overflow-x-auto">
+                <?php foreach (['leads' => 'Leads', 'deals' => '<i class="fas fa-handshake mr-1"></i>Deals', 'campaigns' => 'Campaigns', 'marketing' => '<i class="fas fa-share-alt mr-1"></i>Marketing', 'meetings' => 'Meetings', 'inbox' => 'Inbox'] as $k => $v): ?>
+                    <a href="?tab=<?= $k ?>" class="px-4 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap <?= $tab === $k ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700' ?>" data-testid="tab-<?= $k ?>"><?= $v ?></a>
                 <?php endforeach; ?>
             </div>
         </header>
@@ -393,13 +458,13 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                 <?php endif; ?>
             </div>
 
-            <div id="add-lead-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-                <div class="bg-white rounded-lg w-full max-w-lg mx-4 shadow-xl">
-                    <div class="flex items-center justify-between px-6 py-4 border-b">
+            <div id="add-lead-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div class="bg-white rounded-lg w-full max-w-xl mx-4 shadow-xl flex flex-col max-h-[90vh]">
+                    <div class="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
                         <h3 class="text-lg font-semibold">Add New Lead</h3>
                         <button onclick="document.getElementById('add-lead-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
                     </div>
-                    <form method="POST" class="p-6 space-y-4">
+                    <form method="POST" class="p-6 space-y-4 overflow-y-auto">
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="add_lead">
                         <div>
@@ -435,15 +500,293 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                                 </select>
                             </div>
                         </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Industry</label>
+                                <select name="lead_industry" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-lead-industry">
+                                    <option value="">-- Select --</option>
+                                    <option>Technology</option><option>Healthcare</option><option>Finance</option><option>Education</option>
+                                    <option>Manufacturing</option><option>Retail</option><option>Real Estate</option><option>Government</option><option>Other</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Employees</label>
+                                <select name="lead_employee_count" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-lead-employees">
+                                    <option value="">-- Select --</option>
+                                    <option>1-10</option><option>11-50</option><option>51-200</option><option>201-500</option><option>500+</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Service Interest</label>
+                                <select name="lead_service_interest" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-lead-service">
+                                    <option value="">-- Select --</option>
+                                    <option>Fiber Internet</option><option>VoIP Phone</option><option>Managed IT</option><option>Cloud Hosting</option>
+                                    <option>Cybersecurity</option><option>Microsoft 365</option><option>Other</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Geography</label>
+                                <input type="text" name="lead_geography" placeholder="City, State or Region" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-lead-geography">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Lead Score (0-100)</label>
+                                <input type="number" name="lead_score" min="0" max="100" value="50" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-lead-score">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Next Action Date</label>
+                                <input type="date" name="lead_next_action_date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-lead-next-action">
+                            </div>
+                        </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                            <textarea name="lead_notes" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="textarea-lead-notes"></textarea>
+                            <textarea name="lead_notes" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="textarea-lead-notes"></textarea>
                         </div>
                         <div class="flex justify-end gap-3 pt-2">
                             <button type="button" onclick="document.getElementById('add-lead-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
                             <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-submit-lead">Add Lead</button>
                         </div>
                     </form>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($tab === 'deals'): ?>
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-semibold text-gray-900">Sales Pipeline</h2>
+                <button onclick="document.getElementById('add-deal-modal').classList.remove('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-add-deal">
+                    <i class="fas fa-plus mr-1"></i>Add Deal
+                </button>
+            </div>
+            <?php
+            $stages = ['prospecting'=>'Prospecting','proposal'=>'Proposal','negotiation'=>'Negotiation','closed_won'=>'Won','closed_lost'=>'Lost'];
+            $stage_colors = ['prospecting'=>'blue','proposal'=>'purple','negotiation'=>'yellow','closed_won'=>'green','closed_lost'=>'red'];
+            $deals_by_stage = [];
+            foreach ($deals as $d) { $deals_by_stage[$d['stage']][] = $d; }
+            ?>
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+                <?php foreach ($stages as $stageKey => $stageLabel): $col = $stage_colors[$stageKey]; ?>
+                <div class="bg-gray-50 rounded-xl border border-gray-200 min-h-[220px] flex flex-col" data-testid="pipeline-col-<?= $stageKey ?>">
+                    <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200">
+                        <span class="text-xs font-semibold text-<?= $col ?>-700 uppercase tracking-wide"><?= $stageLabel ?></span>
+                        <span class="text-xs bg-<?= $col ?>-100 text-<?= $col ?>-700 px-2 py-0.5 rounded-full font-semibold"><?= count($deals_by_stage[$stageKey] ?? []) ?></span>
+                    </div>
+                    <div class="flex-1 p-2 space-y-2">
+                        <?php foreach (($deals_by_stage[$stageKey] ?? []) as $d): ?>
+                        <div class="bg-white rounded-lg border border-gray-200 p-3 shadow-sm" data-testid="deal-card-<?= $d['id'] ?>">
+                            <p class="text-sm font-semibold text-gray-900 mb-1"><?= htmlspecialchars($d['title']) ?></p>
+                            <?php if ($d['lead_name'] || $d['client_company'] || $d['client_name']): ?>
+                            <p class="text-xs text-gray-500 mb-1"><i class="fas fa-user text-gray-300 mr-1"></i><?= htmlspecialchars($d['client_company'] ?: $d['lead_name'] ?: '') ?></p>
+                            <?php endif; ?>
+                            <?php if ($d['value']): ?>
+                            <p class="text-xs font-semibold text-green-700 mb-2">$<?= number_format($d['value'], 0) ?></p>
+                            <?php endif; ?>
+                            <div class="flex items-center justify-between">
+                                <form method="POST" class="inline">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="update_deal_stage">
+                                    <input type="hidden" name="deal_id" value="<?= $d['id'] ?>">
+                                    <select name="stage" onchange="this.form.submit()" class="text-[10px] border rounded px-1 py-0.5 bg-white text-gray-600" data-testid="select-deal-stage-<?= $d['id'] ?>">
+                                        <?php foreach ($stages as $sk => $sl): ?>
+                                            <option value="<?= $sk ?>" <?= $d['stage'] === $sk ? 'selected' : '' ?>><?= $sl ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </form>
+                                <form method="POST" class="inline" onsubmit="return confirm('Delete deal?')">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="delete_deal">
+                                    <input type="hidden" name="deal_id" value="<?= $d['id'] ?>">
+                                    <button type="submit" class="text-red-400 hover:text-red-600 text-xs ml-2" data-testid="button-delete-deal-<?= $d['id'] ?>"><i class="fas fa-trash"></i></button>
+                                </form>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+
+            <div id="add-deal-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+                <div class="bg-white rounded-lg w-full max-w-lg mx-4 shadow-xl">
+                    <div class="flex items-center justify-between px-6 py-4 border-b">
+                        <h3 class="text-lg font-semibold">Add Deal</h3>
+                        <button onclick="document.getElementById('add-deal-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+                    </div>
+                    <form method="POST" class="p-6 space-y-4">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="add_deal">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Deal Title *</label>
+                            <input type="text" name="deal_title" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-deal-title">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Stage</label>
+                                <select name="deal_stage" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-deal-stage">
+                                    <?php foreach ($stages as $sk => $sl): ?>
+                                        <option value="<?= $sk ?>"><?= $sl ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Value ($)</label>
+                                <input type="number" name="deal_value" min="0" step="0.01" placeholder="0.00" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-deal-value">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Lead</label>
+                                <select name="deal_lead_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-deal-lead">
+                                    <option value="">-- None --</option>
+                                    <?php foreach ($leads as $l): ?>
+                                        <option value="<?= $l['id'] ?>"><?= htmlspecialchars($l['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Client</label>
+                                <select name="deal_client_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-deal-client">
+                                    <option value="">-- None --</option>
+                                    <?php foreach ($clients_list as $cl): ?>
+                                        <option value="<?= $cl['id'] ?>"><?= htmlspecialchars($cl['company'] ?: $cl['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Expected Close Date</label>
+                            <input type="date" name="deal_close_date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-deal-close-date">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                            <textarea name="deal_notes" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="textarea-deal-notes"></textarea>
+                        </div>
+                        <div class="flex justify-end gap-3 pt-2">
+                            <button type="button" onclick="document.getElementById('add-deal-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-submit-deal">Create Deal</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($tab === 'marketing'): ?>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-gray-900">Social Media Posts</h2>
+                    </div>
+                    <div class="bg-white rounded-lg border border-gray-200 mb-4">
+                        <div class="px-6 py-4 border-b border-gray-100">
+                            <h3 class="text-sm font-semibold text-gray-900"><i class="fas fa-plus-circle text-blue-500 mr-2"></i>Schedule New Post</h3>
+                        </div>
+                        <form method="POST" class="p-4 space-y-3">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="add_social_post">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Platform</label>
+                                    <select name="post_platform" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-post-platform">
+                                        <option value="facebook"><i class="fab fa-facebook"></i> Facebook</option>
+                                        <option value="instagram">Instagram</option>
+                                        <option value="linkedin">LinkedIn</option>
+                                        <option value="twitter">X (Twitter)</option>
+                                        <option value="google_business">Google Business</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Scheduled Date/Time</label>
+                                    <input type="datetime-local" name="post_scheduled_at" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-post-scheduled">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Post Content *</label>
+                                <textarea name="post_content" rows="3" required placeholder="Write your social media post..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="textarea-post-content"></textarea>
+                            </div>
+                            <div class="flex justify-end">
+                                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-submit-post">
+                                    <i class="fas fa-paper-plane mr-1"></i>Schedule Post
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="bg-white rounded-lg border border-gray-200">
+                        <div class="px-6 py-4 border-b border-gray-100">
+                            <h3 class="text-sm font-semibold text-gray-900">Scheduled &amp; Posted Content</h3>
+                        </div>
+                        <?php if (empty($social_posts)): ?>
+                            <div class="p-6 text-center text-gray-500 text-sm">No posts scheduled yet.</div>
+                        <?php else: ?>
+                        <div class="divide-y divide-gray-100">
+                            <?php foreach ($social_posts as $sp):
+                                $pc = ['facebook'=>'blue','instagram'=>'pink','linkedin'=>'blue','twitter'=>'sky','google_business'=>'red'][$sp['platform']] ?? 'gray';
+                                $pi = ['facebook'=>'fa-facebook','instagram'=>'fa-instagram','linkedin'=>'fa-linkedin','twitter'=>'fa-twitter','google_business'=>'fa-google'][$sp['platform']] ?? 'fa-share-alt';
+                            ?>
+                            <div class="px-4 py-3 hover:bg-gray-50 flex items-start gap-3" data-testid="post-row-<?= $sp['id'] ?>">
+                                <div class="w-8 h-8 rounded-lg bg-<?= $pc ?>-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fab <?= $pi ?> text-<?= $pc ?>-600 text-sm"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="text-xs font-semibold text-gray-700 capitalize"><?= htmlspecialchars(str_replace('_', ' ', $sp['platform'])) ?></span>
+                                        <span class="text-xs px-2 py-0.5 rounded-full <?= $sp['status'] === 'posted' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700' ?>"><?= ucfirst($sp['status']) ?></span>
+                                        <?php if ($sp['scheduled_at']): ?>
+                                        <span class="text-[10px] text-gray-400"><?= date('M d, g:i A', strtotime($sp['scheduled_at'])) ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <p class="text-sm text-gray-700 line-clamp-2"><?= htmlspecialchars($sp['content']) ?></p>
+                                </div>
+                                <form method="POST" class="inline" onsubmit="return confirm('Delete this post?')">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="delete_social_post">
+                                    <input type="hidden" name="post_id" value="<?= $sp['id'] ?>">
+                                    <button type="submit" class="text-red-400 hover:text-red-600 text-xs flex-shrink-0" data-testid="button-delete-post-<?= $sp['id'] ?>"><i class="fas fa-trash"></i></button>
+                                </form>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Marketing Overview</h2>
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <?php
+                        $total_posts = count($social_posts);
+                        $posted = count(array_filter($social_posts, fn($p) => $p['status'] === 'posted'));
+                        $scheduled_count = count(array_filter($social_posts, fn($p) => $p['status'] === 'scheduled'));
+                        ?>
+                        <div class="bg-white rounded-lg border border-gray-200 p-4">
+                            <p class="text-xs font-semibold text-gray-500 uppercase">Total Posts</p>
+                            <p class="text-2xl font-bold text-gray-900"><?= $total_posts ?></p>
+                        </div>
+                        <div class="bg-white rounded-lg border border-gray-200 p-4">
+                            <p class="text-xs font-semibold text-gray-500 uppercase">Scheduled</p>
+                            <p class="text-2xl font-bold text-blue-600"><?= $scheduled_count ?></p>
+                        </div>
+                        <div class="bg-white rounded-lg border border-gray-200 p-4">
+                            <p class="text-xs font-semibold text-gray-500 uppercase">Posted</p>
+                            <p class="text-2xl font-bold text-green-600"><?= $posted ?></p>
+                        </div>
+                        <div class="bg-white rounded-lg border border-gray-200 p-4">
+                            <p class="text-xs font-semibold text-gray-500 uppercase">Campaigns Active</p>
+                            <p class="text-2xl font-bold text-purple-600"><?= count(array_filter($campaigns, fn($c) => $c['status'] === 'active')) ?></p>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg border border-gray-200 p-4">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-3"><i class="fas fa-info-circle text-blue-500 mr-2"></i>Tips</h3>
+                        <ul class="text-sm text-gray-600 space-y-2">
+                            <li><i class="fas fa-check-circle text-green-500 mr-2"></i>Schedule posts consistently to build audience</li>
+                            <li><i class="fas fa-check-circle text-green-500 mr-2"></i>Best times: Tue-Thu, 9am–11am &amp; 1pm–3pm</li>
+                            <li><i class="fas fa-check-circle text-green-500 mr-2"></i>Mix promotional and educational content (80/20 rule)</li>
+                            <li><i class="fas fa-check-circle text-green-500 mr-2"></i>Use hashtags relevant to MSP and fiber services</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
             <?php endif; ?>
@@ -692,9 +1035,15 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                                 </select>
                             </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                            <input type="text" name="meeting_location" placeholder="Zoom, Office, Phone..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-meeting-location">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                                <input type="text" name="meeting_location" placeholder="Zoom, Office, Phone..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-meeting-location">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1"><i class="fas fa-cloud text-blue-400 mr-1"></i>Nextcloud Calendar Link</label>
+                                <input type="url" name="meeting_calendar_link" placeholder="https://cloud.example.com/..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-meeting-calendar-link">
+                            </div>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>

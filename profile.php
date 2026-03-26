@@ -85,7 +85,7 @@ try {
     $stmt->execute([$user_id]);
     $client_data = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    $stmt = $pdo->prepare("SELECT email, created_at FROM users WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT email, created_at, avatar_path FROM users WHERE id = ?");
     $stmt->execute([$user_id]);
     $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
@@ -93,6 +93,7 @@ try {
     $client_data = [];
     $user_data = [];
 }
+$avatar_path = $user_data['avatar_path'] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -135,13 +136,24 @@ try {
 
             <div class="bg-white rounded-lg border border-gray-200 mb-6">
                 <div class="px-6 py-4 border-b border-gray-200 flex items-center gap-4">
-                    <div class="bg-blue-600 text-white rounded-full h-16 w-16 flex items-center justify-center font-bold text-2xl">
-                        <?php echo strtoupper(substr($user_name, 0, 1)); ?>
+                    <div class="relative group">
+                        <?php if ($avatar_path): ?>
+                            <img src="/<?php echo htmlspecialchars($avatar_path); ?>" alt="Avatar" class="h-16 w-16 rounded-full object-cover border-2 border-blue-200" data-testid="img-avatar" id="avatar-preview">
+                        <?php else: ?>
+                            <div class="bg-blue-600 text-white rounded-full h-16 w-16 flex items-center justify-center font-bold text-2xl" id="avatar-initials">
+                                <?php echo strtoupper(substr($user_name, 0, 1)); ?>
+                            </div>
+                        <?php endif; ?>
+                        <label for="avatar-input" class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 rounded-full flex items-center justify-center cursor-pointer transition" title="Change avatar">
+                            <i class="fas fa-camera text-white opacity-0 group-hover:opacity-100 transition text-lg"></i>
+                        </label>
+                        <input type="file" id="avatar-input" accept=".jpg,.jpeg,.gif,.png" class="hidden" data-testid="input-avatar">
                     </div>
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900"><?php echo htmlspecialchars($user_name); ?></h2>
                         <p class="text-sm text-gray-500"><?php echo htmlspecialchars($user_email); ?></p>
                         <p class="text-xs text-gray-400 mt-0.5">Member since <?php echo $user_data ? date('M Y', strtotime($user_data['created_at'])) : 'N/A'; ?></p>
+                        <p id="avatar-status" class="text-xs mt-1"></p>
                     </div>
                 </div>
             </div>
@@ -228,5 +240,41 @@ try {
         </div>
     </div>
 </div>
+<script>
+document.getElementById('avatar-input').addEventListener('change', async function() {
+    if (!this.files || !this.files[0]) return;
+    const status = document.getElementById('avatar-status');
+    status.textContent = 'Uploading...';
+    status.className = 'text-xs mt-1 text-blue-600';
+    const fd = new FormData();
+    fd.append('avatar', this.files[0]);
+    try {
+        const resp = await fetch('/api/upload/avatar', { method: 'POST', body: fd });
+        const data = await resp.json();
+        if (data.success) {
+            const existing = document.getElementById('avatar-preview');
+            const initials = document.getElementById('avatar-initials');
+            if (existing) {
+                existing.src = data.path + '?t=' + Date.now();
+            } else if (initials) {
+                const img = document.createElement('img');
+                img.src = data.path + '?t=' + Date.now();
+                img.id = 'avatar-preview';
+                img.className = 'h-16 w-16 rounded-full object-cover border-2 border-blue-200';
+                img.alt = 'Avatar';
+                initials.replaceWith(img);
+            }
+            status.textContent = '✓ Avatar updated!';
+            status.className = 'text-xs mt-1 text-green-600 font-medium';
+        } else {
+            status.textContent = 'Error: ' + (data.error || 'Upload failed');
+            status.className = 'text-xs mt-1 text-red-600';
+        }
+    } catch(e) {
+        status.textContent = 'Network error. Please try again.';
+        status.className = 'text-xs mt-1 text-red-600';
+    }
+});
+</script>
 </body>
 </html>

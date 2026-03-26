@@ -184,9 +184,100 @@ foreach ($articles as $a) {
                     </div>
 
                     <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Content <span class="text-gray-400 font-normal">(supports Markdown)</span></label>
-                        <textarea name="content" rows="15" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-testid="input-article-content"><?php echo htmlspecialchars($edit_article['content'] ?? ''); ?></textarea>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="block text-sm font-medium text-gray-700">Content</label>
+                            <div class="flex items-center gap-2">
+                                <button type="button" id="btn-mode-raw" onclick="setEditorMode('raw')" class="px-3 py-1 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-medium" data-testid="button-editor-raw"><i class="fas fa-code mr-1"></i>Raw HTML</button>
+                                <button type="button" id="btn-mode-rich" onclick="setEditorMode('rich')" class="px-3 py-1 text-xs rounded border border-blue-400 bg-blue-50 text-blue-700 font-medium" data-testid="button-editor-rich"><i class="fas fa-paint-brush mr-1"></i>Rich Text</button>
+                                <label class="flex items-center gap-1 cursor-pointer ml-2 text-xs text-gray-600 border border-gray-300 rounded px-2 py-1 hover:bg-gray-50" title="Upload PDF (converts to link)">
+                                    <i class="fas fa-file-pdf text-red-500"></i> PDF Upload
+                                    <input type="file" id="pdf-upload-input" accept=".pdf" class="hidden" data-testid="input-pdf-upload">
+                                </label>
+                                <span id="pdf-upload-status" class="text-xs text-gray-500 hidden"></span>
+                            </div>
+                        </div>
+                        <div id="editor-rich-container" class="border border-gray-300 rounded-lg overflow-hidden">
+                            <div id="editor-toolbar" class="flex flex-wrap gap-1 px-2 py-1 bg-gray-50 border-b border-gray-200">
+                                <button type="button" onclick="execCmd('bold')" class="px-2 py-1 text-xs rounded hover:bg-gray-200 font-bold" title="Bold"><b>B</b></button>
+                                <button type="button" onclick="execCmd('italic')" class="px-2 py-1 text-xs rounded hover:bg-gray-200 italic" title="Italic"><i>I</i></button>
+                                <button type="button" onclick="execCmd('underline')" class="px-2 py-1 text-xs rounded hover:bg-gray-200 underline" title="Underline">U</button>
+                                <span class="w-px bg-gray-300 mx-1"></span>
+                                <button type="button" onclick="execCmd('insertUnorderedList')" class="px-2 py-1 text-xs rounded hover:bg-gray-200" title="Bullet List"><i class="fas fa-list-ul"></i></button>
+                                <button type="button" onclick="execCmd('insertOrderedList')" class="px-2 py-1 text-xs rounded hover:bg-gray-200" title="Numbered List"><i class="fas fa-list-ol"></i></button>
+                                <span class="w-px bg-gray-300 mx-1"></span>
+                                <button type="button" onclick="insertHeading(2)" class="px-2 py-1 text-xs rounded hover:bg-gray-200 font-bold" title="H2">H2</button>
+                                <button type="button" onclick="insertHeading(3)" class="px-2 py-1 text-xs rounded hover:bg-gray-200 font-bold" title="H3">H3</button>
+                                <span class="w-px bg-gray-300 mx-1"></span>
+                                <button type="button" onclick="insertLink()" class="px-2 py-1 text-xs rounded hover:bg-gray-200" title="Link"><i class="fas fa-link"></i></button>
+                                <button type="button" onclick="execCmd('removeFormat')" class="px-2 py-1 text-xs rounded hover:bg-gray-200 text-red-500" title="Clear Formatting"><i class="fas fa-eraser"></i></button>
+                            </div>
+                            <div id="rich-editor" contenteditable="true" class="min-h-[250px] p-3 text-sm focus:outline-none" style="line-height:1.7"><?php echo $edit_article['content'] ?? ''; ?></div>
+                        </div>
+                        <textarea name="content" id="content-hidden" required class="hidden" data-testid="input-article-content"><?php echo htmlspecialchars($edit_article['content'] ?? ''); ?></textarea>
+                        <div id="raw-editor-container" class="hidden">
+                            <textarea id="raw-editor" name="content_raw" rows="15" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500" placeholder="Enter HTML or plain content..."><?php echo htmlspecialchars($edit_article['content'] ?? ''); ?></textarea>
+                        </div>
                     </div>
+                    <script>
+                    let editorMode = 'rich';
+                    function setEditorMode(mode) {
+                        editorMode = mode;
+                        const rich = document.getElementById('editor-rich-container');
+                        const raw = document.getElementById('raw-editor-container');
+                        if (mode === 'rich') {
+                            const rawVal = document.getElementById('raw-editor').value;
+                            document.getElementById('rich-editor').innerHTML = rawVal;
+                            rich.classList.remove('hidden'); raw.classList.add('hidden');
+                            document.getElementById('btn-mode-rich').className = 'px-3 py-1 text-xs rounded border border-blue-400 bg-blue-50 text-blue-700 font-medium';
+                            document.getElementById('btn-mode-raw').className = 'px-3 py-1 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-medium';
+                        } else {
+                            const richContent = document.getElementById('rich-editor').innerHTML;
+                            document.getElementById('raw-editor').value = richContent;
+                            raw.classList.remove('hidden'); rich.classList.add('hidden');
+                            document.getElementById('btn-mode-raw').className = 'px-3 py-1 text-xs rounded border border-blue-400 bg-blue-50 text-blue-700 font-medium';
+                            document.getElementById('btn-mode-rich').className = 'px-3 py-1 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-medium';
+                        }
+                    }
+                    function execCmd(cmd) { document.execCommand(cmd, false, null); document.getElementById('rich-editor').focus(); }
+                    function insertHeading(level) {
+                        document.execCommand('formatBlock', false, 'h' + level);
+                        document.getElementById('rich-editor').focus();
+                    }
+                    function insertLink() {
+                        const url = prompt('Enter URL:');
+                        if (url) document.execCommand('createLink', false, url);
+                        document.getElementById('rich-editor').focus();
+                    }
+                    document.querySelector('form').addEventListener('submit', function() {
+                        const hidden = document.getElementById('content-hidden');
+                        if (editorMode === 'rich') {
+                            hidden.value = document.getElementById('rich-editor').innerHTML;
+                        } else {
+                            hidden.value = document.getElementById('raw-editor').value;
+                        }
+                    });
+                    document.getElementById('pdf-upload-input').addEventListener('change', async function() {
+                        if (!this.files || !this.files[0]) return;
+                        const statusEl = document.getElementById('pdf-upload-status');
+                        statusEl.textContent = 'Uploading PDF...'; statusEl.classList.remove('hidden');
+                        const fd = new FormData(); fd.append('pdf', this.files[0]);
+                        try {
+                            const resp = await fetch('/api/upload/article-pdf', { method: 'POST', body: fd });
+                            const data = await resp.json();
+                            if (data.success) {
+                                const link = `<p><a href="${data.path}" target="_blank" style="color:#2563eb;text-decoration:underline;">📄 ${data.filename}</a></p>`;
+                                if (editorMode === 'rich') {
+                                    document.getElementById('rich-editor').innerHTML += link;
+                                } else {
+                                    document.getElementById('raw-editor').value += '\n' + link;
+                                }
+                                statusEl.textContent = '✓ PDF added to content';
+                            } else {
+                                statusEl.textContent = 'Error: ' + (data.error || 'Upload failed');
+                            }
+                        } catch(e) { statusEl.textContent = 'Network error.'; }
+                    });
+                    </script>
 
                     <div class="flex items-center justify-between">
                         <label class="flex items-center gap-2">
