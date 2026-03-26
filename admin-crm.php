@@ -107,6 +107,51 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $tab = 'deals';
     }
 
+    if ($action === 'save_social_api') {
+        $platforms = ['facebook','youtube','instagram','linkedin'];
+        foreach ($platforms as $plat) {
+            $fields = ['app_id','app_secret','access_token','page_id','channel_id','org_id','api_key'];
+            foreach ($fields as $f) {
+                $key = "social_{$plat}_{$f}";
+                if (isset($_POST[$key])) {
+                    $val = trim($_POST[$key]);
+                    $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (?,?,NOW()) ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value, updated_at=NOW()")
+                        ->execute([$key, $val ?: null]);
+                }
+            }
+        }
+        $success_msg = 'API settings saved.';
+        $tab = 'marketing';
+    }
+
+    if ($action === 'add_company_comm') {
+        $cid = intval($_POST['comm_company_id'] ?? 0);
+        $type = $_POST['comm_type'] ?? 'note';
+        $subject = trim($_POST['comm_subject'] ?? '');
+        $body = trim($_POST['comm_body'] ?? '');
+        $direction = $_POST['comm_direction'] ?? 'outbound';
+        $duration = intval($_POST['comm_duration'] ?? 0) ?: null;
+        $outcome = trim($_POST['comm_outcome'] ?? '');
+        $scheduled_at = trim($_POST['comm_scheduled_at'] ?? '') ?: null;
+        if ($cid && $body) {
+            $pdo->prepare("INSERT INTO crm_communications (entity_type, entity_id, type, subject, body, direction, duration_minutes, outcome, scheduled_at, created_by) VALUES ('company',?,?,?,?,?,?,?,?,?)")
+                ->execute([$cid, $type, $subject ?: null, $body, $direction, $duration, $outcome ?: null, $scheduled_at, $_SESSION['user_id']]);
+            $success_msg = ucfirst($type) . ' logged.';
+        }
+        $tab = 'companies';
+        header("Location: ?tab=companies&cid=$cid&cv=activities");
+        exit;
+    }
+
+    if ($action === 'delete_company_comm') {
+        $comm_id = intval($_POST['comm_id'] ?? 0);
+        $cid = intval($_POST['comm_company_id'] ?? 0);
+        if ($comm_id) { $pdo->prepare("DELETE FROM crm_communications WHERE id = ? AND entity_type = 'company'")->execute([$comm_id]); }
+        $tab = 'companies';
+        header("Location: ?tab=companies&cid=$cid&cv=activities");
+        exit;
+    }
+
     if ($action === 'add_social_post') {
         $platform = $_POST['post_platform'] ?? 'facebook';
         $content = trim($_POST['post_content'] ?? '');
@@ -346,6 +391,12 @@ $social_posts = [];
 try { $social_posts = $pdo->query("SELECT * FROM crm_social_posts ORDER BY created_at DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
 $companies = [];
 try { $companies = $pdo->query("SELECT * FROM crm_companies ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
+
+$social_api = [];
+try {
+    $rows = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'social_%'")->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($rows as $r) { $social_api[$r['setting_key']] = $r['setting_value']; }
+} catch(Exception $e) {}
 
 $clients_list = [];
 try { $clients_list = $pdo->query("SELECT id, name, company FROM clients WHERE status = 'active' ORDER BY company, name")->fetchAll(PDO::FETCH_ASSOC); } catch (Exception $e) {}
@@ -611,6 +662,12 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                 if ($detail_company) {
                     try { $company_contacts = $pdo->prepare("SELECT id, name, email, phone, company, client_code FROM clients WHERE crm_company_id = ? ORDER BY name")->execute([$detail_id]) ? $pdo->query("SELECT id, name, email, phone, company, client_code FROM clients WHERE crm_company_id = $detail_id ORDER BY name")->fetchAll(PDO::FETCH_ASSOC) : []; } catch(\Exception $e) {}
                 }
+                $company_comms = [];
+                try {
+                    $s = $pdo->prepare("SELECT cc.*, u.name as author_name FROM crm_communications cc LEFT JOIN users u ON cc.created_by = u.id WHERE cc.entity_type='company' AND cc.entity_id=? ORDER BY cc.created_at DESC LIMIT 100");
+                    $s->execute([$detail_id]);
+                    $company_comms = $s->fetchAll(PDO::FETCH_ASSOC);
+                } catch(\Exception $e) {}
             }
             ?>
             <?php if ($detail_company): ?>
@@ -642,11 +699,127 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                                 <a href="?tab=companies&cid=<?= $detail_company['id'] ?>&cv=activities" class="px-3 py-1.5 text-sm font-medium rounded-md <?= ($_GET['cv'] ?? '') === 'activities' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700' ?>">Activities</a>
                             </div>
                             <?php if (($_GET['cv'] ?? 'about') === 'activities'): ?>
-                            <div class="text-center py-12 text-gray-400">
-                                <i class="fas fa-history text-4xl mb-3 block"></i>
-                                <p class="font-medium">No activities yet</p>
-                                <p class="text-sm mt-1">Add notes, emails, calls, and tasks to track engagement</p>
+                            <?php
+                            $comm_type_filter = $_GET['ct'] ?? '';
+                            $type_icons = ['note'=>'fa-sticky-note text-yellow-500','email'=>'fa-envelope text-blue-500','call'=>'fa-phone text-green-500','meeting'=>'fa-calendar text-purple-500','task'=>'fa-tasks text-orange-500'];
+                            $type_labels = ['note'=>'Note','email'=>'Email','call'=>'Call','meeting'=>'Meeting','task'=>'Task'];
+                            $filtered_comms = $company_comms;
+                            if ($comm_type_filter) $filtered_comms = array_filter($company_comms, fn($c) => $c['type'] === $comm_type_filter);
+                            ?>
+                            <!-- Add Communication Form -->
+                            <div class="mb-5 bg-gray-50 rounded-xl border border-gray-200 p-4">
+                                <div class="flex gap-2 mb-3" id="comm-type-tabs">
+                                    <?php foreach (['note'=>['fa-sticky-note','Note'],'email'=>['fa-envelope','Email'],'call'=>['fa-phone','Call'],'meeting'=>['fa-calendar','Meeting']] as $ct => [$ico, $lbl]): ?>
+                                    <button type="button" onclick="switchCommType('<?= $ct ?>')" class="comm-type-btn px-3 py-1.5 text-xs font-medium rounded-lg border transition <?= $ct === 'note' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400' ?>" data-type="<?= $ct ?>" data-testid="btn-comm-type-<?= $ct ?>">
+                                        <i class="fas <?= $ico ?> mr-1"></i><?= $lbl ?>
+                                    </button>
+                                    <?php endforeach; ?>
+                                </div>
+                                <form method="POST" class="space-y-3">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="add_company_comm">
+                                    <input type="hidden" name="comm_company_id" value="<?= $detail_company['id'] ?>">
+                                    <input type="hidden" name="comm_type" id="comm_type_val" value="note">
+                                    <div id="comm-subject-row">
+                                        <input type="text" name="comm_subject" placeholder="Subject..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-comm-subject">
+                                    </div>
+                                    <textarea name="comm_body" rows="3" required placeholder="Add a note..." id="comm_body_area" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="textarea-comm-body"></textarea>
+                                    <div id="comm-extra-fields" class="hidden grid grid-cols-2 gap-3">
+                                        <div id="comm-duration-field">
+                                            <label class="text-xs text-gray-600 mb-1 block">Duration (min)</label>
+                                            <input type="number" name="comm_duration" min="0" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-comm-duration">
+                                        </div>
+                                        <div id="comm-outcome-field">
+                                            <label class="text-xs text-gray-600 mb-1 block">Outcome</label>
+                                            <select name="comm_outcome" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-comm-outcome">
+                                                <option value="">— Select —</option>
+                                                <option>Connected</option><option>Left Voicemail</option><option>No Answer</option><option>Interested</option><option>Not Interested</option><option>Follow Up</option>
+                                            </select>
+                                        </div>
+                                        <div id="comm-scheduled-field" class="col-span-2">
+                                            <label class="text-xs text-gray-600 mb-1 block">Scheduled At</label>
+                                            <input type="datetime-local" name="comm_scheduled_at" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-comm-scheduled">
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <div class="flex gap-2 items-center text-xs text-gray-500">
+                                            <label class="flex items-center gap-1"><input type="radio" name="comm_direction" value="outbound" checked class="accent-blue-600"> Outbound</label>
+                                            <label class="flex items-center gap-1"><input type="radio" name="comm_direction" value="inbound" class="accent-blue-600"> Inbound</label>
+                                        </div>
+                                        <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg" data-testid="button-submit-comm">Log Activity</button>
+                                    </div>
+                                </form>
                             </div>
+                            <script>
+                            function switchCommType(type) {
+                                document.getElementById('comm_type_val').value = type;
+                                document.querySelectorAll('.comm-type-btn').forEach(b => {
+                                    b.classList.toggle('bg-blue-600', b.dataset.type === type);
+                                    b.classList.toggle('text-white', b.dataset.type === type);
+                                    b.classList.toggle('border-blue-600', b.dataset.type === type);
+                                    b.classList.toggle('bg-white', b.dataset.type !== type);
+                                    b.classList.toggle('text-gray-600', b.dataset.type !== type);
+                                    b.classList.toggle('border-gray-300', b.dataset.type !== type);
+                                });
+                                const placeholders = {note:'Add a note...',email:'Write your email...',call:'Call summary...',meeting:'Meeting notes...'};
+                                document.getElementById('comm_body_area').placeholder = placeholders[type] || 'Details...';
+                                const extraFields = document.getElementById('comm-extra-fields');
+                                if (type === 'call' || type === 'meeting') { extraFields.classList.remove('hidden'); extraFields.classList.add('grid'); }
+                                else { extraFields.classList.add('hidden'); extraFields.classList.remove('grid'); }
+                            }
+                            </script>
+                            <!-- Filter Bar -->
+                            <div class="flex gap-2 flex-wrap mb-3">
+                                <a href="?tab=companies&cid=<?= $detail_company['id'] ?>&cv=activities" class="px-2 py-1 text-xs rounded <?= !$comm_type_filter ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-500 hover:text-gray-700' ?>">All</a>
+                                <?php foreach ($type_labels as $ct => $lbl): ?>
+                                <a href="?tab=companies&cid=<?= $detail_company['id'] ?>&cv=activities&ct=<?= $ct ?>" class="px-2 py-1 text-xs rounded <?= $comm_type_filter === $ct ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-500 hover:text-gray-700' ?>"><?= $lbl ?>s</a>
+                                <?php endforeach; ?>
+                                <span class="ml-auto text-xs text-gray-400"><?= count($filtered_comms) ?> activities</span>
+                            </div>
+                            <!-- Activities List -->
+                            <?php if (empty($filtered_comms)): ?>
+                            <div class="text-center py-8 text-gray-400">
+                                <i class="fas fa-history text-3xl mb-2 block opacity-40"></i>
+                                <p class="text-sm">No activities<?= $comm_type_filter ? ' of this type' : '' ?> yet</p>
+                            </div>
+                            <?php else: ?>
+                            <div class="space-y-3">
+                                <?php foreach ($filtered_comms as $cm): ?>
+                                <div class="bg-white rounded-xl border border-gray-200 p-4" data-testid="comm-item-<?= $cm['id'] ?>">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="flex items-center gap-2">
+                                            <i class="fas <?= $type_icons[$cm['type']] ?? 'fa-circle text-gray-400' ?> text-sm"></i>
+                                            <span class="text-xs font-semibold text-gray-700 uppercase"><?= $type_labels[$cm['type']] ?? $cm['type'] ?></span>
+                                            <?php if ($cm['direction']): ?>
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded-full <?= $cm['direction'] === 'inbound' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700' ?>"><?= ucfirst($cm['direction']) ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[11px] text-gray-400"><?= date('M d, Y g:i A', strtotime($cm['created_at'])) ?></span>
+                                            <form method="POST" class="inline" onsubmit="return confirm('Delete this entry?')">
+                                                <?= csrf_field() ?>
+                                                <input type="hidden" name="action" value="delete_company_comm">
+                                                <input type="hidden" name="comm_id" value="<?= $cm['id'] ?>">
+                                                <input type="hidden" name="comm_company_id" value="<?= $detail_company['id'] ?>">
+                                                <button type="submit" class="text-gray-300 hover:text-red-500 text-xs"><i class="fas fa-trash"></i></button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                    <?php if ($cm['subject']): ?>
+                                    <p class="text-sm font-semibold text-gray-900 mt-2"><?= htmlspecialchars($cm['subject']) ?></p>
+                                    <?php endif; ?>
+                                    <p class="text-sm text-gray-700 mt-1 whitespace-pre-wrap"><?= htmlspecialchars($cm['body']) ?></p>
+                                    <?php if ($cm['duration_minutes'] || $cm['outcome']): ?>
+                                    <div class="flex gap-4 mt-2 text-xs text-gray-400">
+                                        <?php if ($cm['duration_minutes']): ?><span><i class="fas fa-clock mr-1"></i><?= $cm['duration_minutes'] ?> min</span><?php endif; ?>
+                                        <?php if ($cm['outcome']): ?><span><i class="fas fa-flag mr-1"></i><?= htmlspecialchars($cm['outcome']) ?></span><?php endif; ?>
+                                    </div>
+                                    <?php endif; ?>
+                                    <p class="text-[11px] text-gray-400 mt-2">by <?= htmlspecialchars($cm['author_name'] ?? 'System') ?></p>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <?php endif; ?>
                             <?php else: ?>
                             <div>
                                 <h3 class="text-sm font-semibold text-gray-900 mb-3">Company Profile</h3>
@@ -1200,6 +1373,66 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                         </ul>
                     </div>
                 </div>
+            </div>
+
+            <!-- Social API Connections -->
+            <div class="mt-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-plug text-blue-500 mr-2"></i>Platform API Connections</h2>
+                </div>
+                <?php
+                $api_platforms = [
+                    'facebook'  => ['Facebook','fa-facebook','#1877F2', ['App ID'=>'app_id','App Secret'=>'app_secret','Page Access Token'=>'access_token','Page ID'=>'page_id']],
+                    'instagram' => ['Instagram','fa-instagram','#E1306C', ['Access Token'=>'access_token','Business Account ID'=>'page_id']],
+                    'linkedin'  => ['LinkedIn','fa-linkedin','#0A66C2', ['Client ID'=>'app_id','Client Secret'=>'app_secret','Page Access Token'=>'access_token','Organization ID'=>'org_id']],
+                    'youtube'   => ['YouTube','fa-youtube','#FF0000', ['API Key'=>'api_key','Channel ID'=>'channel_id']],
+                ];
+                foreach ($api_platforms as $plat => [$plat_name, $plat_icon, $plat_color, $plat_fields]):
+                    $is_connected = false;
+                    foreach ($plat_fields as $label => $field) {
+                        if (!empty($social_api["social_{$plat}_{$field}"])) { $is_connected = true; break; }
+                    }
+                ?>
+                <div class="bg-white rounded-xl border border-gray-200 mb-4">
+                    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <span class="text-xl" style="color:<?= $plat_color ?>"><i class="fab <?= $plat_icon ?>"></i></span>
+                            <h3 class="font-semibold text-gray-900"><?= $plat_name ?></h3>
+                        </div>
+                        <?php if ($is_connected): ?>
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full"><i class="fas fa-check-circle"></i> Connected</span>
+                        <?php else: ?>
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full"><i class="fas fa-circle"></i> Not connected</span>
+                        <?php endif; ?>
+                    </div>
+                    <form method="POST" class="p-5">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="save_social_api">
+                        <div class="grid grid-cols-2 gap-4">
+                            <?php foreach ($plat_fields as $label => $field):
+                                $key = "social_{$plat}_{$field}";
+                                $val = $social_api[$key] ?? '';
+                                $is_secret = in_array($field, ['app_secret','access_token']);
+                            ?>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 mb-1"><?= $label ?></label>
+                                <input type="<?= $is_secret ? 'password' : 'text' ?>"
+                                    name="<?= $key ?>"
+                                    value="<?= htmlspecialchars($val) ?>"
+                                    placeholder="<?= $is_secret ? '••••••••' : "Enter $label..." ?>"
+                                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono"
+                                    data-testid="input-<?= $key ?>">
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="mt-3 flex justify-end">
+                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-save-<?= $plat ?>-api">
+                                <i class="fas fa-save mr-1"></i>Save <?= $plat_name ?> Settings
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <?php endforeach; ?>
             </div>
             <?php endif; ?>
 

@@ -1881,6 +1881,24 @@ async function bootstrapPortalDatabase() {
 
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS crm_company_id INTEGER REFERENCES crm_companies(id) ON DELETE SET NULL`).catch(() => {});
 
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS crm_communications (
+        id SERIAL PRIMARY KEY,
+        entity_type VARCHAR(20) NOT NULL DEFAULT 'client',
+        entity_id INTEGER NOT NULL,
+        type VARCHAR(20) NOT NULL DEFAULT 'note',
+        subject VARCHAR(300),
+        body TEXT,
+        direction VARCHAR(20) DEFAULT 'outbound',
+        duration_minutes INTEGER,
+        outcome VARCHAR(100),
+        status VARCHAR(30) DEFAULT 'completed',
+        scheduled_at TIMESTAMP,
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     const adminCheck = await webhookPool.query("SELECT id FROM users WHERE email = 'admin@bluemogul.biz' LIMIT 1");
     if (adminCheck.rows.length === 0) {
       const { execSync } = await import("child_process");

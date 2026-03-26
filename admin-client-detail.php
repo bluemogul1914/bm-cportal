@@ -40,6 +40,35 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
     }
 
+    if ($action === 'add_client_comm') {
+        $type = $_POST['comm_type'] ?? 'note';
+        $subject = trim($_POST['comm_subject'] ?? '');
+        $body = trim($_POST['comm_body'] ?? '');
+        $direction = $_POST['comm_direction'] ?? 'outbound';
+        $duration = intval($_POST['comm_duration'] ?? 0) ?: null;
+        $outcome = trim($_POST['comm_outcome'] ?? '');
+        $scheduled_at = trim($_POST['comm_scheduled_at'] ?? '') ?: null;
+        if ($body) {
+            try {
+                $pdo->prepare("INSERT INTO crm_communications (entity_type, entity_id, type, subject, body, direction, duration_minutes, outcome, scheduled_at, created_by) VALUES ('client',?,?,?,?,?,?,?,?,?)")
+                    ->execute([$client_id, $type, $subject ?: null, $body, $direction, $duration, $outcome ?: null, $scheduled_at, $user_id]);
+                if ($type === 'email' && $subject && $body) {
+                    require_once 'includes/email.php';
+                    try {
+                        $to_email = $pdo->query("SELECT email FROM clients WHERE id = $client_id")->fetchColumn();
+                        if ($to_email) send_email($to_email, $subject, nl2br(htmlspecialchars($body)));
+                    } catch (\Exception $e2) {}
+                }
+                $success_msg = ucfirst($type) . ' logged' . ($type === 'email' ? ' and sent.' : '.');
+            } catch (\Exception $e) { $error_msg = 'Failed to save communication.'; }
+        }
+    }
+
+    if ($action === 'delete_client_comm') {
+        $comm_id = intval($_POST['comm_id'] ?? 0);
+        if ($comm_id) { try { $pdo->prepare("DELETE FROM crm_communications WHERE id = ? AND entity_type = 'client' AND entity_id = ?")->execute([$comm_id, $client_id]); } catch(\Exception $e) {} }
+    }
+
     if ($action === 'add_tag') {
         $tag = trim($_POST['tag'] ?? '');
         if ($tag) {
@@ -268,6 +297,13 @@ try {
 
     $all_crm_companies = [];
     try { $all_crm_companies = $pdo->query("SELECT id, name FROM crm_companies ORDER BY name")->fetchAll(PDO::FETCH_ASSOC); } catch(\Exception $e) {}
+
+    $client_comms = [];
+    try {
+        $cs = $pdo->prepare("SELECT cc.*, u.name as author_name FROM crm_communications cc LEFT JOIN users u ON cc.created_by = u.id WHERE cc.entity_type='client' AND cc.entity_id=? ORDER BY cc.created_at DESC LIMIT 100");
+        $cs->execute([$client_id]);
+        $client_comms = $cs->fetchAll(PDO::FETCH_ASSOC);
+    } catch(\Exception $e) {}
 
     $client_notes = $client['notes'] ?? '';
     $client_tags = [];
@@ -584,6 +620,116 @@ $show_map = $has_location || $has_address;
                             <?php if (count($all_client_logs) > 20): ?>
                             <p class="text-xs text-gray-400 mt-3 text-center">Showing 20 of <?php echo count($all_client_logs); ?> entries</p>
                             <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- Communications Section -->
+                    <div class="bg-white rounded-lg border border-gray-200" id="communications-section">
+                        <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+                            <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide"><i class="fas fa-comments text-blue-500 mr-2"></i>Communications</h2>
+                            <span class="text-xs text-gray-400"><?= count($client_comms) ?> entries</span>
+                        </div>
+                        <div class="p-4">
+                            <!-- Type Tabs -->
+                            <div class="flex gap-2 mb-3 flex-wrap" id="client-comm-type-tabs">
+                                <?php foreach (['note'=>['fa-sticky-note','Note','yellow'],'email'=>['fa-envelope','Email','blue'],'call'=>['fa-phone','Call','green'],'meeting'=>['fa-calendar','Meeting','purple']] as $ct => [$ico, $lbl, $clr]): ?>
+                                <button type="button" onclick="switchClientComm('<?= $ct ?>')" class="client-comm-btn px-3 py-1.5 text-xs font-medium rounded-lg border transition <?= $ct === 'note' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400' ?>" data-type="<?= $ct ?>" data-testid="client-comm-tab-<?= $ct ?>">
+                                    <i class="fas <?= $ico ?> mr-1"></i><?= $lbl ?>
+                                </button>
+                                <?php endforeach; ?>
+                            </div>
+                            <!-- Add Communication Form -->
+                            <form method="POST" class="mb-4 space-y-2" id="client-comm-form">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="add_client_comm">
+                                <input type="hidden" name="comm_type" id="client_comm_type_val" value="note">
+                                <input type="text" name="comm_subject" id="client_comm_subject" placeholder="Subject..." class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm hidden" data-testid="input-client-comm-subject">
+                                <div class="flex items-start gap-2">
+                                    <div class="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 mt-3"></div>
+                                    <textarea name="comm_body" rows="2" required placeholder="Add a note..." id="client_comm_body" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm resize-y focus:ring-2 focus:ring-blue-500" data-testid="input-client-comm-body"></textarea>
+                                    <button type="submit" class="px-3 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 mt-0 whitespace-nowrap" data-testid="button-add-client-comm">Save</button>
+                                </div>
+                                <div id="client-comm-extra" class="hidden grid grid-cols-3 gap-2 ml-4">
+                                    <div>
+                                        <label class="text-[10px] text-gray-400 uppercase block mb-0.5">Duration (min)</label>
+                                        <input type="number" name="comm_duration" min="0" class="w-full border border-gray-300 rounded px-2 py-1 text-xs" data-testid="input-client-comm-duration">
+                                    </div>
+                                    <div>
+                                        <label class="text-[10px] text-gray-400 uppercase block mb-0.5">Outcome</label>
+                                        <select name="comm_outcome" class="w-full border border-gray-300 rounded px-2 py-1 text-xs" data-testid="select-client-comm-outcome">
+                                            <option value="">— Select —</option>
+                                            <option>Connected</option><option>Left Voicemail</option><option>No Answer</option><option>Interested</option><option>Not Interested</option><option>Follow Up</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="text-[10px] text-gray-400 uppercase block mb-0.5">Scheduled At</label>
+                                        <input type="datetime-local" name="comm_scheduled_at" class="w-full border border-gray-300 rounded px-2 py-1 text-xs" data-testid="input-client-comm-scheduled">
+                                    </div>
+                                </div>
+                                <div class="ml-4 flex items-center gap-4 text-xs text-gray-500">
+                                    <label class="flex items-center gap-1"><input type="radio" name="comm_direction" value="outbound" checked class="accent-blue-600"> Outbound</label>
+                                    <label class="flex items-center gap-1"><input type="radio" name="comm_direction" value="inbound" class="accent-blue-600"> Inbound</label>
+                                </div>
+                            </form>
+                            <script>
+                            function switchClientComm(type) {
+                                document.getElementById('client_comm_type_val').value = type;
+                                document.querySelectorAll('.client-comm-btn').forEach(b => {
+                                    const on = b.dataset.type === type;
+                                    b.classList.toggle('bg-blue-600', on); b.classList.toggle('text-white', on); b.classList.toggle('border-blue-600', on);
+                                    b.classList.toggle('bg-white', !on); b.classList.toggle('text-gray-600', !on); b.classList.toggle('border-gray-300', !on);
+                                });
+                                const phs = {note:'Add a note...',email:'Write your email...',call:'Call summary...',meeting:'Meeting notes...'};
+                                document.getElementById('client_comm_body').placeholder = phs[type] || 'Details...';
+                                const subj = document.getElementById('client_comm_subject');
+                                if (type === 'email') { subj.classList.remove('hidden'); } else { subj.classList.add('hidden'); }
+                                const extra = document.getElementById('client-comm-extra');
+                                if (type === 'call' || type === 'meeting') { extra.classList.remove('hidden'); extra.classList.add('grid'); }
+                                else { extra.classList.add('hidden'); extra.classList.remove('grid'); }
+                            }
+                            </script>
+                            <!-- Communications List -->
+                            <?php
+                            $comm_type_icons = ['note'=>'fa-sticky-note text-yellow-500','email'=>'fa-envelope text-blue-500','call'=>'fa-phone text-green-500','meeting'=>'fa-calendar text-purple-500'];
+                            $comm_type_labels = ['note'=>'Note','email'=>'Email','call'=>'Call','meeting'=>'Meeting'];
+                            ?>
+                            <div class="space-y-2 max-h-[400px] overflow-y-auto" data-testid="client-comm-list">
+                                <?php if (empty($client_comms)): ?>
+                                <p class="text-center text-gray-400 text-sm py-4">No communications logged yet.</p>
+                                <?php else: ?>
+                                <?php foreach ($client_comms as $cm): ?>
+                                <div class="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3" data-testid="client-comm-item-<?= $cm['id'] ?>">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="flex items-center gap-2">
+                                            <i class="fas <?= $comm_type_icons[$cm['type']] ?? 'fa-circle text-gray-400' ?> text-sm"></i>
+                                            <span class="text-xs font-semibold uppercase text-gray-600"><?= $comm_type_labels[$cm['type']] ?? $cm['type'] ?></span>
+                                            <?php if ($cm['direction']): ?>
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded-full <?= $cm['direction'] === 'inbound' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700' ?>"><?= ucfirst($cm['direction']) ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[11px] text-gray-400"><?= date('M d, Y g:i A', strtotime($cm['created_at'])) ?></span>
+                                            <form method="POST" class="inline" onsubmit="return confirm('Delete?')">
+                                                <?= csrf_field() ?>
+                                                <input type="hidden" name="action" value="delete_client_comm">
+                                                <input type="hidden" name="comm_id" value="<?= $cm['id'] ?>">
+                                                <button type="submit" class="text-gray-300 hover:text-red-500 text-xs"><i class="fas fa-trash"></i></button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                    <?php if ($cm['subject']): ?><p class="text-sm font-semibold text-gray-900 mt-1"><?= htmlspecialchars($cm['subject']) ?></p><?php endif; ?>
+                                    <p class="text-sm text-gray-700 mt-0.5 whitespace-pre-wrap"><?= htmlspecialchars($cm['body']) ?></p>
+                                    <?php if ($cm['duration_minutes'] || $cm['outcome']): ?>
+                                    <div class="flex gap-3 mt-1 text-xs text-gray-400">
+                                        <?php if ($cm['duration_minutes']): ?><span><i class="fas fa-clock mr-1"></i><?= $cm['duration_minutes'] ?> min</span><?php endif; ?>
+                                        <?php if ($cm['outcome']): ?><span><i class="fas fa-flag mr-1"></i><?= htmlspecialchars($cm['outcome']) ?></span><?php endif; ?>
+                                    </div>
+                                    <?php endif; ?>
+                                    <p class="text-[11px] text-gray-400 mt-1">by <?= htmlspecialchars($cm['author_name'] ?? 'System') ?></p>
+                                </div>
+                                <?php endforeach; ?>
+                                <?php endif; ?>
+                            </div>
                         </div>
                     </div>
 
