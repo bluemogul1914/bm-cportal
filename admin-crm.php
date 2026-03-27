@@ -382,9 +382,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     }
 }
 
-$leads = $pdo->query("SELECT * FROM crm_leads ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC);
-$campaigns = $pdo->query("SELECT * FROM crm_campaigns ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC);
-$meetings = $pdo->query("SELECT * FROM crm_meetings ORDER BY scheduled_at DESC")->fetchAll(PDO::FETCH_ASSOC);
+$leads = [];
+try { $leads = $pdo->query("SELECT * FROM crm_leads ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
+$campaigns = [];
+try { $campaigns = $pdo->query("SELECT * FROM crm_campaigns ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
+$meetings = [];
+try { $meetings = $pdo->query("SELECT * FROM crm_meetings ORDER BY scheduled_at DESC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
 $deals = [];
 try { $deals = $pdo->query("SELECT d.*, l.name as lead_name, c.name as client_name, c.company as client_company FROM crm_deals d LEFT JOIN crm_leads l ON d.lead_id = l.id LEFT JOIN clients c ON d.client_id = c.id ORDER BY d.updated_at DESC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
 $social_posts = [];
