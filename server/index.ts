@@ -1359,16 +1359,149 @@ app.post("/api/webhook/notify", express.json(), async (req, res) => {
   }
 });
 
+// ── n8n: Create Client ─────────────────────────────────────────
+app.post("/api/webhook/create-client", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { name, email, phone, company, address, city, state, zip, status, notes, contact_person } = req.body;
+    if (!name) return res.status(400).json({ error: "name is required" });
+    const r = await webhookPool.query(
+      `INSERT INTO clients (name, email, phone, company, address, city, state, zip, status, notes, contact_person, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW()) RETURNING id, client_code`,
+      [name, email||null, phone||null, company||null, address||null, city||null, state||null, zip||null, status||'active', notes||null, contact_person||null]
+    );
+    const newId = r.rows[0].id;
+    const clientCode = `BL${100000 + newId}`;
+    await webhookPool.query("UPDATE clients SET client_code=$1 WHERE id=$2", [clientCode, newId]);
+    res.json({ success: true, client_id: newId, client_code: clientCode });
+  } catch (err: any) {
+    console.error("Webhook create-client error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── n8n: Create Invoice ────────────────────────────────────────
+app.post("/api/webhook/create-invoice", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { client_id, amount, due_date, notes, items, tax, status } = req.body;
+    if (!client_id || !amount) return res.status(400).json({ error: "client_id and amount are required" });
+    const invoiceNumber = `INV-${Date.now()}`;
+    const taxAmt = parseFloat(tax) || 0;
+    const totalAmt = parseFloat(amount) + taxAmt;
+    const r = await webhookPool.query(
+      `INSERT INTO invoices (client_id, invoice_number, amount, tax, total, status, due_date, notes, items, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()) RETURNING id, invoice_number`,
+      [client_id, invoiceNumber, parseFloat(amount), taxAmt, totalAmt, status||'draft', due_date||null, notes||null, items ? JSON.stringify(items) : null]
+    );
+    res.json({ success: true, invoice_id: r.rows[0].id, invoice_number: r.rows[0].invoice_number });
+  } catch (err: any) {
+    console.error("Webhook create-invoice error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── n8n: Create Lead ───────────────────────────────────────────
+app.post("/api/webhook/create-lead", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { name, email, phone, company, source, status, notes, industry, employee_count, service_interest, geography, lead_score, next_action_date } = req.body;
+    if (!name) return res.status(400).json({ error: "name is required" });
+    const r = await webhookPool.query(
+      `INSERT INTO crm_leads (name, email, phone, company, source, status, notes, industry, employee_count, service_interest, geography, lead_score, next_action_date, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW()) RETURNING id`,
+      [name, email||null, phone||null, company||null, source||'n8n', status||'new', notes||null, industry||null, employee_count||null, service_interest||null, geography||null, lead_score||0, next_action_date||null]
+    );
+    res.json({ success: true, lead_id: r.rows[0].id });
+  } catch (err: any) {
+    console.error("Webhook create-lead error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── n8n: Create Meeting / Appointment ─────────────────────────
+app.post("/api/webhook/create-meeting", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { title, client_id, client_name, meeting_type, scheduled_at, duration_minutes, location, notes, status } = req.body;
+    if (!title || !scheduled_at) return res.status(400).json({ error: "title and scheduled_at are required" });
+    const r = await webhookPool.query(
+      `INSERT INTO crm_meetings (title, client_id, client_name, meeting_type, scheduled_at, duration_minutes, location, notes, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()) RETURNING id`,
+      [title, client_id||null, client_name||null, meeting_type||'meeting', scheduled_at, duration_minutes||60, location||null, notes||null, status||'scheduled']
+    );
+    res.json({ success: true, meeting_id: r.rows[0].id });
+  } catch (err: any) {
+    console.error("Webhook create-meeting error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── n8n: Create Knowledge Base Article ────────────────────────
+app.post("/api/webhook/create-kb-article", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { title, content, category, tags, is_published } = req.body;
+    if (!title || !content) return res.status(400).json({ error: "title and content are required" });
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now();
+    const r = await webhookPool.query(
+      `INSERT INTO knowledge_articles (title, slug, content, category, tags, is_published, view_count, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,0,NOW(),NOW()) RETURNING id, slug`,
+      [title, slug, content, category||'General', tags||null, is_published === true || is_published === 'true']
+    );
+    res.json({ success: true, article_id: r.rows[0].id, slug: r.rows[0].slug });
+  } catch (err: any) {
+    console.error("Webhook create-kb-article error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── n8n: Add Service to Client ────────────────────────────────
+app.post("/api/webhook/add-client-service", express.json(), async (req, res) => {
+  if (!validateWebhookAuth(req, res)) return;
+  try {
+    const { client_id, service_name, service_type, price, billing_period, notes, status } = req.body;
+    if (!client_id || !service_name) return res.status(400).json({ error: "client_id and service_name are required" });
+    // Store as a subscription record
+    const r = await webhookPool.query(
+      `INSERT INTO subscriptions (client_id, plan_name, price, billing_period, status, notes, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW()) RETURNING id
+       ON CONFLICT DO NOTHING`,
+      [client_id, service_name, parseFloat(price)||0, billing_period||'monthly', status||'active', notes||null]
+    ).catch(async () => {
+      // fallback: subscriptions table may not exist — try client_services
+      return webhookPool.query(
+        `INSERT INTO client_services (client_id, service_name, service_type, price, billing_period, status, notes, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,NOW()) RETURNING id`,
+        [client_id, service_name, service_type||'managed', parseFloat(price)||0, billing_period||'monthly', status||'active', notes||null]
+      );
+    });
+    res.json({ success: true, subscription_id: r.rows[0]?.id || null });
+  } catch (err: any) {
+    console.error("Webhook add-client-service error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/webhook/health", (_req, res) => {
   res.json({
     status: "ok",
     portal: "Blue Mogul Client Portal",
+    auth: "Header: x-webhook-token: <SESSION_SECRET>  OR  Authorization: Bearer <SESSION_SECRET>",
     endpoints: [
-      "POST /api/webhook/agent-log",
-      "POST /api/webhook/create-ticket",
-      "POST /api/webhook/update-device",
-      "POST /api/webhook/notify",
+      "POST /api/webhook/create-client       — name, email, phone, company, address, city, state, zip, status, notes, contact_person",
+      "POST /api/webhook/create-invoice      — client_id*, amount*, due_date, notes, items (JSON array), tax, status",
+      "POST /api/webhook/create-lead         — name*, email, phone, company, source, status, notes, industry, service_interest, lead_score, next_action_date",
+      "POST /api/webhook/create-meeting      — title*, scheduled_at* (ISO8601), client_id, client_name, meeting_type, duration_minutes, location, notes",
+      "POST /api/webhook/create-kb-article   — title*, content*, category, tags, is_published (true/false)",
+      "POST /api/webhook/add-client-service  — client_id*, service_name*, price, billing_period, service_type, notes, status",
+      "POST /api/webhook/create-ticket       — subject*, client_id, description, priority, source",
+      "POST /api/webhook/create-project      — name*, client_id, description, project_type, priority, start_date, due_date, tasks[]",
+      "POST /api/webhook/update-device       — hostname*, client_id, status, ip_address, os_name, os_version",
+      "POST /api/webhook/notify             — title*, message*, user_id, type, entity_type, entity_id",
+      "POST /api/webhook/agent-log          — agent_key*, action, status, message, execution_ms, metadata",
     ],
+    note: "Fields marked * are required.",
     timestamp: new Date().toISOString(),
   });
 });
