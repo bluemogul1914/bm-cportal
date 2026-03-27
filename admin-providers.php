@@ -182,6 +182,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         providerSet($pdo, 'vidapay', 'dealer_id', trim($_POST['dealer_id'] ?? ''));
         $msg = 'VidaPay credentials saved.';
         $tab = 'vidapay';
+    } elseif ($action === 'save_social_api') {
+        $platforms = ['facebook','youtube','instagram','linkedin'];
+        foreach ($platforms as $plat) {
+            $fields = ['app_id','app_secret','access_token','page_id','channel_id','org_id','api_key'];
+            foreach ($fields as $f) {
+                $key = "social_{$plat}_{$f}";
+                if (isset($_POST[$key])) {
+                    $val = trim($_POST[$key]);
+                    try {
+                        $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (?,?,NOW()) ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value, updated_at=NOW()")
+                            ->execute([$key, $val ?: null]);
+                    } catch(Exception $e) {}
+                }
+            }
+        }
+        $msg = 'Social media API credentials saved.';
+        $tab = 'social';
     } elseif ($action === 'log_fund') {
         $provider = $_POST['provider'] ?? '';
         $amount   = floatval($_POST['amount'] ?? 0);
@@ -321,6 +338,13 @@ if ($tab === 'vidapay' && $vp_ok) {
     }
 }
 
+// Social media API settings (shared with admin-crm.php Marketing tab)
+$social_api = [];
+try {
+    $rows = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'social_%'")->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($rows as $r) { $social_api[$r['setting_key']] = $r['setting_value']; }
+} catch(Exception $e) {}
+
 function statusBadge($ok) {
     return $ok ? '<span class="badge-conn connected">● Connected</span>' : '<span class="badge-conn disconnected">○ Not Connected</span>';
 }
@@ -422,7 +446,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
 
   <!-- Tabs -->
   <div class="tabs">
-    <?php $tabs = ['overview'=>'Overview','vultr'=>'Vultr','voip'=>'VoIP.ms','enom'=>'Enom','hostwinds'=>'Hostwinds','vidapay'=>'VidaPay','funds'=>'Fund Log']; ?>
+    <?php $tabs = ['overview'=>'Overview','vultr'=>'Vultr','voip'=>'VoIP.ms','enom'=>'Enom','hostwinds'=>'Hostwinds','vidapay'=>'VidaPay','social'=>'Social Media','funds'=>'Fund Log']; ?>
     <?php foreach ($tabs as $t => $label): ?>
       <button class="tab-btn <?= $tab===$t?'active':'' ?>" onclick="window.location='?tab=<?= $t ?>'"><?= $label ?></button>
     <?php endforeach; ?>
@@ -830,6 +854,89 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
     </table>
   </div>
   <?php endif; ?>
+
+  <!-- ── SOCIAL MEDIA TAB ─────────────────────────────────────────────────── -->
+  <?php elseif ($tab === 'social'): ?>
+  <?php
+  $api_platforms = [
+    'facebook'  => ['Facebook','fab fa-facebook','#1877F2', ['App ID'=>'app_id','App Secret'=>'app_secret','Page Access Token'=>'access_token','Page ID'=>'page_id']],
+    'instagram' => ['Instagram','fab fa-instagram','#E1306C', ['Access Token'=>'access_token','Business Account ID (IG User ID)'=>'page_id']],
+    'linkedin'  => ['LinkedIn','fab fa-linkedin','#0A66C2', ['Client ID'=>'app_id','Client Secret'=>'app_secret','Page Access Token'=>'access_token','Organization ID'=>'org_id']],
+    'youtube'   => ['YouTube','fab fa-youtube','#FF0000', ['API Key'=>'api_key','Channel ID'=>'channel_id']],
+  ];
+  ?>
+  <div style="margin-bottom:20px;">
+    <h2 style="font-size:16px;font-weight:700;color:#f1f5f9;margin-bottom:8px;">Social Media API Configuration</h2>
+    <p style="font-size:13px;color:#64748b;">These credentials are shared with the CRM Marketing tab for social posting and analytics. Configure each platform to enable direct posting from within the CRM.</p>
+  </div>
+
+  <?php foreach ($api_platforms as $plat => [$plat_name, $plat_icon, $plat_color, $plat_fields]):
+    $is_connected = false;
+    foreach ($plat_fields as $label => $field) {
+        if (!empty($social_api["social_{$plat}_{$field}"])) { $is_connected = true; break; }
+    }
+  ?>
+  <div class="card" style="margin-bottom:16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #334155;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-size:24px;color:<?= $plat_color ?>"><i class="<?= $plat_icon ?>"></i></span>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:#f1f5f9;"><?= $plat_name ?></div>
+          <?php if ($plat === 'facebook'): ?><div style="font-size:11px;color:#64748b;">Graph API v18.0 · Posts to your Facebook Page</div>
+          <?php elseif ($plat === 'instagram'): ?><div style="font-size:11px;color:#64748b;">Instagram Graph API · Posts photos to your Business account</div>
+          <?php elseif ($plat === 'linkedin'): ?><div style="font-size:11px;color:#64748b;">LinkedIn Marketing API v2 · Posts to your Company Page</div>
+          <?php elseif ($plat === 'youtube'): ?><div style="font-size:11px;color:#64748b;">YouTube Data API v3 · Access channel info and analytics</div>
+          <?php endif; ?>
+        </div>
+      </div>
+      <?= statusBadge($is_connected) ?>
+    </div>
+    <form method="POST">
+      <input type="hidden" name="action" value="save_social_api">
+      <div class="form-row">
+        <?php foreach ($plat_fields as $label => $field):
+          $key = "social_{$plat}_{$field}";
+          $val = $social_api[$key] ?? '';
+          $is_secret = in_array($field, ['app_secret','access_token']);
+        ?>
+        <div class="form-group">
+          <label><?= $label ?></label>
+          <input type="<?= $is_secret ? 'password' : 'text' ?>" name="<?= $key ?>" value="<?= htmlspecialchars($val) ?>" placeholder="<?= $is_secret ? '••••••••' : "Enter $label…" ?>" autocomplete="off">
+        </div>
+        <?php endforeach; ?>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
+        <div style="font-size:11px;color:#475569;">
+          <?php if ($plat === 'facebook'): ?>Get credentials from <a href="https://developers.facebook.com/apps/" target="_blank" style="color:#3b82f6;">developers.facebook.com</a> → Your App → Basic Settings
+          <?php elseif ($plat === 'instagram'): ?>Use the same Facebook App credentials. The Access Token must have instagram_basic + instagram_content_publish permissions.
+          <?php elseif ($plat === 'linkedin'): ?>Get credentials from <a href="https://www.linkedin.com/developers/apps" target="_blank" style="color:#3b82f6;">linkedin.com/developers/apps</a> → Your App
+          <?php elseif ($plat === 'youtube'): ?>Get API Key from <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:#3b82f6;">Google Cloud Console</a> → APIs & Services → Credentials
+          <?php endif; ?>
+        </div>
+        <button class="btn btn-primary" type="submit">💾 Save <?= $plat_name ?> Keys</button>
+      </div>
+    </form>
+    <?php if ($is_connected): ?>
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid #1e293b;">
+      <div style="font-size:12px;color:#10b981;margin-bottom:8px;font-weight:600;">✓ Connected — Quick Links</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <?php if ($plat === 'facebook'): ?>
+          <a href="https://business.facebook.com" target="_blank" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;text-decoration:none;">📊 Business Manager</a>
+          <a href="https://www.facebook.com/<?= htmlspecialchars($social_api['social_facebook_page_id'] ?? '') ?>" target="_blank" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;text-decoration:none;">📄 View Page</a>
+        <?php elseif ($plat === 'instagram'): ?>
+          <a href="https://www.instagram.com" target="_blank" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;text-decoration:none;">📸 Instagram</a>
+          <a href="https://business.facebook.com/content_management" target="_blank" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;text-decoration:none;">📅 Content Calendar</a>
+        <?php elseif ($plat === 'linkedin'): ?>
+          <a href="https://www.linkedin.com/company/<?= htmlspecialchars($social_api['social_linkedin_org_id'] ?? '') ?>" target="_blank" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;text-decoration:none;">🏢 Company Page</a>
+        <?php elseif ($plat === 'youtube'): ?>
+          <a href="https://studio.youtube.com" target="_blank" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;text-decoration:none;">🎬 YouTube Studio</a>
+        <?php endif; ?>
+        <a href="/portal/admin-crm.php?tab=marketing" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;text-decoration:none;">📤 Post Publisher →</a>
+      </div>
+    </div>
+    <?php endif; ?>
+  </div>
+  <?php endforeach; ?>
 
   <!-- ── FUND LOG TAB ──────────────────────────────────────────────────────── -->
   <?php elseif ($tab === 'funds'): ?>

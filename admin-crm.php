@@ -152,6 +152,102 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         exit;
     }
 
+    if ($action === 'add_lead_comm') {
+        $lid = intval($_POST['comm_lead_id'] ?? 0);
+        $type = $_POST['comm_type'] ?? 'note';
+        $subject = trim($_POST['comm_subject'] ?? '');
+        $body = trim($_POST['comm_body'] ?? '');
+        $direction = $_POST['comm_direction'] ?? 'outbound';
+        $duration = intval($_POST['comm_duration'] ?? 0) ?: null;
+        $outcome = trim($_POST['comm_outcome'] ?? '');
+        $scheduled_at = trim($_POST['comm_scheduled_at'] ?? '') ?: null;
+        if ($lid && $body) {
+            $pdo->prepare("INSERT INTO crm_communications (entity_type, entity_id, type, subject, body, direction, duration_minutes, outcome, scheduled_at, created_by) VALUES ('lead',?,?,?,?,?,?,?,?,?)")
+                ->execute([$lid, $type, $subject ?: null, $body, $direction, $duration, $outcome ?: null, $scheduled_at, $_SESSION['user_id']]);
+            // if email, try to send
+            if ($type === 'email') {
+                foreach ($leads as $ll) {
+                    if ($ll['id'] == $lid && !empty($ll['email'])) {
+                        try { send_email($ll['email'], $subject ?: 'Message from Blue Mogul', nl2br(htmlspecialchars($body))); } catch(\Exception $e) {}
+                        break;
+                    }
+                }
+            }
+        }
+        header("Location: ?tab=leads&lid=$lid&lv=activities");
+        exit;
+    }
+
+    if ($action === 'delete_lead_comm') {
+        $comm_id = intval($_POST['comm_id'] ?? 0);
+        $lid = intval($_POST['comm_lead_id'] ?? 0);
+        if ($comm_id) { $pdo->prepare("DELETE FROM crm_communications WHERE id = ? AND entity_type = 'lead'")->execute([$comm_id]); }
+        header("Location: ?tab=leads&lid=$lid&lv=activities");
+        exit;
+    }
+
+    if ($action === 'post_to_platform') {
+        $platform  = $_POST['post_platform'] ?? '';
+        $content   = trim($_POST['post_content'] ?? '');
+        $image_url = trim($_POST['post_image_url'] ?? '');
+        $post_result = '';
+        if ($platform && $content) {
+            $sapi = [];
+            try {
+                $rows2 = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'social_%'")->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($rows2 as $r) { $sapi[$r['setting_key']] = $r['setting_value']; }
+            } catch(\Exception $e) {}
+
+            if ($platform === 'facebook') {
+                $token   = $sapi['social_facebook_access_token'] ?? '';
+                $page_id = $sapi['social_facebook_page_id'] ?? '';
+                if ($token && $page_id) {
+                    $params = ['message' => $content, 'access_token' => $token];
+                    if ($image_url) $params['link'] = $image_url;
+                    $ch = curl_init("https://graph.facebook.com/v18.0/$page_id/feed");
+                    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true,CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>http_build_query($params)]);
+                    $r2 = json_decode(curl_exec($ch), true); curl_close($ch);
+                    $success_msg = !empty($r2['id']) ? 'Posted to Facebook! Post ID: '.$r2['id'] : 'Facebook error: '.($r2['error']['message'] ?? 'Unknown');
+                } else { $error_msg = 'Facebook credentials not configured.'; }
+
+            } elseif ($platform === 'instagram') {
+                $token   = $sapi['social_instagram_access_token'] ?? '';
+                $iguid   = $sapi['social_instagram_page_id'] ?? '';
+                if ($token && $iguid && $image_url) {
+                    $ch = curl_init("https://graph.facebook.com/v18.0/$iguid/media");
+                    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true,CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>http_build_query(['image_url'=>$image_url,'caption'=>$content,'access_token'=>$token])]);
+                    $r2 = json_decode(curl_exec($ch), true); curl_close($ch);
+                    if (!empty($r2['id'])) {
+                        $ch2 = curl_init("https://graph.facebook.com/v18.0/$iguid/media_publish");
+                        curl_setopt_array($ch2, [CURLOPT_RETURNTRANSFER=>true,CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>http_build_query(['creation_id'=>$r2['id'],'access_token'=>$token])]);
+                        $r3 = json_decode(curl_exec($ch2), true); curl_close($ch2);
+                        $success_msg = !empty($r3['id']) ? 'Posted to Instagram! Media ID: '.$r3['id'] : 'Instagram publish error: '.($r3['error']['message'] ?? 'Unknown');
+                    } else { $error_msg = 'Instagram media create error: '.($r2['error']['message'] ?? 'Unknown'); }
+                } elseif (!$image_url) { $error_msg = 'Instagram requires an image URL.';
+                } else { $error_msg = 'Instagram credentials not configured.'; }
+
+            } elseif ($platform === 'linkedin') {
+                $token   = $sapi['social_linkedin_access_token'] ?? '';
+                $org_id  = $sapi['social_linkedin_org_id'] ?? '';
+                if ($token && $org_id) {
+                    $body_data = json_encode(['author'=>"urn:li:organization:$org_id",'lifecycleState'=>'PUBLISHED','specificContent'=>['com.linkedin.ugc.ShareContent'=>['shareCommentary'=>['text'=>$content],'shareMediaCategory'=>'NONE']],'visibility'=>['com.linkedin.ugc.MemberNetworkVisibility'=>'PUBLIC']]);
+                    $ch = curl_init('https://api.linkedin.com/v2/ugcPosts');
+                    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true,CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>$body_data,CURLOPT_HTTPHEADER=>['Authorization: Bearer '.$token,'Content-Type: application/json','X-Restli-Protocol-Version: 2.0.0']]);
+                    $r2 = json_decode(curl_exec($ch), true); curl_close($ch);
+                    $success_msg = !empty($r2['id']) ? 'Posted to LinkedIn!' : 'LinkedIn error: '.($r2['message'] ?? 'Unknown');
+                } else { $error_msg = 'LinkedIn credentials not configured.'; }
+
+            } elseif ($platform === 'youtube') {
+                $error_msg = 'YouTube video uploads require the YouTube Data API v3 upload flow. Please use YouTube Studio to post videos.';
+            }
+            // save to post log
+            if (!$error_msg) {
+                try { $pdo->prepare("INSERT INTO crm_social_posts (platform, content, scheduled_at, status, created_by) VALUES (?,?,NOW(),'published',?)")->execute([$platform, $content, $_SESSION['user_id']]); } catch(\Exception $e) {}
+            }
+        }
+        $tab = 'marketing';
+    }
+
     if ($action === 'add_social_post') {
         $platform = $_POST['post_platform'] ?? 'facebook';
         $content = trim($_POST['post_content'] ?? '');
@@ -412,6 +508,21 @@ try { $recent_messages = $pdo->query("SELECT cm.*, cc.name as channel_name FROM 
 
 $lead_stats = ['new' => 0, 'contacted' => 0, 'qualified' => 0, 'lost' => 0, 'won' => 0];
 foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] ?? 0) + 1; }
+
+// Lead detail data
+$detail_lead = null;
+$lead_comms  = [];
+$lid_param   = intval($_GET['lid'] ?? 0);
+if ($lid_param && $tab === 'leads') {
+    foreach ($leads as $l) { if ($l['id'] == $lid_param) { $detail_lead = $l; break; } }
+    if ($detail_lead) {
+        try {
+            $s = $pdo->prepare("SELECT cc.*, u.name as author_name FROM crm_communications cc LEFT JOIN users u ON cc.created_by = u.id WHERE cc.entity_type='lead' AND cc.entity_id=? ORDER BY cc.created_at DESC LIMIT 100");
+            $s->execute([$lid_param]);
+            $lead_comms = $s->fetchAll(PDO::FETCH_ASSOC);
+        } catch(\Exception $e) {}
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -469,6 +580,180 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                 <?php endforeach; ?>
             </div>
 
+            <?php if ($detail_lead): ?>
+            <!-- ── Lead Detail Panel ─────────────────────────────────── -->
+            <div class="mb-4 flex items-center gap-2">
+                <a href="?tab=leads" class="text-sm text-blue-600 hover:underline"><i class="fas fa-arrow-left mr-1"></i>Leads</a>
+                <span class="text-gray-400">/</span>
+                <span class="text-sm font-semibold text-gray-900"><?= htmlspecialchars($detail_lead['name']) ?></span>
+            </div>
+            <?php
+            $lv = $_GET['lv'] ?? 'about';
+            $lcomm_filter = $_GET['lt'] ?? '';
+            $type_icons  = ['note'=>'fa-sticky-note text-yellow-500','email'=>'fa-envelope text-blue-500','call'=>'fa-phone text-green-500','meeting'=>'fa-calendar text-purple-500'];
+            $type_labels = ['note'=>'Note','email'=>'Email','call'=>'Call','meeting'=>'Meeting'];
+            $filtered_lead_comms = $lead_comms;
+            if ($lcomm_filter) $filtered_lead_comms = array_filter($lead_comms, fn($c) => $c['type'] === $lcomm_filter);
+            $sc_lead = ['new'=>'blue','contacted'=>'yellow','qualified'=>'purple','lost'=>'red','won'=>'green'][$detail_lead['status']] ?? 'gray';
+            ?>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 space-y-4">
+                    <div class="bg-white rounded-xl border border-gray-200">
+                        <div class="px-6 py-4 border-b border-gray-100">
+                            <div class="flex items-center gap-3">
+                                <div class="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center font-bold text-xl text-purple-600">
+                                    <?= strtoupper(substr($detail_lead['name'], 0, 1)) ?>
+                                </div>
+                                <div>
+                                    <h2 class="text-xl font-bold text-gray-900"><?= htmlspecialchars($detail_lead['name']) ?></h2>
+                                    <?php if ($detail_lead['company']): ?><p class="text-sm text-gray-500"><?= htmlspecialchars($detail_lead['company']) ?></p><?php endif; ?>
+                                </div>
+                                <span class="ml-auto px-2.5 py-0.5 text-xs font-semibold bg-<?= $sc_lead ?>-100 text-<?= $sc_lead ?>-700 rounded-full"><?= ucfirst($detail_lead['status']) ?></span>
+                            </div>
+                        </div>
+                        <div class="p-6">
+                            <div class="flex gap-2 mb-6 border-b border-gray-100 pb-4">
+                                <a href="?tab=leads&lid=<?= $detail_lead['id'] ?>&lv=about" class="px-3 py-1.5 text-sm font-medium rounded-md <?= $lv !== 'activities' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700' ?>">About</a>
+                                <a href="?tab=leads&lid=<?= $detail_lead['id'] ?>&lv=activities" class="px-3 py-1.5 text-sm font-medium rounded-md <?= $lv === 'activities' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700' ?>">
+                                    Activities <?php if (count($lead_comms) > 0): ?><span class="ml-1 bg-blue-100 text-blue-700 text-xs px-1.5 py-0.5 rounded-full"><?= count($lead_comms) ?></span><?php endif; ?>
+                                </a>
+                            </div>
+
+                            <?php if ($lv === 'activities'): ?>
+                            <!-- Communication Form -->
+                            <div class="mb-5 bg-gray-50 rounded-xl border border-gray-200 p-4">
+                                <div class="flex gap-2 mb-3" id="lead-comm-type-tabs">
+                                    <?php foreach (['note'=>['fa-sticky-note','Note'],'email'=>['fa-envelope','Email'],'call'=>['fa-phone','Call'],'meeting'=>['fa-calendar','Meeting']] as $ct => [$ico, $lbl]): ?>
+                                    <button type="button" onclick="switchLeadCommTab('<?= $ct ?>')"
+                                        class="lead-comm-tab px-3 py-1.5 text-sm rounded-lg border transition <?= $ct === 'note' ? 'bg-white border-blue-300 text-blue-700 font-medium shadow-sm' : 'border-transparent text-gray-500 hover:text-gray-700' ?>"
+                                        data-tab="<?= $ct ?>">
+                                        <i class="fas <?= $ico ?> mr-1"></i><?= $lbl ?>
+                                    </button>
+                                    <?php endforeach; ?>
+                                </div>
+                                <form method="POST" id="lead-comm-form">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="add_lead_comm">
+                                    <input type="hidden" name="comm_lead_id" value="<?= $detail_lead['id'] ?>">
+                                    <input type="hidden" name="comm_type" id="lead-comm-type-val" value="note">
+                                    <div class="mb-2">
+                                        <input type="text" name="comm_subject" placeholder="Subject (optional)" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2">
+                                        <textarea name="comm_body" rows="3" placeholder="Write a note, log a call, or compose an email…" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none" required></textarea>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-2 mb-2" id="lead-comm-extra">
+                                        <div class="lead-comm-call-field lead-comm-meeting-field hidden">
+                                            <select name="comm_direction" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                                                <option value="outbound">Outbound</option><option value="inbound">Inbound</option>
+                                            </select>
+                                        </div>
+                                        <div class="lead-comm-call-field hidden">
+                                            <input type="number" name="comm_duration" placeholder="Duration (min)" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                                        </div>
+                                        <div class="lead-comm-call-field hidden">
+                                            <select name="comm_outcome" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                                                <option value="">Outcome…</option>
+                                                <option value="connected">Connected</option><option value="voicemail">Left Voicemail</option>
+                                                <option value="no_answer">No Answer</option><option value="busy">Busy</option>
+                                            </select>
+                                        </div>
+                                        <div class="lead-comm-meeting-field hidden">
+                                            <input type="datetime-local" name="comm_scheduled_at" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-xs text-gray-400" id="lead-comm-hint">Log a note about this lead</span>
+                                        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">
+                                            <i class="fas fa-save mr-1"></i><span id="lead-comm-btn-text">Save Note</span>
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+
+                            <!-- Filter + Communications List -->
+                            <div class="flex gap-2 mb-3 flex-wrap">
+                                <a href="?tab=leads&lid=<?= $detail_lead['id'] ?>&lv=activities" class="px-2 py-1 text-xs rounded <?= !$lcomm_filter ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-500 hover:text-gray-700' ?>">All</a>
+                                <?php foreach ($type_labels as $ct => $lbl): ?>
+                                <a href="?tab=leads&lid=<?= $detail_lead['id'] ?>&lv=activities&lt=<?= $ct ?>" class="px-2 py-1 text-xs rounded <?= $lcomm_filter === $ct ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-500 hover:text-gray-700' ?>"><?= $lbl ?>s</a>
+                                <?php endforeach; ?>
+                            </div>
+
+                            <?php if (empty($filtered_lead_comms)): ?>
+                            <div class="py-8 text-center text-gray-400 text-sm"><i class="fas fa-comments text-2xl mb-2 block"></i>No communications logged yet.</div>
+                            <?php else: foreach ($filtered_lead_comms as $cm): ?>
+                            <div class="border border-gray-100 rounded-lg p-4 mb-3 hover:bg-gray-50">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="flex items-center gap-2 flex-1 min-w-0">
+                                        <i class="fas <?= $type_icons[$cm['type']] ?? 'fa-comment text-gray-400' ?> text-base flex-shrink-0"></i>
+                                        <div class="min-w-0">
+                                            <div class="flex items-center gap-2 flex-wrap">
+                                                <span class="text-sm font-semibold text-gray-900"><?= ucfirst($cm['type']) ?></span>
+                                                <?php if ($cm['direction']): ?><span class="text-xs px-1.5 py-0.5 rounded <?= $cm['direction']==='inbound' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700' ?>"><?= ucfirst($cm['direction']) ?></span><?php endif; ?>
+                                                <?php if ($cm['subject']): ?><span class="text-sm text-gray-700 truncate">· <?= htmlspecialchars($cm['subject']) ?></span><?php endif; ?>
+                                            </div>
+                                            <p class="text-sm text-gray-600 mt-1"><?= nl2br(htmlspecialchars($cm['body'])) ?></p>
+                                            <p class="text-xs text-gray-400 mt-1"><?= htmlspecialchars($cm['author_name'] ?? 'Admin') ?> · <?= date('M d, Y g:i a', strtotime($cm['created_at'])) ?></p>
+                                        </div>
+                                    </div>
+                                    <form method="POST" class="flex-shrink-0" onsubmit="return confirm('Delete this entry?')">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="delete_lead_comm">
+                                        <input type="hidden" name="comm_id" value="<?= $cm['id'] ?>">
+                                        <input type="hidden" name="comm_lead_id" value="<?= $detail_lead['id'] ?>">
+                                        <button type="submit" class="text-gray-300 hover:text-red-500 text-xs"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                </div>
+                            </div>
+                            <?php endforeach; endif; ?>
+
+                            <?php else: /* About tab */ ?>
+                            <div class="grid grid-cols-2 gap-4 text-sm">
+                                <?php $lead_fields = ['Email'=>$detail_lead['email']??'','Phone'=>$detail_lead['phone']??'','Company'=>$detail_lead['company']??'','Source'=>$detail_lead['source']??'','Industry'=>$detail_lead['industry']??'','Employees'=>$detail_lead['employee_count']??'','Lead Score'=>$detail_lead['lead_score']??'','Service Interest'=>$detail_lead['service_interest']??'','Geography'=>$detail_lead['geography']??'','Next Action'=>$detail_lead['next_action_date']??'']; ?>
+                                <?php foreach ($lead_fields as $lf_label => $lf_val): if ($lf_val): ?>
+                                <div>
+                                    <p class="text-xs font-semibold text-gray-500 uppercase mb-0.5"><?= $lf_label ?></p>
+                                    <p class="text-gray-900"><?= htmlspecialchars($lf_val) ?></p>
+                                </div>
+                                <?php endif; endforeach; ?>
+                            </div>
+                            <?php if ($detail_lead['notes']): ?>
+                            <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                <p class="text-xs font-semibold text-yellow-700 mb-1">Notes</p>
+                                <p class="text-sm text-gray-700"><?= nl2br(htmlspecialchars($detail_lead['notes'])) ?></p>
+                            </div>
+                            <?php endif; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <!-- Lead sidebar -->
+                <div class="space-y-4">
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-sm font-semibold text-gray-700 mb-3">Quick Actions</h3>
+                        <div class="flex flex-col gap-2">
+                            <a href="?tab=leads&lid=<?= $detail_lead['id'] ?>&lv=activities" class="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm rounded-lg text-center transition">📝 Log Activity</a>
+                            <?php if ($detail_lead['status'] !== 'won'): ?>
+                            <form method="POST" onsubmit="return confirm('Convert this lead to a client?')">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="convert_lead">
+                                <input type="hidden" name="lead_id" value="<?= $detail_lead['id'] ?>">
+                                <button type="submit" class="w-full px-3 py-2 bg-green-50 hover:bg-green-100 text-green-700 text-sm rounded-lg transition">✅ Convert to Client</button>
+                            </form>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl border border-gray-200 p-4">
+                        <h3 class="text-sm font-semibold text-gray-700 mb-3">Lead Info</h3>
+                        <div class="space-y-2 text-sm">
+                            <?php if ($detail_lead['email']): ?><div><span class="text-gray-500">Email: </span><a href="mailto:<?= htmlspecialchars($detail_lead['email']) ?>" class="text-blue-600 hover:underline"><?= htmlspecialchars($detail_lead['email']) ?></a></div><?php endif; ?>
+                            <?php if ($detail_lead['phone']): ?><div><span class="text-gray-500">Phone: </span><?= htmlspecialchars($detail_lead['phone']) ?></div><?php endif; ?>
+                            <?php if ($detail_lead['source']): ?><div><span class="text-gray-500">Source: </span><?= htmlspecialchars(ucfirst($detail_lead['source'])) ?></div><?php endif; ?>
+                            <div><span class="text-gray-500">Created: </span><?= date('M d, Y', strtotime($detail_lead['created_at'])) ?></div>
+                            <div><span class="text-gray-500">Activities: </span><strong><?= count($lead_comms) ?></strong></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php else: /* leads list */ ?>
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-lg font-semibold text-gray-900">All Leads</h2>
                 <div class="flex items-center gap-2">
@@ -526,6 +811,7 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                                 <td class="px-4 py-3 text-xs text-gray-500"><?= date('M d, Y', strtotime($lead['created_at'])) ?></td>
                                 <td class="px-4 py-3">
                                     <div class="flex items-center gap-2">
+                                        <a href="?tab=leads&lid=<?= $lead['id'] ?>" class="text-blue-600 hover:text-blue-800 text-sm" title="View Lead" data-testid="button-view-lead-<?= $lead['id'] ?>"><i class="fas fa-eye"></i></a>
                                         <?php if ($lead['status'] !== 'won'): ?>
                                         <form method="POST" class="inline" onsubmit="return confirm('Convert this lead to a client?')">
                                             <?= csrf_field() ?>
@@ -644,7 +930,8 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                     </form>
                 </div>
             </div>
-            <?php endif; ?>
+            <?php endif; /* if ($detail_lead) */ ?>
+            <?php endif; /* if ($tab === 'leads') */ ?>
 
             <?php if ($tab === 'companies'): ?>
             <?php
@@ -1437,6 +1724,92 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
                 </div>
                 <?php endforeach; ?>
             </div>
+
+            <!-- ── Social Post Publisher ──────────────────────────────── -->
+            <?php
+            $any_social_connected = false;
+            foreach (['facebook','instagram','linkedin','youtube'] as $_sp) {
+                if (!empty($social_api["social_{$_sp}_access_token"]) || !empty($social_api["social_{$_sp}_api_key"])) { $any_social_connected = true; break; }
+            }
+            ?>
+            <div class="mt-6 bg-white rounded-xl border border-gray-200">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-paper-plane text-blue-500 mr-2"></i>Social Post Publisher</h2>
+                    <?php if (!$any_social_connected): ?><span class="text-sm text-gray-400">Configure API credentials above to enable posting</span><?php endif; ?>
+                </div>
+                <div class="p-6">
+                    <form method="POST" id="social-post-form">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="post_to_platform">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-700 uppercase mb-2">Platform</label>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <?php
+                                    $pub_platforms = [
+                                        'facebook'  => ['Facebook','fa-facebook','#1877F2', !empty($social_api['social_facebook_access_token'])],
+                                        'instagram' => ['Instagram','fa-instagram','#E1306C', !empty($social_api['social_instagram_access_token'])],
+                                        'linkedin'  => ['LinkedIn','fa-linkedin','#0A66C2', !empty($social_api['social_linkedin_access_token'])],
+                                        'youtube'   => ['YouTube','fa-youtube','#FF0000', !empty($social_api['social_youtube_api_key'])],
+                                    ];
+                                    foreach ($pub_platforms as $pp => [$pname, $pico, $pcol, $pconn]): ?>
+                                    <label class="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition <?= !$pconn ? 'opacity-50' : '' ?>">
+                                        <input type="radio" name="post_platform" value="<?= $pp ?>" <?= !$pconn ? 'disabled' : '' ?> class="text-blue-600">
+                                        <span style="color:<?= $pcol ?>"><i class="fab <?= $pico ?>"></i></span>
+                                        <span class="text-sm font-medium"><?= $pname ?></span>
+                                        <?php if ($pconn): ?><span class="ml-auto text-xs text-green-600"><i class="fas fa-check-circle"></i></span><?php else: ?><span class="ml-auto text-xs text-gray-400">No key</span><?php endif; ?>
+                                    </label>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-3">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-700 uppercase mb-1">Post Content *</label>
+                                    <textarea name="post_content" rows="4" placeholder="Write your post content here…" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none" required></textarea>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-700 uppercase mb-1">Image URL (optional — required for Instagram)</label>
+                                    <input type="url" name="post_image_url" placeholder="https://example.com/image.jpg" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between pt-4 border-t border-gray-100">
+                            <p class="text-xs text-gray-400"><i class="fas fa-info-circle mr-1"></i>YouTube requires video upload via YouTube Studio. Select YouTube to get the link.</p>
+                            <div class="flex gap-3">
+                                <button type="button" onclick="saveDraftPost()" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50">
+                                    <i class="fas fa-save mr-1"></i>Save Draft
+                                </button>
+                                <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" <?= !$any_social_connected ? 'title="Configure credentials first"' : '' ?>>
+                                    <i class="fas fa-paper-plane mr-1"></i>Post Now
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Recent Social Posts Log -->
+            <?php if (!empty($social_posts)): ?>
+            <div class="mt-4 bg-white rounded-xl border border-gray-200">
+                <div class="px-6 py-4 border-b border-gray-100">
+                    <h3 class="text-sm font-semibold text-gray-900"><i class="fas fa-history text-gray-400 mr-2"></i>Recent Posts</h3>
+                </div>
+                <div class="divide-y divide-gray-100">
+                    <?php foreach (array_slice($social_posts, 0, 5) as $sp):
+                        $spic = ['facebook'=>'fa-facebook text-blue-600','instagram'=>'fa-instagram text-pink-500','linkedin'=>'fa-linkedin text-blue-700','youtube'=>'fa-youtube text-red-500','twitter'=>'fa-twitter text-sky-500'][$sp['platform']] ?? 'fa-share-alt text-gray-400';
+                    ?>
+                    <div class="px-6 py-3 flex items-start gap-3">
+                        <i class="fab <?= $spic ?> mt-0.5"></i>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm text-gray-800 truncate"><?= htmlspecialchars($sp['content']) ?></p>
+                            <p class="text-xs text-gray-400 mt-0.5"><?= date('M d, Y g:i a', strtotime($sp['created_at'])) ?> · <?= ucfirst($sp['status']) ?></p>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <?php endif; ?>
 
             <?php if ($tab === 'campaigns'): ?>
@@ -1759,5 +2132,43 @@ foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] 
         </div>
     </div>
 </div>
+<script>
+// Lead Communication Tab Switcher
+function switchLeadCommTab(type) {
+    document.getElementById('lead-comm-type-val').value = type;
+    document.querySelectorAll('.lead-comm-tab').forEach(btn => {
+        const active = btn.dataset.tab === type;
+        btn.classList.toggle('bg-white', active);
+        btn.classList.toggle('border-blue-300', active);
+        btn.classList.toggle('text-blue-700', active);
+        btn.classList.toggle('font-medium', active);
+        btn.classList.toggle('shadow-sm', active);
+        btn.classList.toggle('border-transparent', !active);
+        btn.classList.toggle('text-gray-500', !active);
+    });
+    // Show/hide extra fields
+    document.querySelectorAll('.lead-comm-call-field').forEach(el => el.classList.toggle('hidden', type !== 'call'));
+    document.querySelectorAll('.lead-comm-meeting-field').forEach(el => el.classList.toggle('hidden', type !== 'meeting'));
+    // Update hints
+    const hints = {note:'Log a note about this lead',email:'Send an email to this lead',call:'Log a call with outcome',meeting:'Schedule or log a meeting'};
+    const btns  = {note:'Save Note',email:'Send Email',call:'Log Call',meeting:'Log Meeting'};
+    const hintEl = document.getElementById('lead-comm-hint');
+    const btnEl  = document.getElementById('lead-comm-btn-text');
+    if (hintEl) hintEl.textContent = hints[type] || '';
+    if (btnEl)  btnEl.textContent  = btns[type]  || 'Save';
+}
+
+// Save draft post to scheduled queue
+function saveDraftPost() {
+    const form = document.getElementById('social-post-form');
+    const content = form.querySelector('[name=post_content]').value;
+    const platform = form.querySelector('[name=post_platform]:checked')?.value || '';
+    if (!content) { alert('Please enter post content first.'); return; }
+    const f = document.createElement('form');
+    f.method = 'POST';
+    f.innerHTML = `<input name="action" value="add_social_post"><input name="post_platform" value="${platform}"><input name="post_content" value="${content.replace(/"/g,'&quot;')}"><input name="_csrf_token" value="${document.querySelector('[name=_csrf_token]')?.value || ''}">`;
+    document.body.appendChild(f); f.submit();
+}
+</script>
 </body>
 </html>
