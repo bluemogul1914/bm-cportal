@@ -78,6 +78,11 @@ define('ITARIAN_API_KEY', getenv('ITARIAN_API_KEY') ?: '');
 define('ITARIAN_API_URL', getenv('ITARIAN_API_URL') ?: '');
 
 // ============================================
+// HOSTWINDS CLOUD CONFIGURATION
+// ============================================
+define('HOSTWINDS_API_KEY', getenv('HOSTWINDS_API_KEY') ?: '');
+define('HOSTWINDS_API_URL', 'https://api.hostwinds.com/v1');
+
 // ACTION1 RMM CONFIGURATION
 // ============================================
 define('ACTION1_CLIENT_ID', getenv('ACTION1_CLIENT_ID') ?: '');
