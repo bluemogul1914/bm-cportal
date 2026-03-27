@@ -78,6 +78,12 @@ define('ITARIAN_API_KEY', getenv('ITARIAN_API_KEY') ?: '');
 define('ITARIAN_API_URL', getenv('ITARIAN_API_URL') ?: '');
 
 // ============================================
+// ENOM DOMAIN RESELLER CONFIGURATION
+// ============================================
+define('ENOM_UID', getenv('ENOM_UID') ?: '');
+define('ENOM_PW',  getenv('ENOM_PW')  ?: '');
+define('ENOM_API_URL', 'https://reseller.enom.com/interface.asp');
+
 // HOSTWINDS CLOUD CONFIGURATION
 // ============================================
 define('HOSTWINDS_API_KEY', getenv('HOSTWINDS_API_KEY') ?: '');
