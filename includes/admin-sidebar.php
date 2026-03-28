@@ -15,10 +15,30 @@
                 <span>Dashboard</span>
             </a>
 
-            <a href="admin-clients.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-clients.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
-                <i class="fas fa-users w-5"></i>
-                <span>Clients</span>
-            </a>
+            <?php
+            $clients_pages = ['admin-clients.php','admin-client-add.php','admin-client-detail.php','admin-client-edit.php','admin-client-emails.php'];
+            $clients_open  = in_array($current_page, $clients_pages);
+            ?>
+            <div>
+                <button onclick="toggleClients()" class="w-full flex items-center justify-between px-4 py-3 rounded-lg <?= $clients_open ? 'bg-blue-900/40 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white' ?> transition" data-testid="nav-clients-toggle">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-users w-5"></i>
+                        <span>Clients</span>
+                    </div>
+                    <i class="fas fa-chevron-up text-xs transition-transform" id="clients-chevron"></i>
+                </button>
+                <div id="clients-subnav" class="<?= $clients_open ? '' : 'hidden' ?> ml-4 mt-1 space-y-0.5 border-l-2 border-gray-700 pl-3">
+                    <?php foreach ([
+                        ['admin-clients.php',       'fa-list',         'Client List',       'link-clients-list'],
+                        ['admin-client-add.php',    'fa-user-plus',    'Add Client',        'link-clients-add'],
+                        ['admin-client-emails.php', 'fa-envelope',     'Email Clients',     'link-client-emails'],
+                    ] as [$href,$icon,$label,$tid]): ?>
+                    <a href="<?= $href ?>" class="flex items-center space-x-3 px-3 py-2 rounded-lg text-sm <?= $current_page===$href ? 'bg-blue-600 text-white font-medium' : 'text-gray-400 hover:bg-gray-700 hover:text-white transition' ?>" data-testid="<?= $tid ?>">
+                        <i class="fas <?= $icon ?> w-4 text-xs text-center shrink-0"></i><span><?= $label ?></span>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
 
             <?php
             $leads_pages = ['admin-leads-dashboard.php','admin-leads-add.php','admin-leads-list.php','admin-leads-view.php','admin-leads-quotes.php','admin-leads-maps.php','admin-smtp-settings.php'];
@@ -286,10 +306,18 @@ function toggleLeads() {
     if (nav) nav.classList.toggle('hidden');
     if (chev) chev.classList.toggle('rotate-180');
 }
-// Init chevron state
+function toggleClients() {
+    const nav = document.getElementById('clients-subnav');
+    const chev = document.getElementById('clients-chevron');
+    if (nav) nav.classList.toggle('hidden');
+    if (chev) chev.classList.toggle('rotate-180');
+}
+// Init chevron states
 (function() {
-    const nav = document.getElementById('leads-subnav');
-    const chev = document.getElementById('leads-chevron');
-    if (nav && nav.classList.contains('hidden') && chev) chev.classList.add('rotate-180');
+    [['leads-subnav','leads-chevron'],['clients-subnav','clients-chevron']].forEach(([navId,chevId]) => {
+        const nav = document.getElementById(navId);
+        const chev = document.getElementById(chevId);
+        if (nav && nav.classList.contains('hidden') && chev) chev.classList.add('rotate-180');
+    });
 })();
 </script>
