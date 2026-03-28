@@ -185,6 +185,14 @@ define('VULTR_API_KEY', getenv('VULTR_API_KEY') ?: '');
 define('VULTR_API_URL', 'https://api.vultr.com/v2');
 
 // ============================================
+// JUMPCLOUD CONFIGURATION
+// ============================================
+define('JUMPCLOUD_API_KEY', getenv('JUMPCLOUD_API_KEY') ?: '');
+define('JUMPCLOUD_API_V1',  'https://console.jumpcloud.com/api');
+define('JUMPCLOUD_API_V2',  'https://console.jumpcloud.com/api/v2');
+define('JUMPCLOUD_ORG_ID',  getenv('JUMPCLOUD_ORG_ID') ?: '');
+
+// ============================================
 // NEXTCLOUD CONFIGURATION
 // ============================================
 define('NEXTCLOUD_URL', getenv('NEXTCLOUD_URL') ?: '');
