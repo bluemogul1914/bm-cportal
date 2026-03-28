@@ -261,6 +261,176 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $active_tab = 'users';
     }
 
+    // ── Create User
+    if ($action === 'create_user') {
+        if (!$jc_connected) { $error_msg = 'API key not set.'; }
+        else {
+            $uname = trim($_POST['new_username'] ?? '');
+            $email = trim($_POST['new_email']    ?? '');
+            $pass  = $_POST['new_password']  ?? '';
+            if (!$uname || !$email || !$pass) {
+                $error_msg = 'Username, email and password are required.';
+            } else {
+                $payload = [
+                    'username'  => $uname,
+                    'email'     => $email,
+                    'password'  => $pass,
+                    'firstname' => trim($_POST['new_firstname'] ?? ''),
+                    'lastname'  => trim($_POST['new_lastname']  ?? ''),
+                ];
+                if (!empty($_POST['new_sudo']))  $payload['sudo']          = true;
+                if (!empty($_POST['new_ldap']))  $payload['ldap_binding_user'] = true;
+                $res = jc_api('POST', '/systemusers', $payload);
+                if (isset($res['error'])) {
+                    $error_msg = 'Create user failed: '.$res['error'];
+                } else {
+                    $jid = $res['_id'] ?? $res['id'] ?? '';
+                    if ($jid) {
+                        try {
+                            $pdo->prepare("INSERT INTO jc_users (jc_id,username,firstname,lastname,email,state,updated_at) VALUES (?,?,?,?,?,?,NOW()) ON CONFLICT (jc_id) DO UPDATE SET username=EXCLUDED.username,updated_at=NOW()")
+                                ->execute([$jid,$uname,$payload['firstname'],$payload['lastname'],$email,'STAGED']);
+                        } catch(Exception $e){}
+                    }
+                    $success_msg = "User '{$uname}' created in JumpCloud.";
+                    try { $pdo->prepare("INSERT INTO activity_log (user_id,action,entity_type,entity_id,details,ip_address) VALUES (?,?,?,?,?,?)")->execute([$_SESSION['user_id'],'jc_create_user','jc_user',0,"Created JumpCloud user: {$uname}",$_SERVER['REMOTE_ADDR']??'']); } catch(Exception $e){}
+                }
+            }
+        }
+        $active_tab = 'users';
+    }
+
+    // ── Delete User
+    if ($action === 'delete_user') {
+        $jc_uid = $_POST['jc_user_id'] ?? '';
+        if ($jc_uid && $jc_connected) {
+            $res = jc_api('DELETE', "/systemusers/{$jc_uid}");
+            if (isset($res['error'])) { $error_msg = 'Delete failed: '.$res['error']; }
+            else {
+                try { $pdo->prepare("DELETE FROM jc_users WHERE jc_id=?")->execute([$jc_uid]); } catch(Exception $e){}
+                $success_msg = 'User deleted from JumpCloud.';
+            }
+        }
+        $active_tab = 'users';
+    }
+
+    // ── Update System settings
+    if ($action === 'update_system') {
+        $jc_sid      = $_POST['jc_system_id'] ?? '';
+        $display     = trim($_POST['sys_display_name'] ?? '');
+        $allow_mfa   = !empty($_POST['sys_allow_mfa']);
+        $allow_ssh   = !empty($_POST['sys_allow_ssh']);
+        if ($jc_sid && $jc_connected) {
+            $payload = ['allowMultiFactorAuthentication' => $allow_mfa, 'allowSshPasswordAuthentication' => $allow_ssh];
+            if ($display) $payload['displayName'] = $display;
+            $res = jc_api('PUT', "/systems/{$jc_sid}", $payload);
+            if (isset($res['error'])) { $error_msg = 'System update failed: '.$res['error']; }
+            else {
+                try { $pdo->prepare("UPDATE jc_systems SET display_name=COALESCE(NULLIF(?,?),display_name),allow_multi_factor=?,allow_ssh=?,updated_at=NOW() WHERE jc_id=?")->execute([$display,$display,$allow_mfa?'true':'false',$allow_ssh?'true':'false',$jc_sid]); } catch(Exception $e){}
+                $success_msg = 'System settings updated.';
+            }
+        }
+        $active_tab = 'systems';
+    }
+
+    // ── Delete System
+    if ($action === 'delete_system') {
+        $jc_sid = $_POST['jc_system_id'] ?? '';
+        if ($jc_sid && $jc_connected) {
+            $res = jc_api('DELETE', "/systems/{$jc_sid}");
+            if (isset($res['error'])) { $error_msg = 'Delete failed: '.$res['error']; }
+            else {
+                try { $pdo->prepare("DELETE FROM jc_systems WHERE jc_id=?")->execute([$jc_sid]); } catch(Exception $e){}
+                $success_msg = 'System removed from JumpCloud.';
+            }
+        }
+        $active_tab = 'systems';
+    }
+
+    // ── Create User Group
+    if ($action === 'create_user_group') {
+        if (!$jc_connected) { $error_msg = 'API key not set.'; }
+        else {
+            $name = trim($_POST['ug_name'] ?? '');
+            $desc = trim($_POST['ug_desc'] ?? '');
+            if (!$name) { $error_msg = 'Group name is required.'; }
+            else {
+                $res = jc_api('POST', '/usergroups', ['name' => $name, 'description' => $desc], true);
+                if (isset($res['error'])) $error_msg = 'Create group failed: '.$res['error'];
+                else { $success_msg = "User group '{$name}' created."; }
+            }
+        }
+        $active_tab = 'groups';
+    }
+
+    // ── Delete User Group
+    if ($action === 'delete_user_group') {
+        $gid = $_POST['group_id'] ?? '';
+        if ($gid && $jc_connected) {
+            $res = jc_api('DELETE', "/usergroups/{$gid}", null, true);
+            if (isset($res['error'])) $error_msg = 'Delete failed: '.$res['error'];
+            else $success_msg = 'User group deleted.';
+        }
+        $active_tab = 'groups';
+    }
+
+    // ── Create System Group
+    if ($action === 'create_system_group') {
+        if (!$jc_connected) { $error_msg = 'API key not set.'; }
+        else {
+            $name = trim($_POST['sg_name'] ?? '');
+            $desc = trim($_POST['sg_desc'] ?? '');
+            if (!$name) { $error_msg = 'Group name is required.'; }
+            else {
+                $res = jc_api('POST', '/systemgroups', ['name' => $name, 'description' => $desc], true);
+                if (isset($res['error'])) $error_msg = 'Create system group failed: '.$res['error'];
+                else $success_msg = "System group '{$name}' created.";
+            }
+        }
+        $active_tab = 'groups';
+    }
+
+    // ── Delete System Group
+    if ($action === 'delete_system_group') {
+        $gid = $_POST['group_id'] ?? '';
+        if ($gid && $jc_connected) {
+            $res = jc_api('DELETE', "/systemgroups/{$gid}", null, true);
+            if (isset($res['error'])) $error_msg = 'Delete failed: '.$res['error'];
+            else $success_msg = 'System group deleted.';
+        }
+        $active_tab = 'groups';
+    }
+
+    // ── Create Policy
+    if ($action === 'create_policy') {
+        if (!$jc_connected) { $error_msg = 'API key not set.'; }
+        else {
+            $pol_name  = trim($_POST['pol_name']     ?? '');
+            $tmpl_id   = trim($_POST['pol_template'] ?? '');
+            if (!$pol_name || !$tmpl_id) { $error_msg = 'Policy name and template are required.'; }
+            else {
+                $res = jc_api('POST', '/policies', [
+                    'name'       => $pol_name,
+                    'template'   => ['id' => $tmpl_id],
+                    'values'     => [],
+                ], true);
+                if (isset($res['error'])) $error_msg = 'Create policy failed: '.$res['error'];
+                else $success_msg = "Policy '{$pol_name}' created.";
+            }
+        }
+        $active_tab = 'policies';
+    }
+
+    // ── Delete Policy
+    if ($action === 'delete_policy') {
+        $pid = $_POST['policy_id'] ?? '';
+        if ($pid && $jc_connected) {
+            $res = jc_api('DELETE', "/policies/{$pid}", null, true);
+            if (isset($res['error'])) $error_msg = 'Delete failed: '.$res['error'];
+            else $success_msg = 'Policy deleted.';
+        }
+        $active_tab = 'policies';
+    }
+
     // ── Sync Directory Insights
     if ($action === 'sync_insights') {
         if (!$jc_connected) { $error_msg = 'JUMPCLOUD_API_KEY not set.'; }
@@ -334,6 +504,7 @@ $live_systemgroups = [];
 $live_policies     = [];
 $live_apps         = [];
 $live_radius       = [];
+$live_pol_templates = [];
 
 if ($jc_connected) {
     if ($active_tab === 'groups') {
@@ -349,6 +520,8 @@ if ($jc_connected) {
         $live_apps = $app['results'] ?? (isset($app[0]) ? $app : []);
         $rad = jc_api('GET', '/radiusservers');
         $live_radius = $rad['results'] ?? (isset($rad[0]) ? $rad : []);
+        $tmpl_r = jc_api('GET', '/policytemplates?limit=100', null, true);
+        $live_pol_templates = $tmpl_r['results'] ?? (isset($tmpl_r[0]) ? $tmpl_r : []);
     }
 }
 
@@ -553,6 +726,10 @@ function jc_bool_icon(mixed $val): string {
                 <i class="fas fa-sync-alt text-xs"></i>Sync from JumpCloud
             </button>
         </form>
+        <button onclick="document.getElementById('modal-agent-install').classList.remove('hidden')"
+            class="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2" data-testid="button-agent-install">
+            <i class="fas fa-terminal text-xs text-purple-500"></i>Agent Install Guide
+        </button>
     </div>
     <div class="overflow-x-auto">
         <table class="w-full text-sm" data-testid="table-systems">
@@ -567,10 +744,11 @@ function jc_bool_icon(mixed $val): string {
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Agent</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Remote IP</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Last Contact</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Actions</th>
             </tr></thead>
             <tbody class="divide-y divide-gray-100">
             <?php if (empty($db_systems)): ?>
-            <tr><td colspan="10" class="px-4 py-10 text-center text-gray-400">
+            <tr><td colspan="11" class="px-4 py-10 text-center text-gray-400">
                 No systems synced. <?= $jc_connected ? '<a href="?tab=systems" class="text-blue-500 hover:underline">Click "Sync from JumpCloud"</a>' : 'Configure API key first.' ?>
             </td></tr>
             <?php else: ?>
@@ -591,6 +769,18 @@ function jc_bool_icon(mixed $val): string {
                 <td class="px-4 py-3 text-xs font-mono text-gray-400"><?= htmlspecialchars($s['agent_version']) ?></td>
                 <td class="px-4 py-3 text-xs font-mono text-gray-400"><?= htmlspecialchars($s['remote_ip']) ?></td>
                 <td class="px-4 py-3 text-xs text-gray-400"><?= $s['last_contact'] ? date('Y-m-d H:i', strtotime($s['last_contact'])) : '—' ?></td>
+                <td class="px-4 py-3">
+                    <div class="flex gap-1">
+                    <button onclick='openEditSystem(<?= json_encode(['id'=>$s['jc_id'],'name'=>$s['display_name'],'mfa'=>(!empty($s['allow_multi_factor'])&&$s['allow_multi_factor']!=='false'),'ssh'=>(!empty($s['allow_ssh'])&&$s['allow_ssh']!=='false')]) ?>)'
+                        class="px-2 py-1 border border-blue-300 text-blue-600 rounded text-xs hover:bg-blue-50" data-testid="button-edit-system-<?= $s['id'] ?>">Edit</button>
+                    <form method="POST" class="inline" onsubmit="return confirm('Remove this system from JumpCloud? This will unmanage the device.')">
+                        <input type="hidden" name="_csrf_token" value="<?= $_SESSION['csrf_token'] ?? '' ?>">
+                        <input type="hidden" name="action" value="delete_system">
+                        <input type="hidden" name="jc_system_id" value="<?= htmlspecialchars($s['jc_id']) ?>">
+                        <button class="px-2 py-1 border border-red-300 text-red-600 rounded text-xs hover:bg-red-50" data-testid="button-delete-system-<?= $s['id'] ?>">Remove</button>
+                    </form>
+                    </div>
+                </td>
             </tr>
             <?php endforeach; ?>
             <?php endif; ?>
@@ -601,6 +791,87 @@ function jc_bool_icon(mixed $val): string {
         <?= count($db_systems) ?> system(s) · Last updated: <?= !empty($db_systems[0]['updated_at']) ? date('Y-m-d H:i', strtotime($db_systems[0]['updated_at'])) : 'Never' ?>
     </div>
 </div>
+
+<!-- ── Agent Install Modal -->
+<div id="modal-agent-install" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+<div class="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="font-semibold text-gray-900"><i class="fas fa-terminal text-purple-500 mr-2"></i>JumpCloud Agent Install Guide</h3>
+        <button onclick="document.getElementById('modal-agent-install').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="p-6 space-y-5 text-sm">
+        <p class="text-gray-600">Systems are enrolled into JumpCloud by installing the JumpCloud agent. Once installed, the system will appear here automatically after syncing.</p>
+        <div class="bg-gray-900 rounded-lg p-4">
+            <p class="text-xs text-gray-400 mb-2 font-semibold">Linux (Debian / Ubuntu)</p>
+            <code class="text-green-400 text-xs break-all">curl --tlsv1.2 --silent --show-error --output /tmp/jc-install.sh https://raw.githubusercontent.com/TheJumpCloud/support/master/scripts/install/jumpcloud_agent_installer.sh &amp;&amp; bash /tmp/jc-install.sh</code>
+        </div>
+        <div class="bg-gray-900 rounded-lg p-4">
+            <p class="text-xs text-gray-400 mb-2 font-semibold">Linux (RHEL / CentOS)</p>
+            <code class="text-green-400 text-xs break-all">curl --tlsv1.2 --silent --show-error --output /tmp/jc-install.sh https://raw.githubusercontent.com/TheJumpCloud/support/master/scripts/install/jumpcloud_agent_installer_rpm.sh &amp;&amp; bash /tmp/jc-install.sh</code>
+        </div>
+        <div class="bg-gray-900 rounded-lg p-4">
+            <p class="text-xs text-gray-400 mb-2 font-semibold">macOS</p>
+            <code class="text-green-400 text-xs break-all">curl --tlsv1.2 --silent --show-error --output /tmp/jc-install.sh https://raw.githubusercontent.com/TheJumpCloud/support/master/scripts/install/jumpcloud_agent_installer.sh &amp;&amp; sudo bash /tmp/jc-install.sh</code>
+        </div>
+        <div class="bg-gray-900 rounded-lg p-4">
+            <p class="text-xs text-gray-400 mb-2 font-semibold">Windows (PowerShell, run as Administrator)</p>
+            <code class="text-green-400 text-xs break-all">[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-Expression (Invoke-WebRequest -Uri "https://raw.githubusercontent.com/TheJumpCloud/support/master/scripts/install/jumpcloud_agent_installer.ps1" -UseBasicParsing).Content</code>
+        </div>
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-xs text-blue-700">
+            <strong>Note:</strong> After running the installer, you will be prompted for a <strong>Connect Key</strong>. Find yours in <a href="https://console.jumpcloud.com/#/settings" target="_blank" class="underline">JumpCloud Console → Settings → Connect Key</a>.
+        </div>
+        <div class="flex justify-end">
+            <a href="https://docs.jumpcloud.com/help/agent-installation" target="_blank" rel="noopener"
+               class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm text-gray-700 flex items-center gap-2">
+               <i class="fas fa-external-link-alt text-xs"></i>Full Documentation
+            </a>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- ── Edit System Modal -->
+<div id="modal-edit-system" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+<div class="bg-white rounded-xl shadow-xl max-w-md w-full">
+    <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="font-semibold text-gray-900"><i class="fas fa-desktop text-blue-500 mr-2"></i>Edit System Settings</h3>
+        <button onclick="document.getElementById('modal-edit-system').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+    </div>
+    <form method="POST">
+        <div class="p-6 space-y-4">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="update_system">
+            <input type="hidden" name="jc_system_id" id="edit_sys_id">
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Display Name</label>
+                <input type="text" name="sys_display_name" id="edit_sys_name" placeholder="Leave blank to keep current"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" data-testid="input-sys-display-name">
+            </div>
+            <div class="flex items-center gap-3">
+                <input type="checkbox" name="sys_allow_mfa" id="edit_sys_mfa" class="w-4 h-4 rounded border-gray-300" data-testid="checkbox-sys-mfa">
+                <label for="edit_sys_mfa" class="text-sm text-gray-700">Allow Multi-Factor Authentication</label>
+            </div>
+            <div class="flex items-center gap-3">
+                <input type="checkbox" name="sys_allow_ssh" id="edit_sys_ssh" class="w-4 h-4 rounded border-gray-300" data-testid="checkbox-sys-ssh">
+                <label for="edit_sys_ssh" class="text-sm text-gray-700">Allow SSH Password Authentication</label>
+            </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+            <button type="button" onclick="document.getElementById('modal-edit-system').classList.add('hidden')" class="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700">Cancel</button>
+            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-save-system">Save Changes</button>
+        </div>
+    </form>
+</div>
+</div>
+<script>
+function openEditSystem(data) {
+    document.getElementById('edit_sys_id').value  = data.id;
+    document.getElementById('edit_sys_name').value = data.name;
+    document.getElementById('edit_sys_mfa').checked = data.mfa;
+    document.getElementById('edit_sys_ssh').checked = data.ssh;
+    document.getElementById('modal-edit-system').classList.remove('hidden');
+}
+</script>
 
 <?php /* ══════════════════ USERS ══════════════════ */ elseif ($active_tab === 'users'): ?>
 <div class="bg-white rounded-lg border border-gray-200">
@@ -623,6 +894,10 @@ function jc_bool_icon(mixed $val): string {
                 <i class="fas fa-sync-alt text-xs"></i>Sync Users
             </button>
         </form>
+        <button onclick="document.getElementById('modal-add-user').classList.remove('hidden')"
+            class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm flex items-center gap-2" data-testid="button-add-user">
+            <i class="fas fa-user-plus text-xs"></i>Add User
+        </button>
     </div>
     <div class="overflow-x-auto">
         <table class="w-full text-sm" data-testid="table-users">
@@ -670,6 +945,12 @@ function jc_bool_icon(mixed $val): string {
                     <form method="POST" class="inline"><input type="hidden" name="_csrf_token" value="<?= $_SESSION['csrf_token'] ?? '' ?>"><input type="hidden" name="action" value="unlock_user"><input type="hidden" name="jc_user_id" value="<?= htmlspecialchars($u['jc_id']) ?>">
                     <button class="px-2 py-1 border border-blue-300 text-blue-600 rounded text-xs hover:bg-blue-50" data-testid="button-unlock-<?= $u['id'] ?>">Unlock</button></form>
                     <?php endif; ?>
+                    <form method="POST" class="inline" onsubmit="return confirm('Permanently delete user <?= htmlspecialchars(addslashes($u['username'])) ?> from JumpCloud?')">
+                        <input type="hidden" name="_csrf_token" value="<?= $_SESSION['csrf_token'] ?? '' ?>">
+                        <input type="hidden" name="action" value="delete_user">
+                        <input type="hidden" name="jc_user_id" value="<?= htmlspecialchars($u['jc_id']) ?>">
+                        <button class="px-2 py-1 border border-red-300 text-red-600 rounded text-xs hover:bg-red-50" data-testid="button-delete-user-<?= $u['id'] ?>">Delete</button>
+                    </form>
                     </div>
                 </td>
             </tr>
@@ -681,12 +962,73 @@ function jc_bool_icon(mixed $val): string {
     <div class="px-5 py-3 border-t border-gray-100 text-xs text-gray-400"><?= count($db_users) ?> user(s)</div>
 </div>
 
+<!-- ── Add User Modal -->
+<div id="modal-add-user" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+<div class="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+    <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="font-semibold text-gray-900"><i class="fas fa-user-plus text-indigo-500 mr-2"></i>Create JumpCloud User</h3>
+        <button onclick="document.getElementById('modal-add-user').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+    </div>
+    <form method="POST">
+        <div class="p-6 space-y-4">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="create_user">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">First Name</label>
+                    <input type="text" name="new_firstname" placeholder="Jane"
+                        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" data-testid="input-new-firstname">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Last Name</label>
+                    <input type="text" name="new_lastname" placeholder="Smith"
+                        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" data-testid="input-new-lastname">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Username <span class="text-red-500">*</span></label>
+                <input type="text" name="new_username" required placeholder="jsmith"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" data-testid="input-new-username">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Email <span class="text-red-500">*</span></label>
+                <input type="email" name="new_email" required placeholder="jsmith@example.com"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" data-testid="input-new-email">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Password <span class="text-red-500">*</span></label>
+                <input type="password" name="new_password" required placeholder="Min. 8 chars, mixed case + number"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" data-testid="input-new-password">
+            </div>
+            <div class="border border-gray-100 rounded-lg p-3 space-y-2 bg-gray-50">
+                <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input type="checkbox" name="new_sudo" class="w-4 h-4 rounded" data-testid="checkbox-new-sudo">
+                    Enable sudo privileges
+                </label>
+                <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input type="checkbox" name="new_ldap" class="w-4 h-4 rounded" data-testid="checkbox-new-ldap">
+                    LDAP binding user
+                </label>
+            </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+            <button type="button" onclick="document.getElementById('modal-add-user').classList.add('hidden')" class="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700">Cancel</button>
+            <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium" data-testid="button-submit-add-user">Create User</button>
+        </div>
+    </form>
+</div>
+</div>
+
 <?php /* ══════════════════ GROUPS ══════════════════ */ elseif ($active_tab === 'groups'): ?>
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 <!-- User Groups -->
 <div class="bg-white rounded-lg border border-gray-200">
-    <div class="px-5 py-4 border-b border-gray-100">
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
         <h3 class="font-semibold text-gray-900"><i class="fas fa-users text-blue-500 mr-2"></i>User Groups</h3>
+        <button onclick="document.getElementById('modal-add-ugroup').classList.remove('hidden')"
+            class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs flex items-center gap-1.5" data-testid="button-add-ugroup">
+            <i class="fas fa-plus text-xs"></i>Add Group
+        </button>
     </div>
     <div class="overflow-x-auto">
         <table class="w-full text-sm" data-testid="table-user-groups">
@@ -694,16 +1036,25 @@ function jc_bool_icon(mixed $val): string {
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Name</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Type</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Description</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Actions</th>
             </tr></thead>
             <tbody class="divide-y divide-gray-100">
             <?php if (empty($live_usergroups)): ?>
-            <tr><td colspan="3" class="px-4 py-8 text-center text-gray-400"><?= $jc_connected ? 'No user groups found.' : 'API key required.' ?></td></tr>
+            <tr><td colspan="4" class="px-4 py-8 text-center text-gray-400"><?= $jc_connected ? 'No user groups found.' : 'API key required.' ?></td></tr>
             <?php else: ?>
             <?php foreach ($live_usergroups as $g): ?>
             <tr class="hover:bg-gray-50" data-testid="row-ugroup-<?= htmlspecialchars($g['id']??'') ?>">
                 <td class="px-4 py-3 font-medium text-gray-900"><?= htmlspecialchars($g['name']??'—') ?></td>
                 <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700"><?= htmlspecialchars($g['type']??'user_group') ?></span></td>
                 <td class="px-4 py-3 text-gray-500 text-xs"><?= htmlspecialchars($g['description']??'') ?></td>
+                <td class="px-4 py-3">
+                    <form method="POST" class="inline" onsubmit="return confirm('Delete user group <?= htmlspecialchars(addslashes($g['name']??'')) ?>?')">
+                        <input type="hidden" name="_csrf_token" value="<?= $_SESSION['csrf_token'] ?? '' ?>">
+                        <input type="hidden" name="action" value="delete_user_group">
+                        <input type="hidden" name="group_id" value="<?= htmlspecialchars($g['id']??'') ?>">
+                        <button class="px-2 py-1 border border-red-300 text-red-600 rounded text-xs hover:bg-red-50">Delete</button>
+                    </form>
+                </td>
             </tr>
             <?php endforeach; ?>
             <?php endif; ?>
@@ -714,8 +1065,12 @@ function jc_bool_icon(mixed $val): string {
 
 <!-- System Groups -->
 <div class="bg-white rounded-lg border border-gray-200">
-    <div class="px-5 py-4 border-b border-gray-100">
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
         <h3 class="font-semibold text-gray-900"><i class="fas fa-server text-green-500 mr-2"></i>System Groups</h3>
+        <button onclick="document.getElementById('modal-add-sgroup').classList.remove('hidden')"
+            class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs flex items-center gap-1.5" data-testid="button-add-sgroup">
+            <i class="fas fa-plus text-xs"></i>Add Group
+        </button>
     </div>
     <div class="overflow-x-auto">
         <table class="w-full text-sm" data-testid="table-system-groups">
@@ -723,16 +1078,25 @@ function jc_bool_icon(mixed $val): string {
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Name</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Type</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Description</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Actions</th>
             </tr></thead>
             <tbody class="divide-y divide-gray-100">
             <?php if (empty($live_systemgroups)): ?>
-            <tr><td colspan="3" class="px-4 py-8 text-center text-gray-400"><?= $jc_connected ? 'No system groups found.' : 'API key required.' ?></td></tr>
+            <tr><td colspan="4" class="px-4 py-8 text-center text-gray-400"><?= $jc_connected ? 'No system groups found.' : 'API key required.' ?></td></tr>
             <?php else: ?>
             <?php foreach ($live_systemgroups as $g): ?>
             <tr class="hover:bg-gray-50">
                 <td class="px-4 py-3 font-medium text-gray-900"><?= htmlspecialchars($g['name']??'—') ?></td>
                 <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700"><?= htmlspecialchars($g['type']??'system_group') ?></span></td>
                 <td class="px-4 py-3 text-gray-500 text-xs"><?= htmlspecialchars($g['description']??'') ?></td>
+                <td class="px-4 py-3">
+                    <form method="POST" class="inline" onsubmit="return confirm('Delete system group <?= htmlspecialchars(addslashes($g['name']??'')) ?>?')">
+                        <input type="hidden" name="_csrf_token" value="<?= $_SESSION['csrf_token'] ?? '' ?>">
+                        <input type="hidden" name="action" value="delete_system_group">
+                        <input type="hidden" name="group_id" value="<?= htmlspecialchars($g['id']??'') ?>">
+                        <button class="px-2 py-1 border border-red-300 text-red-600 rounded text-xs hover:bg-red-50">Delete</button>
+                    </form>
+                </td>
             </tr>
             <?php endforeach; ?>
             <?php endif; ?>
@@ -742,11 +1106,73 @@ function jc_bool_icon(mixed $val): string {
 </div>
 </div>
 
+<!-- ── Add User Group Modal -->
+<div id="modal-add-ugroup" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+<div class="bg-white rounded-xl shadow-xl max-w-md w-full">
+    <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="font-semibold text-gray-900"><i class="fas fa-users text-blue-500 mr-2"></i>Create User Group</h3>
+        <button onclick="document.getElementById('modal-add-ugroup').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+    </div>
+    <form method="POST">
+        <div class="p-6 space-y-4">
+            <?= csrf_field() ?><input type="hidden" name="action" value="create_user_group">
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Group Name <span class="text-red-500">*</span></label>
+                <input type="text" name="ug_name" required placeholder="e.g. Engineering"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" data-testid="input-ug-name">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                <input type="text" name="ug_desc" placeholder="Optional description"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" data-testid="input-ug-desc">
+            </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+            <button type="button" onclick="document.getElementById('modal-add-ugroup').classList.add('hidden')" class="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700">Cancel</button>
+            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-submit-ugroup">Create Group</button>
+        </div>
+    </form>
+</div>
+</div>
+
+<!-- ── Add System Group Modal -->
+<div id="modal-add-sgroup" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+<div class="bg-white rounded-xl shadow-xl max-w-md w-full">
+    <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="font-semibold text-gray-900"><i class="fas fa-server text-green-500 mr-2"></i>Create System Group</h3>
+        <button onclick="document.getElementById('modal-add-sgroup').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+    </div>
+    <form method="POST">
+        <div class="p-6 space-y-4">
+            <?= csrf_field() ?><input type="hidden" name="action" value="create_system_group">
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Group Name <span class="text-red-500">*</span></label>
+                <input type="text" name="sg_name" required placeholder="e.g. Production Servers"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" data-testid="input-sg-name">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                <input type="text" name="sg_desc" placeholder="Optional description"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" data-testid="input-sg-desc">
+            </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+            <button type="button" onclick="document.getElementById('modal-add-sgroup').classList.add('hidden')" class="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700">Cancel</button>
+            <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium" data-testid="button-submit-sgroup">Create Group</button>
+        </div>
+    </form>
+</div>
+</div>
+
 <?php /* ══════════════════ POLICIES & APPS ══════════════════ */ elseif ($active_tab === 'policies'): ?>
 <!-- Policies -->
 <div class="bg-white rounded-lg border border-gray-200 mb-6">
-    <div class="px-5 py-4 border-b border-gray-100">
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
         <h3 class="font-semibold text-gray-900"><i class="fas fa-file-shield text-purple-500 mr-2"></i>Policies</h3>
+        <button onclick="document.getElementById('modal-add-policy').classList.remove('hidden')"
+            class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs flex items-center gap-1.5" data-testid="button-add-policy">
+            <i class="fas fa-plus text-xs"></i>Add Policy
+        </button>
     </div>
     <div class="overflow-x-auto">
         <table class="w-full text-sm" data-testid="table-policies">
@@ -755,10 +1181,11 @@ function jc_bool_icon(mixed $val): string {
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Template</th>
                 <th class="px-4 py-3 text-center text-xs font-semibold text-gray-500">Active</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">ID</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Actions</th>
             </tr></thead>
             <tbody class="divide-y divide-gray-100">
             <?php if (empty($live_policies)): ?>
-            <tr><td colspan="4" class="px-4 py-8 text-center text-gray-400"><?= $jc_connected ? 'No policies found.' : 'Configure API key.' ?></td></tr>
+            <tr><td colspan="5" class="px-4 py-8 text-center text-gray-400"><?= $jc_connected ? 'No policies found.' : 'Configure API key.' ?></td></tr>
             <?php else: ?>
             <?php foreach ($live_policies as $p): ?>
             <tr class="hover:bg-gray-50">
@@ -766,12 +1193,62 @@ function jc_bool_icon(mixed $val): string {
                 <td class="px-4 py-3 text-gray-500 text-xs"><?= htmlspecialchars($p['template']['name']??$p['templateId']??'—') ?></td>
                 <td class="px-4 py-3 text-center"><?= jc_bool_icon(!empty($p['active'])) ?></td>
                 <td class="px-4 py-3 font-mono text-xs text-gray-400"><?= htmlspecialchars(substr($p['id']??'',0,24)) ?></td>
+                <td class="px-4 py-3">
+                    <form method="POST" class="inline" onsubmit="return confirm('Delete policy <?= htmlspecialchars(addslashes($p['name']??'')) ?>?')">
+                        <input type="hidden" name="_csrf_token" value="<?= $_SESSION['csrf_token'] ?? '' ?>">
+                        <input type="hidden" name="action" value="delete_policy">
+                        <input type="hidden" name="policy_id" value="<?= htmlspecialchars($p['id']??'') ?>">
+                        <button class="px-2 py-1 border border-red-300 text-red-600 rounded text-xs hover:bg-red-50">Delete</button>
+                    </form>
+                </td>
             </tr>
             <?php endforeach; ?>
             <?php endif; ?>
             </tbody>
         </table>
     </div>
+</div>
+
+<!-- ── Add Policy Modal -->
+<div id="modal-add-policy" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+<div class="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+    <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="font-semibold text-gray-900"><i class="fas fa-file-shield text-purple-500 mr-2"></i>Create Policy</h3>
+        <button onclick="document.getElementById('modal-add-policy').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+    </div>
+    <form method="POST">
+        <div class="p-6 space-y-4">
+            <?= csrf_field() ?><input type="hidden" name="action" value="create_policy">
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Policy Name <span class="text-red-500">*</span></label>
+                <input type="text" name="pol_name" required placeholder="e.g. Disable USB Storage"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" data-testid="input-pol-name">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Template <span class="text-red-500">*</span></label>
+                <?php if (!empty($live_pol_templates)): ?>
+                <select name="pol_template" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" data-testid="select-pol-template">
+                    <option value="">— Select a template —</option>
+                    <?php foreach ($live_pol_templates as $tmpl): ?>
+                    <option value="<?= htmlspecialchars($tmpl['id']??'') ?>"><?= htmlspecialchars($tmpl['name']??$tmpl['id']??'Unknown') ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?php else: ?>
+                <input type="text" name="pol_template" required placeholder="Template ID (e.g. 5f08f8c2a7b54e001d8c98a2)"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono" data-testid="input-pol-template">
+                <p class="text-xs text-gray-400 mt-1">Templates could not be loaded from the API. Enter the template ID manually.</p>
+                <?php endif; ?>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                <strong>Note:</strong> The policy will be created with default values. You can configure specific settings in the <a href="https://console.jumpcloud.com/#/policies" target="_blank" class="underline">JumpCloud Console</a>.
+            </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+            <button type="button" onclick="document.getElementById('modal-add-policy').classList.add('hidden')" class="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700">Cancel</button>
+            <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium" data-testid="button-submit-policy">Create Policy</button>
+        </div>
+    </form>
+</div>
 </div>
 
 <!-- SSO Applications -->
