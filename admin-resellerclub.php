@@ -10,6 +10,18 @@ $user_email = $_SESSION['user_email'] ?? '';
 $is_admin   = true;
 $pdo        = getDB();
 
+// ── Ensure provider_settings table exists (self-bootstrapping) ────────────────
+try {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS provider_settings (
+        id         SERIAL PRIMARY KEY,
+        provider   VARCHAR(50) NOT NULL,
+        key_name   VARCHAR(100) NOT NULL,
+        key_value  TEXT DEFAULT '',
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(provider, key_name)
+    )");
+} catch (Exception $e) {}
+
 // ── Load credentials: env constant → provider_settings fallback ───────────────
 $rc_uid = RC_AUTH_USERID;
 $rc_key = RC_API_KEY;
@@ -23,6 +35,7 @@ if (empty($rc_uid)) {
         }
     } catch (Exception $e) {}
 }
+
 $rc_connected = !empty($rc_uid) && !empty($rc_key);
 $rc_base      = rtrim(RC_API_URL, '/');
 
