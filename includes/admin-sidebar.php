@@ -104,6 +104,11 @@
                     <span>TravelSim</span>
                 </a>
 
+                <a href="admin-coolify.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-coolify.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-coolify">
+                    <i class="fas fa-rocket w-5 text-purple-400"></i>
+                    <span>Coolify</span>
+                </a>
+
                 <a href="admin-itflow.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-itflow.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                     <i class="fas fa-ticket-alt w-5"></i>
                     <span>ITFlow</span>
