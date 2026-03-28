@@ -20,10 +20,33 @@
                 <span>Clients</span>
             </a>
 
-            <a href="admin-crm.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-crm.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-crm">
-                <i class="fas fa-bullhorn w-5"></i>
-                <span>CRM</span>
-            </a>
+            <?php
+            $leads_pages = ['admin-leads-dashboard.php','admin-leads-add.php','admin-leads-list.php','admin-leads-view.php','admin-leads-quotes.php','admin-leads-maps.php','admin-smtp-settings.php'];
+            $leads_open  = in_array($current_page, $leads_pages);
+            ?>
+            <div>
+                <button onclick="toggleLeads()" class="w-full flex items-center justify-between px-4 py-3 rounded-lg <?= $leads_open ? 'bg-blue-900/40 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white' ?> transition" data-testid="nav-leads-toggle">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-user-tag w-5 text-yellow-400"></i>
+                        <span>Leads</span>
+                    </div>
+                    <i class="fas fa-chevron-up text-xs transition-transform" id="leads-chevron"></i>
+                </button>
+                <div id="leads-subnav" class="<?= $leads_open ? '' : 'hidden' ?> ml-4 mt-1 space-y-0.5 border-l-2 border-gray-700 pl-3">
+                    <?php foreach ([
+                        ['admin-leads-dashboard.php', 'fa-tachometer-alt', 'Dashboard',     'link-leads-dashboard'],
+                        ['admin-leads-add.php',       'fa-plus',           'Add Lead',      'link-leads-add'],
+                        ['admin-leads-list.php',      'fa-list',           'List',          'link-leads-list'],
+                        ['admin-leads-quotes.php',    'fa-file-alt',       'Quotes',        'link-leads-quotes'],
+                        ['admin-leads-maps.php',      'fa-map-marked-alt', 'Maps',          'link-leads-maps'],
+                        ['admin-smtp-settings.php',   'fa-envelope-open-text','Email SMTP', 'link-smtp-settings'],
+                    ] as [$href,$icon,$label,$tid]): ?>
+                    <a href="<?= $href ?>" class="flex items-center space-x-3 px-3 py-2 rounded-lg text-sm <?= $current_page===$href ? 'bg-blue-600 text-white font-medium' : 'text-gray-400 hover:bg-gray-700 hover:text-white transition' ?>" data-testid="<?= $tid ?>">
+                        <i class="fas <?= $icon ?> w-4 text-xs text-center shrink-0"></i><span><?= $label ?></span>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
 
             <a href="admin-tickets.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-tickets.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                 <i class="fas fa-ticket-alt w-5"></i>
@@ -251,3 +274,17 @@ nav::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.3);
 }
 </style>
+<script>
+function toggleLeads() {
+    const nav = document.getElementById('leads-subnav');
+    const chev = document.getElementById('leads-chevron');
+    if (nav) nav.classList.toggle('hidden');
+    if (chev) chev.classList.toggle('rotate-180');
+}
+// Init chevron state
+(function() {
+    const nav = document.getElementById('leads-subnav');
+    const chev = document.getElementById('leads-chevron');
+    if (nav && nav.classList.contains('hidden') && chev) chev.classList.add('rotate-180');
+})();
+</script>
