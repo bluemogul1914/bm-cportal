@@ -78,6 +78,12 @@ define('ITARIAN_API_KEY', getenv('ITARIAN_API_KEY') ?: '');
 define('ITARIAN_API_URL', getenv('ITARIAN_API_URL') ?: '');
 
 // ============================================
+// RESELLERCLUB CONFIGURATION
+// ============================================
+define('RC_AUTH_USERID', getenv('RC_AUTH_USERID') ?: '');
+define('RC_API_KEY',     getenv('RC_API_KEY')     ?: '');
+define('RC_API_URL',     'https://httpapi.com/api');  // live; use https://test.httpapi.com/api for sandbox
+
 // ENOM DOMAIN RESELLER CONFIGURATION
 // ============================================
 define('ENOM_UID', getenv('ENOM_UID') ?: '');

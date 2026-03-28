@@ -94,6 +94,11 @@
                     <span>Enom Domains</span>
                 </a>
 
+                <a href="admin-resellerclub.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-resellerclub.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-resellerclub">
+                    <i class="fas fa-store w-5 text-sky-400"></i>
+                    <span>ResellerClub</span>
+                </a>
+
                 <a href="admin-itflow.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-itflow.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                     <i class="fas fa-ticket-alt w-5"></i>
                     <span>ITFlow</span>
