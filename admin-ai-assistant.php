@@ -502,6 +502,8 @@ function relTime(dt) {
   return Math.floor(s/86400)+'d ago';
 }
 
+let activeAbortCtrl = null;
+
 async function sendMessage() {
   const input = document.getElementById('chatInput');
   const text = input.value.trim();
@@ -519,7 +521,7 @@ async function sendMessage() {
   c.insertAdjacentHTML('beforeend', `
     <div class="msg assistant" id="${tid}">
       <div class="msg-av"><i class="fas fa-robot"></i></div>
-      <div><div class="msg-bub"><div class="typing-ind">
+      <div><div class="msg-bub" id="${tid}_bub"><div class="typing-ind">
         <div class="tdot"></div><div class="tdot"></div><div class="tdot"></div>
       </div></div></div>
     </div>`);
@@ -528,49 +530,91 @@ async function sendMessage() {
   const sb = document.getElementById('sendBtn');
   sb.disabled = true;
 
+  activeAbortCtrl = new AbortController();
+  let fullReply = '';
+  let firstToken = true;
+  let lineBuffer = '';
+
   try {
-    const r = await fetch('/api/ollama/chat', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
+    const resp = await fetch('/api/ollama/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         messages: messages.slice(-20),
         conversation_id: currentConvId,
-        title: messages[0]?.content?.substring(0,60)
-      })
+        title: messages[0]?.content?.substring(0, 60)
+      }),
+      signal: activeAbortCtrl.signal
     });
-    const data = await r.json();
-    document.getElementById(tid)?.remove();
 
-    if (!r.ok || data.error) {
-      c.insertAdjacentHTML('beforeend', `
-        <div class="msg assistant">
-          <div class="msg-av"><i class="fas fa-robot"></i></div>
-          <div><div class="msg-bub msg-err"><i class="fas fa-exclamation-triangle"></i> ${esc(data.error||'Unknown error')}</div></div>
-        </div>`);
-      if (data.error?.includes('not reachable') || data.error?.includes('timed out') || data.error?.includes('disabled')) {
-        document.getElementById('offlineBar').classList.remove('hidden');
-        document.getElementById('statusDot').className = 'status-dot offline';
-      }
-    } else {
-      currentConvId = data.conversation_id;
-      messages.push({ role:'assistant', content:data.reply });
-      c.insertAdjacentHTML('beforeend', msgHtml({ role:'assistant', content:data.reply }));
-      document.getElementById('chatTitle').textContent = messages[0]?.content?.substring(0,50) || 'Chat';
-      document.getElementById('modelBadge').textContent = data.model || aiSettings.model;
-      await loadConversations();
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({ error: 'Server error' }));
+      showBubbleError(tid, errData.error || 'Server error');
+      scrollBottom(); return;
     }
-    scrollBottom();
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      lineBuffer += decoder.decode(value, { stream: true });
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+
+        let evt;
+        try { evt = JSON.parse(jsonStr); } catch { continue; }
+
+        if (evt.error) {
+          showBubbleError(tid, evt.error);
+          scrollBottom(); return;
+        }
+
+        if (evt.token) {
+          fullReply += evt.token;
+          const bubble = document.getElementById(tid + '_bub');
+          if (bubble) {
+            if (firstToken) { bubble.innerHTML = ''; firstToken = false; }
+            bubble.innerHTML = fmtMd(fullReply);
+          }
+          scrollBottom();
+        }
+
+        if (evt.done) {
+          currentConvId = evt.conversation_id;
+          messages.push({ role: 'assistant', content: fullReply });
+          document.getElementById('chatTitle').textContent =
+            messages[0]?.content?.substring(0, 50) || 'Chat';
+          document.getElementById('modelBadge').textContent = evt.model || aiSettings.model;
+          await loadConversations();
+          scrollBottom();
+        }
+      }
+    }
   } catch(e) {
-    document.getElementById(tid)?.remove();
-    c.insertAdjacentHTML('beforeend', `
-      <div class="msg assistant">
-        <div class="msg-av"><i class="fas fa-robot"></i></div>
-        <div><div class="msg-bub msg-err"><i class="fas fa-exclamation-triangle"></i> Network error: ${esc(e.message)}</div></div>
-      </div>`);
-    scrollBottom();
+    if (e.name !== 'AbortError') {
+      showBubbleError(tid, 'Network error: ' + e.message);
+      scrollBottom();
+    }
   } finally {
+    activeAbortCtrl = null;
     sb.disabled = false;
     input.focus();
+  }
+}
+
+function showBubbleError(tid, msg) {
+  const bubble = document.getElementById(tid + '_bub');
+  if (bubble) {
+    bubble.className = 'msg-bub msg-err';
+    bubble.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${esc(msg)}`;
   }
 }
 

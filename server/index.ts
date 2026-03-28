@@ -1579,45 +1579,99 @@ app.get("/api/ollama/models", async (_req, res) => {
 });
 
 app.post("/api/ollama/chat", express.json(), async (req, res) => {
-  try {
-    const { messages, conversation_id, title } = req.body as {
-      messages: { role: string; content: string }[];
-      conversation_id?: number;
-      title?: string;
-    };
-    if (!messages?.length) return res.status(400).json({ error: 'messages required' });
+  const { messages, conversation_id, title } = req.body as {
+    messages: { role: string; content: string }[];
+    conversation_id?: number;
+    title?: string;
+  };
+  if (!messages?.length) return res.status(400).json({ error: 'messages required' });
 
-    const settingsRows = await webhookPool.query(
+  let settingsRows: any;
+  try {
+    settingsRows = await webhookPool.query(
       `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('ollama_url','ollama_model','ollama_system_prompt','ollama_enabled')`
     );
-    const s: Record<string, string> = {};
-    for (const r of settingsRows.rows) s[r.setting_key] = r.setting_value;
-    if (s['ollama_enabled'] === 'false') return res.status(503).json({ error: 'AI Assistant is disabled' });
+  } catch (e: any) {
+    return res.status(500).json({ error: 'DB error: ' + e.message });
+  }
+  const s: Record<string, string> = {};
+  for (const r of settingsRows.rows) s[r.setting_key] = r.setting_value;
+  if (s['ollama_enabled'] === 'false') return res.status(503).json({ error: 'AI Assistant is disabled' });
 
-    const ollamaUrl = (s['ollama_url'] || 'http://localhost:11434').replace(/\/$/, '');
-    const model = s['ollama_model'] || 'llama3';
-    const sysPrompt = s['ollama_system_prompt'] || 'You are a helpful MSP support assistant for Blue Mogul. Be concise and professional.';
+  const ollamaUrl = (s['ollama_url'] || 'http://localhost:11434').replace(/\/$/, '');
+  const model = s['ollama_model'] || 'llama3';
+  const sysPrompt = s['ollama_system_prompt'] || 'You are a helpful MSP support assistant for Blue Mogul. Be concise and professional.';
+  const fullMessages = [{ role: 'system', content: sysPrompt }, ...messages];
 
-    const fullMessages = [{ role: 'system', content: sysPrompt }, ...messages];
+  // SSE headers — keep connection alive for streaming
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
 
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 120000);
+  const sendEvent = (data: object) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const ctrl = new AbortController();
+  // Safety-net timeout: 10 minutes (instead of 2)
+  const t = setTimeout(() => ctrl.abort(), 600000);
+
+  // Abort stream if client disconnects
+  req.on('close', () => { ctrl.abort(); clearTimeout(t); });
+
+  try {
     const ollamaRes = await fetch(`${ollamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages: fullMessages, stream: false }),
+      body: JSON.stringify({ model, messages: fullMessages, stream: true }),
       signal: ctrl.signal,
-    }).finally(() => clearTimeout(t));
+    });
 
     if (!ollamaRes.ok) {
       const txt = await ollamaRes.text();
-      return res.status(502).json({ error: `Ollama error: ${txt}` });
+      sendEvent({ error: `Ollama error: ${txt}` });
+      res.end(); clearTimeout(t); return;
     }
-    const data = await ollamaRes.json() as { message?: { content: string }; error?: string };
-    if (data.error) return res.status(502).json({ error: data.error });
-    const reply = data.message?.content || '';
 
-    // Persist conversation
+    const reader = ollamaRes.body!.getReader();
+    const decoder = new TextDecoder();
+    let fullReply = '';
+    let lineBuffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      lineBuffer += decoder.decode(value, { stream: true });
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const chunk = JSON.parse(trimmed) as {
+            message?: { content: string };
+            done?: boolean;
+            error?: string;
+          };
+          if (chunk.error) {
+            sendEvent({ error: chunk.error });
+            res.end(); clearTimeout(t); return;
+          }
+          const token = chunk.message?.content ?? '';
+          if (token) {
+            fullReply += token;
+            sendEvent({ token });
+          }
+        } catch { /* partial JSON — skip */ }
+      }
+    }
+    clearTimeout(t);
+
+    // Persist conversation to DB
     await webhookPool.query(`CREATE TABLE IF NOT EXISTS ai_conversations (
       id serial PRIMARY KEY,
       title text NOT NULL DEFAULT 'New Chat',
@@ -1628,23 +1682,31 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
     )`);
 
     let convId = conversation_id;
+    const allMsgs = [...messages, { role: 'assistant', content: fullReply }];
     if (convId) {
       await webhookPool.query(
         `UPDATE ai_conversations SET messages=$1, updated_at=now() WHERE id=$2`,
-        [JSON.stringify([...messages, { role: 'assistant', content: reply }]), convId]
+        [JSON.stringify(allMsgs), convId]
       );
     } else {
       const convTitle = title || (messages[0]?.content?.substring(0, 60) || 'New Chat');
       const ins = await webhookPool.query(
         `INSERT INTO ai_conversations (title, messages, model) VALUES ($1,$2,$3) RETURNING id`,
-        [convTitle, JSON.stringify([...messages, { role: 'assistant', content: reply }]), model]
+        [convTitle, JSON.stringify(allMsgs), model]
       );
       convId = ins.rows[0].id;
     }
 
-    res.json({ reply, conversation_id: convId, model });
+    sendEvent({ done: true, conversation_id: convId, model });
+    res.end();
   } catch (e: any) {
-    res.status(503).json({ error: e.name === 'AbortError' ? 'Ollama request timed out (2 min)' : e.message });
+    clearTimeout(t);
+    if (!res.headersSent) {
+      res.status(503).json({ error: e.name === 'AbortError' ? 'Request cancelled' : e.message });
+    } else {
+      sendEvent({ error: e.name === 'AbortError' ? 'Request cancelled' : e.message });
+      res.end();
+    }
   }
 });
 
