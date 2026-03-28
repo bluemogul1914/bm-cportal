@@ -6,9 +6,13 @@ $user_name  = $_SESSION['user_name']  ?? 'Admin';
 $user_email = $_SESSION['user_email'] ?? '';
 $pdo = getDB();
 
-$jc_api_key = JUMPCLOUD_API_KEY;
-$jc_org_id  = JUMPCLOUD_ORG_ID;
+$jc_api_key   = JUMPCLOUD_API_KEY;
+$jc_provider_id = JUMPCLOUD_ORG_ID;          // The secret is the Provider ID for MSP
 $jc_connected = !empty($jc_api_key);
+
+// ── Session-based active org (MSP multi-tenant)
+$jc_active_org_id   = $_SESSION['jc_active_org_id']   ?? '';
+$jc_active_org_name = $_SESSION['jc_active_org_name'] ?? '';
 
 $success_msg = '';
 $error_msg   = '';
@@ -19,9 +23,23 @@ $active_tab  = $_GET['tab'] ?? 'overview';
 // ─────────────────────────────────────────────────────────
 try {
     $pdo->exec("
+        CREATE TABLE IF NOT EXISTS jc_organizations (
+            id               SERIAL PRIMARY KEY,
+            jc_id            VARCHAR(255) UNIQUE NOT NULL,
+            display_name     VARCHAR(255) DEFAULT '',
+            logo_url         TEXT         DEFAULT '',
+            website_url      TEXT         DEFAULT '',
+            contact_name     VARCHAR(255) DEFAULT '',
+            contact_email    VARCHAR(255) DEFAULT '',
+            num_users        INTEGER      DEFAULT 0,
+            num_systems      INTEGER      DEFAULT 0,
+            provider_id      VARCHAR(255) DEFAULT '',
+            updated_at       TIMESTAMP    DEFAULT NOW()
+        );
         CREATE TABLE IF NOT EXISTS jc_systems (
             id               SERIAL PRIMARY KEY,
             jc_id            VARCHAR(255) UNIQUE NOT NULL,
+            org_id           VARCHAR(255) DEFAULT '',
             display_name     VARCHAR(255) DEFAULT '',
             hostname         VARCHAR(255) DEFAULT '',
             os               VARCHAR(100) DEFAULT '',
@@ -39,6 +57,7 @@ try {
         CREATE TABLE IF NOT EXISTS jc_users (
             id               SERIAL PRIMARY KEY,
             jc_id            VARCHAR(255) UNIQUE NOT NULL,
+            org_id           VARCHAR(255) DEFAULT '',
             username         VARCHAR(255) DEFAULT '',
             firstname        VARCHAR(100) DEFAULT '',
             lastname         VARCHAR(100) DEFAULT '',
@@ -54,6 +73,7 @@ try {
         );
         CREATE TABLE IF NOT EXISTS jc_events (
             id               SERIAL PRIMARY KEY,
+            org_id           VARCHAR(255) DEFAULT '',
             event_type       VARCHAR(100) DEFAULT '',
             initiated_by     VARCHAR(255) DEFAULT '',
             event_time       TIMESTAMP,
@@ -65,11 +85,38 @@ try {
             created_at       TIMESTAMP    DEFAULT NOW()
         );
     ");
+    // Add org_id columns to existing tables if missing
+    foreach (['jc_systems','jc_users','jc_events'] as $tbl) {
+        try { $pdo->exec("ALTER TABLE {$tbl} ADD COLUMN IF NOT EXISTS org_id VARCHAR(255) DEFAULT ''"); } catch(Exception $e){}
+    }
 } catch (Exception $e) {}
 
 // ─────────────────────────────────────────────────────────
-// JumpCloud API helper
+// JumpCloud API helpers
 // ─────────────────────────────────────────────────────────
+
+// Provider-level call (no x-org-id — scoped to the MSP provider)
+function jc_provider_api(string $method, string $endpoint, ?array $body = null): array {
+    if (!JUMPCLOUD_API_KEY) return ['error' => 'JUMPCLOUD_API_KEY is not configured'];
+    $url = strpos($endpoint,'http') === 0 ? $endpoint : rtrim(JUMPCLOUD_API_V2,'/').$endpoint;
+    $headers = ['x-api-key: '.JUMPCLOUD_API_KEY,'Content-Type: application/json','Accept: application/json'];
+    $ch = curl_init();
+    $opts = [CURLOPT_URL=>$url,CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_HTTPHEADER=>$headers,CURLOPT_SSL_VERIFYPEER=>true];
+    $upper = strtoupper($method);
+    if ($upper==='POST'){$opts[CURLOPT_POST]=true;if($body!==null)$opts[CURLOPT_POSTFIELDS]=json_encode($body);}
+    elseif(in_array($upper,['PUT','PATCH','DELETE'])){$opts[CURLOPT_CUSTOMREQUEST]=$upper;if($body!==null)$opts[CURLOPT_POSTFIELDS]=json_encode($body);}
+    curl_setopt_array($ch,$opts);
+    $resp=curl_exec($ch);$code=curl_getinfo($ch,CURLINFO_HTTP_CODE);$err=curl_error($ch);curl_close($ch);
+    if($err) return ['error'=>$err,'http_code'=>0];
+    if($code===401) return ['error'=>'Unauthorized','http_code'=>401];
+    if($code===403) return ['error'=>'Forbidden — check Provider ID','http_code'=>403];
+    if($code<200||$code>=300){$b=json_decode($resp,true)??[];return['error'=>$b['message']??$b['error']??"HTTP $code",'http_code'=>$code];}
+    if(empty($resp)) return ['results'=>[],'http_code'=>$code];
+    $d=json_decode($resp,true);
+    return $d??['error'=>'Invalid JSON','raw'=>substr($resp,0,300)];
+}
+
+// Org-level call — sends x-org-id of the currently selected org (session)
 function jc_api(string $method, string $endpoint, ?array $body = null, bool $v2 = false): array {
     if (!JUMPCLOUD_API_KEY) return ['error' => 'JUMPCLOUD_API_KEY is not configured'];
     $base = $v2 ? JUMPCLOUD_API_V2 : JUMPCLOUD_API_V1;
@@ -79,7 +126,9 @@ function jc_api(string $method, string $endpoint, ?array $body = null, bool $v2 
         'Content-Type: application/json',
         'Accept: application/json',
     ];
-    if (JUMPCLOUD_ORG_ID) $headers[] = 'x-org-id: '.JUMPCLOUD_ORG_ID;
+    // Use session-selected org for org-level calls (MSP multi-tenant)
+    $active_org = $_SESSION['jc_active_org_id'] ?? '';
+    if ($active_org) $headers[] = 'x-org-id: '.$active_org;
 
     $ch = curl_init();
     $opts = [
@@ -128,15 +177,116 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$jc_connected) {
             $error_msg = 'JUMPCLOUD_API_KEY is not set.';
         } else {
-            $res = jc_api('GET', '/systems?limit=1&skip=0');
-            if (isset($res['error'])) {
-                $error_msg = 'Connection FAILED: '.$res['error'];
+            // Test provider API first
+            if ($jc_provider_id) {
+                $res = jc_provider_api('GET', "/providers/{$jc_provider_id}/organizations?limit=1");
+                if (isset($res['error'])) {
+                    $error_msg = 'Provider API FAILED: '.$res['error'];
+                } else {
+                    $cnt = $res['totalCount'] ?? count($res['results'] ?? []);
+                    $success_msg = "MSP Provider connected ✓ | Managed organizations: {$cnt}";
+                }
             } else {
-                $cnt = $res['totalCount'] ?? count($res['results'] ?? $res);
-                $success_msg = "JumpCloud connected ✓ | Systems visible: {$cnt}";
+                $res = jc_api('GET', '/systems?limit=1&skip=0');
+                if (isset($res['error'])) {
+                    $error_msg = 'Connection FAILED: '.$res['error'];
+                } else {
+                    $cnt = $res['totalCount'] ?? count($res['results'] ?? $res);
+                    $success_msg = "JumpCloud connected ✓ | Systems visible: {$cnt}";
+                }
             }
         }
         $active_tab = 'settings';
+    }
+
+    // ── Sync Organizations (MSP Provider API)
+    if ($action === 'sync_orgs') {
+        if (!$jc_connected || !$jc_provider_id) {
+            $error_msg = 'Provider ID (JUMPCLOUD_ORG_ID) and API key required.';
+        } else {
+            $limit = 100; $skip = 0; $all = []; $synced = 0;
+            do {
+                $res = jc_provider_api('GET', "/providers/{$jc_provider_id}/organizations?limit={$limit}&skip={$skip}");
+                if (isset($res['error'])) { $error_msg = 'Org sync failed: '.$res['error']; break; }
+                $batch = $res['results'] ?? (isset($res[0]) ? $res : []);
+                $all = array_merge($all, $batch);
+                $skip += $limit;
+                $total = (int)($res['totalCount'] ?? count($all));
+            } while (count($all) < $total && count($batch) === $limit);
+
+            foreach ($all as $org) {
+                $jid = $org['_id'] ?? $org['id'] ?? ''; if (!$jid) continue;
+                $contact = $org['contactName'] ?? $org['contact']['name'] ?? '';
+                $cemail  = $org['contactEmail'] ?? $org['contact']['email'] ?? '';
+                try {
+                    $pdo->prepare("INSERT INTO jc_organizations (jc_id,display_name,logo_url,website_url,contact_name,contact_email,num_users,num_systems,provider_id,updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,NOW())
+                        ON CONFLICT (jc_id) DO UPDATE SET
+                            display_name=EXCLUDED.display_name, logo_url=EXCLUDED.logo_url,
+                            website_url=EXCLUDED.website_url, contact_name=EXCLUDED.contact_name,
+                            contact_email=EXCLUDED.contact_email, num_users=EXCLUDED.num_users,
+                            num_systems=EXCLUDED.num_systems, updated_at=NOW()")
+                        ->execute([
+                            $jid, $org['displayName']??$org['name']??'', $org['logoUrl']??$org['logo']??'',
+                            $org['websiteUrl']??'', $contact, $cemail,
+                            (int)($org['numUsers']??0), (int)($org['numSystems']??0), $jc_provider_id,
+                        ]);
+                    $synced++;
+                } catch(Exception $e){}
+            }
+            $success_msg = "Synced {$synced} organization(s) from the MSP provider.";
+            try { $pdo->prepare("INSERT INTO activity_log (user_id,action,entity_type,entity_id,details,ip_address) VALUES (?,?,?,?,?,?)")->execute([$_SESSION['user_id'],'jc_sync_orgs','jc_org',0,"Synced {$synced} orgs",$_SERVER['REMOTE_ADDR']??'']); } catch(Exception $e){}
+        }
+        $active_tab = 'organizations';
+    }
+
+    // ── Set active org (switch context to a managed org)
+    if ($action === 'set_active_org') {
+        $_SESSION['jc_active_org_id']   = $_POST['org_id']   ?? '';
+        $_SESSION['jc_active_org_name'] = $_POST['org_name'] ?? '';
+        $jc_active_org_id   = $_SESSION['jc_active_org_id'];
+        $jc_active_org_name = $_SESSION['jc_active_org_name'];
+        $success_msg = "Now managing: {$jc_active_org_name}";
+        $active_tab = 'systems';
+    }
+
+    // ── Clear active org (return to provider view)
+    if ($action === 'clear_active_org') {
+        unset($_SESSION['jc_active_org_id'], $_SESSION['jc_active_org_name']);
+        $jc_active_org_id = ''; $jc_active_org_name = '';
+        $success_msg = 'Returned to Provider view.';
+        $active_tab = 'organizations';
+    }
+
+    // ── Create Organization under Provider
+    if ($action === 'create_org') {
+        if (!$jc_connected || !$jc_provider_id) {
+            $error_msg = 'Provider ID required.';
+        } else {
+            $org_name    = trim($_POST['new_org_name']    ?? '');
+            $org_contact = trim($_POST['new_org_contact'] ?? '');
+            $org_email   = trim($_POST['new_org_email']   ?? '');
+            if (!$org_name) { $error_msg = 'Organization name is required.'; }
+            else {
+                $payload = ['name' => $org_name];
+                if ($org_contact) $payload['contactName']  = $org_contact;
+                if ($org_email)   $payload['contactEmail'] = $org_email;
+                $res = jc_provider_api('POST', "/providers/{$jc_provider_id}/organizations", $payload);
+                if (isset($res['error'])) {
+                    $error_msg = 'Create org failed: '.$res['error'];
+                } else {
+                    $new_id = $res['_id'] ?? $res['id'] ?? '';
+                    if ($new_id) {
+                        try {
+                            $pdo->prepare("INSERT INTO jc_organizations (jc_id,display_name,contact_name,contact_email,provider_id,updated_at) VALUES (?,?,?,?,?,NOW()) ON CONFLICT (jc_id) DO NOTHING")
+                                ->execute([$new_id,$org_name,$org_contact,$org_email,$jc_provider_id]);
+                        } catch(Exception $e){}
+                    }
+                    $success_msg = "Organization '{$org_name}' created.";
+                }
+            }
+        }
+        $active_tab = 'organizations';
     }
 
     // ── Sync Systems
@@ -153,6 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $total = (int)($res['totalCount'] ?? count($all));
             } while (count($all) < $total && count($batch) === $limit);
 
+            $sync_org_id = $_SESSION['jc_active_org_id'] ?? '';
             foreach ($all as $s) {
                 $jid = $s['id'] ?? ''; if (!$jid) continue;
                 $os_detail = $s['osVersionDetail'] ?? [];
@@ -164,16 +315,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $cr = null;
                 if (!empty($s['created'])) { try { $cr = date('Y-m-d H:i:s', strtotime($s['created'])); } catch(Exception $e){} }
                 try {
-                    $pdo->prepare("INSERT INTO jc_systems (jc_id,display_name,hostname,os,os_version,arch,active,allow_ssh,allow_multi_factor,agent_version,remote_ip,last_contact,created_remote,updated_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())
+                    $pdo->prepare("INSERT INTO jc_systems (jc_id,org_id,display_name,hostname,os,os_version,arch,active,allow_ssh,allow_multi_factor,agent_version,remote_ip,last_contact,created_remote,updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())
                         ON CONFLICT (jc_id) DO UPDATE SET
-                            display_name=EXCLUDED.display_name, hostname=EXCLUDED.hostname, os=EXCLUDED.os,
+                            org_id=EXCLUDED.org_id, display_name=EXCLUDED.display_name, hostname=EXCLUDED.hostname, os=EXCLUDED.os,
                             os_version=EXCLUDED.os_version, arch=EXCLUDED.arch, active=EXCLUDED.active,
                             allow_ssh=EXCLUDED.allow_ssh, allow_multi_factor=EXCLUDED.allow_multi_factor,
                             agent_version=EXCLUDED.agent_version, remote_ip=EXCLUDED.remote_ip,
                             last_contact=EXCLUDED.last_contact, updated_at=NOW()")
                         ->execute([
-                            $jid, $s['displayName']??$s['hostname']??'', $s['hostname']??'',
+                            $jid, $sync_org_id, $s['displayName']??$s['hostname']??'', $s['hostname']??'',
                             $os_name, $os_ver, $s['arch']??'',
                             ($s['active']??true)?'true':'false',
                             (!empty($s['allowPublicKeyAuthentication'])||!empty($s['allowSshPasswordAuthentication']))?'true':'false',
@@ -183,7 +334,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $synced++;
                 } catch(Exception $e){}
             }
-            $success_msg = "Synced {$synced} system(s) from JumpCloud.";
+            $org_label = ($_SESSION['jc_active_org_name'] ?? '') ?: 'all orgs';
+            $success_msg = "Synced {$synced} system(s) from JumpCloud ({$org_label}).";
             try { $pdo->prepare("INSERT INTO activity_log (user_id,action,entity_type,entity_id,details,ip_address) VALUES (?,?,?,?,?,?)")->execute([$_SESSION['user_id'],'jc_sync_systems','jc_system',0,"Synced {$synced} systems",$_SERVER['REMOTE_ADDR']??'']); } catch(Exception $e){}
         }
         $active_tab = 'systems';
@@ -209,16 +361,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!empty($u['created'])) { try { $cr = date('Y-m-d H:i:s', strtotime($u['created'])); } catch(Exception $e){} }
                 $mfa_cfg  = $u['mfa'] ?? [];
                 $mfa_on   = is_array($mfa_cfg) ? !empty($mfa_cfg['configured']||$mfa_cfg['enabled']??false) : (bool)$mfa_cfg;
+                $u_org_id = $_SESSION['jc_active_org_id'] ?? '';
                 try {
-                    $pdo->prepare("INSERT INTO jc_users (jc_id,username,firstname,lastname,email,state,mfa_enabled,ldap_binding_user,sudo_enabled,account_locked,activated,created_remote,updated_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NOW())
+                    $pdo->prepare("INSERT INTO jc_users (jc_id,org_id,username,firstname,lastname,email,state,mfa_enabled,ldap_binding_user,sudo_enabled,account_locked,activated,created_remote,updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())
                         ON CONFLICT (jc_id) DO UPDATE SET
-                            username=EXCLUDED.username, firstname=EXCLUDED.firstname, lastname=EXCLUDED.lastname,
+                            org_id=EXCLUDED.org_id, username=EXCLUDED.username, firstname=EXCLUDED.firstname, lastname=EXCLUDED.lastname,
                             email=EXCLUDED.email, state=EXCLUDED.state, mfa_enabled=EXCLUDED.mfa_enabled,
                             ldap_binding_user=EXCLUDED.ldap_binding_user, sudo_enabled=EXCLUDED.sudo_enabled,
                             account_locked=EXCLUDED.account_locked, activated=EXCLUDED.activated, updated_at=NOW()")
                         ->execute([
-                            $jid, $u['username']??'', $u['firstname']??'', $u['lastname']??'',
+                            $jid, $u_org_id, $u['username']??'', $u['firstname']??'', $u['lastname']??'',
                             $u['email']??'', $u['state']??'STAGED', $mfa_on?'true':'false',
                             !empty($u['ldap_binding_user'])?'true':'false',
                             !empty($u['sudo'])?'true':'false',
@@ -229,7 +382,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $synced++;
                 } catch(Exception $e){}
             }
-            $success_msg = "Synced {$synced} user(s) from JumpCloud.";
+            $u_org_label = ($_SESSION['jc_active_org_name'] ?? '') ?: 'all orgs';
+            $success_msg = "Synced {$synced} user(s) from JumpCloud ({$u_org_label}).";
             try { $pdo->prepare("INSERT INTO activity_log (user_id,action,entity_type,entity_id,details,ip_address) VALUES (?,?,?,?,?,?)")->execute([$_SESSION['user_id'],'jc_sync_users','jc_user',0,"Synced {$synced} users",$_SERVER['REMOTE_ADDR']??'']); } catch(Exception $e){}
         }
         $active_tab = 'users';
@@ -482,11 +636,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ─────────────────────────────────────────────────────────
 // Load from DB
 // ─────────────────────────────────────────────────────────
-$db_systems = []; $db_users = []; $db_events = [];
+$db_systems = []; $db_users = []; $db_events = []; $db_orgs = [];
 try {
-    $db_systems = $pdo->query("SELECT * FROM jc_systems ORDER BY display_name")->fetchAll(PDO::FETCH_ASSOC);
-    $db_users   = $pdo->query("SELECT * FROM jc_users ORDER BY username")->fetchAll(PDO::FETCH_ASSOC);
-    $db_events  = $pdo->query("SELECT * FROM jc_events ORDER BY event_time DESC LIMIT 100")->fetchAll(PDO::FETCH_ASSOC);
+    // Organizations (always load all)
+    $db_orgs = $pdo->query("SELECT * FROM jc_organizations ORDER BY display_name")->fetchAll(PDO::FETCH_ASSOC);
+
+    // Systems and users scoped to the active org (if one is selected)
+    if ($jc_active_org_id) {
+        $stmt = $pdo->prepare("SELECT * FROM jc_systems WHERE org_id=? ORDER BY display_name");
+        $stmt->execute([$jc_active_org_id]);
+        $db_systems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $stmt = $pdo->prepare("SELECT * FROM jc_users WHERE org_id=? ORDER BY username");
+        $stmt->execute([$jc_active_org_id]);
+        $db_users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $stmt = $pdo->prepare("SELECT * FROM jc_events WHERE org_id=? ORDER BY event_time DESC LIMIT 100");
+        $stmt->execute([$jc_active_org_id]);
+        $db_events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $db_systems = $pdo->query("SELECT * FROM jc_systems ORDER BY display_name")->fetchAll(PDO::FETCH_ASSOC);
+        $db_users   = $pdo->query("SELECT * FROM jc_users ORDER BY username")->fetchAll(PDO::FETCH_ASSOC);
+        $db_events  = $pdo->query("SELECT * FROM jc_events ORDER BY event_time DESC LIMIT 100")->fetchAll(PDO::FETCH_ASSOC);
+    }
 } catch(Exception $e) {}
 
 // Stat counts
@@ -605,13 +777,14 @@ function jc_bool_icon(mixed $val): string {
     <!-- Tabs -->
     <div class="flex gap-0 border-t border-gray-200 overflow-x-auto">
         <?php foreach ([
-            ['overview',  'fa-tachometer-alt', 'Overview'],
-            ['systems',   'fa-desktop',        'Systems ('.$sys_total.')'],
-            ['users',     'fa-users',          'Users ('.$usr_total.')'],
-            ['groups',    'fa-object-group',   'Groups'],
-            ['policies',  'fa-file-shield',    'Policies & Apps'],
-            ['insights',  'fa-history',        'Directory Insights'],
-            ['settings',  'fa-cog',            'Settings'],
+            ['overview',       'fa-tachometer-alt',  'Overview'],
+            ['organizations',  'fa-building',        'Organizations ('.count($db_orgs).')'],
+            ['systems',        'fa-desktop',         'Systems ('.$sys_total.')'],
+            ['users',          'fa-users',           'Users ('.$usr_total.')'],
+            ['groups',         'fa-object-group',    'Groups'],
+            ['policies',       'fa-file-shield',     'Policies & Apps'],
+            ['insights',       'fa-history',         'Directory Insights'],
+            ['settings',       'fa-cog',             'Settings'],
         ] as [$t,$ico,$lbl]): ?>
         <a href="?tab=<?= $t ?>" class="flex items-center gap-2 px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition
             <?= $active_tab===$t ? 'border-green-600 text-green-700' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300' ?>" data-testid="tab-<?= $t ?>">
@@ -624,12 +797,30 @@ function jc_bool_icon(mixed $val): string {
 <div class="p-6">
 <?php if ($success_msg): ?><div class="mb-5 flex items-center gap-3 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg" data-testid="alert-success"><i class="fas fa-check-circle"></i><?= htmlspecialchars($success_msg) ?></div><?php endif; ?>
 <?php if ($error_msg):   ?><div class="mb-5 flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg" data-testid="alert-error"><i class="fas fa-exclamation-circle"></i><?= htmlspecialchars($error_msg) ?></div><?php endif; ?>
+
+<?php if ($jc_active_org_id): ?>
+<div class="mb-5 flex items-center justify-between bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg text-sm" data-testid="org-context-banner">
+    <div class="flex items-center gap-2">
+        <i class="fas fa-building text-blue-500"></i>
+        <span>Managing: <strong><?= htmlspecialchars($jc_active_org_name ?: $jc_active_org_id) ?></strong></span>
+        <span class="text-xs text-blue-400">(Org ID: <?= htmlspecialchars($jc_active_org_id) ?>)</span>
+    </div>
+    <form method="POST">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="clear_active_org">
+        <button type="submit" class="text-xs bg-white border border-blue-300 text-blue-700 px-3 py-1 rounded hover:bg-blue-100 transition" data-testid="btn-clear-org">
+            <i class="fas fa-times mr-1"></i>Return to Provider View
+        </button>
+    </form>
+</div>
+<?php endif; ?>
+
 <?php if (!$jc_connected): ?>
 <div class="mb-5 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm">
     <i class="fas fa-exclamation-triangle mt-0.5"></i>
     <div>
         <strong>JumpCloud API key not configured.</strong>
-        Set the <code class="bg-amber-100 px-1 rounded font-mono text-xs">JUMPCLOUD_API_KEY</code> environment variable (and optionally <code class="bg-amber-100 px-1 rounded font-mono text-xs">JUMPCLOUD_ORG_ID</code> for multi-tenant) and restart the server.
+        Set <code class="bg-amber-100 px-1 rounded font-mono text-xs">JUMPCLOUD_API_KEY</code> (your API key) and <code class="bg-amber-100 px-1 rounded font-mono text-xs">JUMPCLOUD_ORG_ID</code> (your MSP Provider ID) in environment variables and restart the server.
         <a href="https://console.jumpcloud.com/#/settings/admin" target="_blank" rel="noopener" class="underline ml-1">Get your API key →</a>
     </div>
 </div>
@@ -709,6 +900,166 @@ function jc_bool_icon(mixed $val): string {
     </div>
     <?php endif; ?>
 </div>
+</div>
+
+<?php /* ══════════════════ ORGANIZATIONS ══════════════════ */ elseif ($active_tab === 'organizations'): ?>
+<div class="space-y-5">
+
+    <!-- Toolbar -->
+    <div class="bg-white rounded-lg border border-gray-200 px-5 py-3 flex items-center gap-3 flex-wrap">
+        <h2 class="font-semibold text-gray-700 flex-1"><i class="fas fa-building text-blue-500 mr-2"></i>Managed Organizations</h2>
+        <?php if ($jc_connected && $jc_provider_id): ?>
+        <form method="POST">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="sync_orgs">
+            <button type="submit" class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded transition" data-testid="btn-sync-orgs">
+                <i class="fas fa-sync-alt"></i>Sync from JumpCloud
+            </button>
+        </form>
+        <button onclick="document.getElementById('modal-create-org').classList.remove('hidden')"
+            class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded transition" data-testid="btn-create-org">
+            <i class="fas fa-plus"></i>New Organization
+        </button>
+        <?php endif; ?>
+    </div>
+
+    <!-- Provider info banner -->
+    <?php if ($jc_provider_id): ?>
+    <div class="bg-indigo-50 border border-indigo-200 rounded-lg px-5 py-3 flex items-center gap-3 text-sm text-indigo-800">
+        <i class="fas fa-shield-alt text-indigo-500"></i>
+        <div>
+            <strong>MSP Provider Mode</strong> — Provider ID: <code class="font-mono text-xs bg-indigo-100 px-1 rounded"><?= htmlspecialchars($jc_provider_id) ?></code>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- No active org notice (when viewing orgs with an org selected) -->
+    <?php if ($jc_active_org_id): ?>
+    <div class="bg-blue-50 border border-blue-200 text-blue-700 rounded-lg px-5 py-3 text-sm flex items-center gap-3">
+        <i class="fas fa-info-circle"></i>
+        You are currently managing <strong><?= htmlspecialchars($jc_active_org_name) ?></strong>. Click an org below to switch, or use "Return to Provider View" above.
+    </div>
+    <?php endif; ?>
+
+    <!-- Orgs table -->
+    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <?php if (empty($db_orgs)): ?>
+        <div class="p-10 text-center text-gray-400 text-sm">
+            <i class="fas fa-building text-4xl mb-3 block opacity-30"></i>
+            No organizations synced yet.
+            <?php if ($jc_connected && $jc_provider_id): ?>
+            Click <strong>Sync from JumpCloud</strong> to pull your managed organizations.
+            <?php else: ?>
+            Configure your API key and Provider ID first.
+            <?php endif; ?>
+        </div>
+        <?php else: ?>
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 border-b border-gray-200">
+                <tr>
+                    <th class="text-left px-4 py-3 font-semibold text-gray-600">Organization</th>
+                    <th class="text-left px-4 py-3 font-semibold text-gray-600">Contact</th>
+                    <th class="text-center px-4 py-3 font-semibold text-gray-600">Users</th>
+                    <th class="text-center px-4 py-3 font-semibold text-gray-600">Systems</th>
+                    <th class="text-left px-4 py-3 font-semibold text-gray-600">Org ID</th>
+                    <th class="px-4 py-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                <?php foreach ($db_orgs as $org): ?>
+                <tr class="hover:bg-gray-50 <?= $jc_active_org_id === $org['jc_id'] ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : '' ?>" data-testid="org-row-<?= htmlspecialchars($org['jc_id']) ?>">
+                    <td class="px-4 py-3">
+                        <div class="flex items-center gap-3">
+                            <?php if (!empty($org['logo_url'])): ?>
+                            <img src="<?= htmlspecialchars($org['logo_url']) ?>" alt="" class="w-8 h-8 rounded object-contain border">
+                            <?php else: ?>
+                            <div class="w-8 h-8 rounded bg-indigo-100 flex items-center justify-center text-indigo-600">
+                                <i class="fas fa-building text-xs"></i>
+                            </div>
+                            <?php endif; ?>
+                            <div>
+                                <div class="font-medium text-gray-900"><?= htmlspecialchars($org['display_name'] ?: 'Unnamed Org') ?></div>
+                                <?php if (!empty($org['website_url'])): ?>
+                                <a href="<?= htmlspecialchars($org['website_url']) ?>" target="_blank" rel="noopener" class="text-xs text-blue-500 hover:underline"><?= htmlspecialchars($org['website_url']) ?></a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-4 py-3 text-gray-600">
+                        <?= htmlspecialchars($org['contact_name'] ?: '—') ?>
+                        <?php if (!empty($org['contact_email'])): ?>
+                        <div class="text-xs text-gray-400"><?= htmlspecialchars($org['contact_email']) ?></div>
+                        <?php endif; ?>
+                    </td>
+                    <td class="px-4 py-3 text-center text-gray-700"><?= (int)$org['num_users'] ?></td>
+                    <td class="px-4 py-3 text-center text-gray-700"><?= (int)$org['num_systems'] ?></td>
+                    <td class="px-4 py-3">
+                        <code class="font-mono text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded"><?= htmlspecialchars(substr($org['jc_id'],0,20)).'…' ?></code>
+                    </td>
+                    <td class="px-4 py-3 text-right">
+                        <?php if ($jc_active_org_id === $org['jc_id']): ?>
+                        <span class="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs px-3 py-1 rounded-full font-medium">
+                            <i class="fas fa-check-circle"></i>Active
+                        </span>
+                        <?php else: ?>
+                        <form method="POST">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="set_active_org">
+                            <input type="hidden" name="org_id" value="<?= htmlspecialchars($org['jc_id']) ?>">
+                            <input type="hidden" name="org_name" value="<?= htmlspecialchars($org['display_name']) ?>">
+                            <button type="submit"
+                                class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded transition"
+                                data-testid="btn-manage-org-<?= htmlspecialchars($org['jc_id']) ?>">
+                                <i class="fas fa-arrow-right mr-1"></i>Manage
+                            </button>
+                        </form>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- Create Organization Modal -->
+<div id="modal-create-org" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div class="px-6 py-4 border-b flex items-center justify-between">
+            <h3 class="font-semibold text-gray-800"><i class="fas fa-plus-circle text-green-500 mr-2"></i>New Organization</h3>
+            <button onclick="document.getElementById('modal-create-org').classList.add('hidden')" class="text-gray-400 hover:text-gray-700"><i class="fas fa-times"></i></button>
+        </div>
+        <form method="POST" class="px-6 py-4 space-y-4">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="create_org">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Organization Name <span class="text-red-500">*</span></label>
+                <input type="text" name="new_org_name" required placeholder="Acme Corp"
+                    class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-green-400 focus:outline-none"
+                    data-testid="input-new-org-name">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Contact Name</label>
+                <input type="text" name="new_org_contact" placeholder="John Smith"
+                    class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-green-400 focus:outline-none"
+                    data-testid="input-new-org-contact">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
+                <input type="email" name="new_org_email" placeholder="john@acme.com"
+                    class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-green-400 focus:outline-none"
+                    data-testid="input-new-org-email">
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="document.getElementById('modal-create-org').classList.add('hidden')"
+                    class="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 transition">Cancel</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded transition" data-testid="btn-submit-create-org">
+                    <i class="fas fa-plus mr-1"></i>Create Organization
+                </button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <?php /* ══════════════════ SYSTEMS ══════════════════ */ elseif ($active_tab === 'systems'): ?>
@@ -1375,7 +1726,8 @@ function openEditSystem(data) {
         <div class="space-y-3">
             <?php foreach ([
                 ['API Key',    $jc_api_key  ? '••••••••••••••••'.substr($jc_api_key,-4)  : 'NOT SET', !empty($jc_api_key)],
-                ['Org ID',     $jc_org_id   ?: '(not set — single org mode)',              true],
+                ['Provider ID', $jc_provider_id ?: '(not set)',                              !empty($jc_provider_id)],
+                ['Active Org',  $jc_active_org_name ?: ($jc_active_org_id ?: 'Provider View (no org selected)'), true],
                 ['API v1 URL', JUMPCLOUD_API_V1,  true],
                 ['API v2 URL', JUMPCLOUD_API_V2,  true],
             ] as [$lbl,$val,$ok]): ?>
@@ -1401,8 +1753,8 @@ function openEditSystem(data) {
         <p class="text-sm text-gray-500 mb-4">Set these environment variables in your Replit Secrets or deployment environment:</p>
         <div class="space-y-2">
             <?php foreach ([
-                ['JUMPCLOUD_API_KEY', 'Your JumpCloud API key', $jc_api_key ? 'Set ✓' : 'MISSING', $jc_api_key ? 'text-green-600' : 'text-red-600'],
-                ['JUMPCLOUD_ORG_ID',  'For multi-tenant / MSP orgs (optional)', $jc_org_id ? 'Set ✓' : 'Not set', $jc_org_id ? 'text-green-600' : 'text-gray-400'],
+                ['JUMPCLOUD_API_KEY', 'Your JumpCloud MSP admin API key', $jc_api_key ? 'Set ✓' : 'MISSING', $jc_api_key ? 'text-green-600' : 'text-red-600'],
+                ['JUMPCLOUD_ORG_ID',  'Your JumpCloud MSP Provider ID (required for multi-tenant)', $jc_provider_id ? 'Set ✓' : 'Not set', $jc_provider_id ? 'text-green-600' : 'text-amber-500'],
             ] as [$key,$desc,$status,$cls]): ?>
             <div class="border border-gray-100 rounded-lg p-3">
                 <div class="flex items-center justify-between mb-0.5">
