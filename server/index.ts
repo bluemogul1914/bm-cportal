@@ -151,7 +151,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php"];
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -220,16 +220,17 @@ require '${filePath.replace(/'/g, "\\'")}';
       "php",
       [tmpFile],
       {
-        timeout: 15000,
-        maxBuffer: 2 * 1024 * 1024,
+        timeout: 60000,
+        maxBuffer: 10 * 1024 * 1024,
         cwd: projectRoot,
         env: { ...process.env },
       },
       (error, stdout, stderr) => {
         unlink(tmpFile).catch(() => {});
         if (error) {
-          console.error(`PHP execution error:`, stderr || error.message);
-          return res.status(500).send("Server error");
+          const errMsg = stderr || error.message || 'Unknown PHP error';
+          console.error(`PHP execution error:`, errMsg);
+          return res.status(500).send(`<html><body style="font-family:Inter,sans-serif;padding:40px"><h2 style="color:#991b1b">Server Error</h2><pre>${errMsg.replace(/</g,'&lt;').substring(0,500)}</pre><a href="javascript:history.back()">Go Back</a></body></html>`);
         }
         handlePhpResponse(stdout, req, res);
       }
@@ -277,19 +278,32 @@ app.post("/portal/:file", (req, res) => {
 
   const formParts: string[] = [];
   for (const [key, value] of Object.entries(req.body || {})) {
-    formParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+    if (Array.isArray(value)) {
+      for (const v of value) {
+        formParts.push(`${encodeURIComponent(key + '[]')}=${encodeURIComponent(String(v))}`);
+      }
+    } else if (value !== null && typeof value === 'object') {
+      for (const [subKey, subVal] of Object.entries(value as Record<string, unknown>)) {
+        formParts.push(`${encodeURIComponent(`${key}[${subKey}]`)}=${encodeURIComponent(String(subVal))}`);
+      }
+    } else {
+      formParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+    }
   }
   const postData = formParts.join("&");
 
+  // postData is fully URL-encoded so it's safe in a single-quoted PHP string
+  // Query params may contain arbitrary chars — escape backslashes then single quotes
+  const safeQ = (s: string) => s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   const phpCode = `<?php
 error_reporting(E_ERROR | E_PARSE);
 session_start();
 ${sessionCode}
 $_SERVER['REQUEST_METHOD'] = 'POST';
-parse_str('${postData.replace(/'/g, "\\'")}', $_POST);
+parse_str('${postData}', $_POST);
 $_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
 $_GET = [];
-${Object.entries(req.query || {}).map(([k, v]) => `$_GET['${k}'] = '${String(v).replace(/'/g, "\\'")}';`).join("\n")}
+${Object.entries(req.query || {}).map(([k, v]) => `$_GET['${safeQ(k)}'] = '${safeQ(String(v))}';`).join("\n")}
 require '${filePath.replace(/'/g, "\\'")}';
 `;
 
@@ -299,17 +313,28 @@ require '${filePath.replace(/'/g, "\\'")}';
       "php",
       [tmpFile],
       {
-        timeout: 15000,
-        maxBuffer: 2 * 1024 * 1024,
+        timeout: 60000,
+        maxBuffer: 10 * 1024 * 1024,
         cwd: projectRoot,
         env: { ...process.env },
       },
       (error, stdout, stderr) => {
         unlink(tmpFile).catch(() => {});
         if (error) {
-          console.error(`PHP POST error (${phpFile}):`, stderr || error.message);
-          console.error(`PHP POST stdout (${phpFile}):`, stdout?.substring(0, 500));
-          return res.status(500).json({ error: "Internal server error" });
+          const errMsg = stderr || error.message || 'Unknown PHP error';
+          console.error(`PHP POST error (${phpFile}):`, errMsg);
+          if (stdout) console.error(`PHP POST stdout (${phpFile}):`, stdout.substring(0, 1000));
+          const htmlError = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Server Error</title>
+<style>body{font-family:Inter,sans-serif;background:#f9fafb;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}
+.box{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:40px;max-width:600px;text-align:center;}
+h2{color:#991b1b;margin:0 0 12px;}p{color:#6b7280;margin:0 0 20px;}
+pre{background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:16px;text-align:left;font-size:12px;color:#7f1d1d;overflow:auto;max-height:200px;}
+a{color:#1a56db;text-decoration:none;}</style></head>
+<body><div class="box"><h2>&#x26A0; Server Error</h2>
+<p>An error occurred processing your request. Please go back and try again.</p>
+<pre>${errMsg.replace(/</g, '&lt;').replace(/>/g, '&gt;').substring(0, 800)}</pre>
+<a href="javascript:history.back()">&#8592; Go Back</a></div></body></html>`;
+          return res.status(500).send(htmlError);
         }
         stdout = extractCsrfToken(stdout, req);
         try {
@@ -1505,6 +1530,153 @@ app.get("/api/webhook/health", (_req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// ── Ollama AI Assistant API ─────────────────────────────────────────────
+app.get("/api/ollama/settings", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT key, value FROM system_settings WHERE key IN ('ollama_url','ollama_model','ollama_enabled','ollama_system_prompt')`
+    );
+    const settings: Record<string, string> = {};
+    for (const r of rows) settings[r.key] = r.value;
+    res.json({
+      url: settings['ollama_url'] || 'http://localhost:11434',
+      model: settings['ollama_model'] || 'llama3',
+      enabled: settings['ollama_enabled'] !== 'false',
+      system_prompt: settings['ollama_system_prompt'] || 'You are a helpful MSP support assistant for Blue Mogul. Be concise and professional.',
+    });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/ollama/settings", express.json(), async (req, res) => {
+  try {
+    const { url, model, enabled, system_prompt } = req.body;
+    const upsert = async (k: string, v: string) => pool.query(
+      `INSERT INTO system_settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2`, [k, v]
+    );
+    if (url !== undefined) await upsert('ollama_url', String(url));
+    if (model !== undefined) await upsert('ollama_model', String(model));
+    if (enabled !== undefined) await upsert('ollama_enabled', String(enabled));
+    if (system_prompt !== undefined) await upsert('ollama_system_prompt', String(system_prompt));
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/ollama/models", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT value FROM system_settings WHERE key='ollama_url'`);
+    const ollamaUrl = (rows[0]?.value || 'http://localhost:11434').replace(/\/$/, '');
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(`${ollamaUrl}/api/tags`, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+    if (!r.ok) return res.status(502).json({ error: `Ollama returned ${r.status}` });
+    const data = await r.json() as { models?: { name: string }[] };
+    res.json({ models: (data.models || []).map((m: { name: string }) => m.name) });
+  } catch (e: any) {
+    res.status(503).json({ error: e.name === 'AbortError' ? 'Ollama connection timed out' : e.message });
+  }
+});
+
+app.post("/api/ollama/chat", express.json(), async (req, res) => {
+  try {
+    const { messages, conversation_id, title } = req.body as {
+      messages: { role: string; content: string }[];
+      conversation_id?: number;
+      title?: string;
+    };
+    if (!messages?.length) return res.status(400).json({ error: 'messages required' });
+
+    const settingsRows = await pool.query(
+      `SELECT key, value FROM system_settings WHERE key IN ('ollama_url','ollama_model','ollama_system_prompt','ollama_enabled')`
+    );
+    const s: Record<string, string> = {};
+    for (const r of settingsRows.rows) s[r.key] = r.value;
+    if (s['ollama_enabled'] === 'false') return res.status(503).json({ error: 'AI Assistant is disabled' });
+
+    const ollamaUrl = (s['ollama_url'] || 'http://localhost:11434').replace(/\/$/, '');
+    const model = s['ollama_model'] || 'llama3';
+    const sysPrompt = s['ollama_system_prompt'] || 'You are a helpful MSP support assistant for Blue Mogul. Be concise and professional.';
+
+    const fullMessages = [{ role: 'system', content: sysPrompt }, ...messages];
+
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 120000);
+    const ollamaRes = await fetch(`${ollamaUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: fullMessages, stream: false }),
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(t));
+
+    if (!ollamaRes.ok) {
+      const txt = await ollamaRes.text();
+      return res.status(502).json({ error: `Ollama error: ${txt}` });
+    }
+    const data = await ollamaRes.json() as { message?: { content: string }; error?: string };
+    if (data.error) return res.status(502).json({ error: data.error });
+    const reply = data.message?.content || '';
+
+    // Persist conversation
+    await pool.query(`CREATE TABLE IF NOT EXISTS ai_conversations (
+      id serial PRIMARY KEY,
+      title text NOT NULL DEFAULT 'New Chat',
+      messages jsonb NOT NULL DEFAULT '[]',
+      model text,
+      created_at timestamptz DEFAULT now(),
+      updated_at timestamptz DEFAULT now()
+    )`);
+
+    let convId = conversation_id;
+    if (convId) {
+      await pool.query(
+        `UPDATE ai_conversations SET messages=$1, updated_at=now() WHERE id=$2`,
+        [JSON.stringify([...messages, { role: 'assistant', content: reply }]), convId]
+      );
+    } else {
+      const convTitle = title || (messages[0]?.content?.substring(0, 60) || 'New Chat');
+      const ins = await pool.query(
+        `INSERT INTO ai_conversations (title, messages, model) VALUES ($1,$2,$3) RETURNING id`,
+        [convTitle, JSON.stringify([...messages, { role: 'assistant', content: reply }]), model]
+      );
+      convId = ins.rows[0].id;
+    }
+
+    res.json({ reply, conversation_id: convId, model });
+  } catch (e: any) {
+    res.status(503).json({ error: e.name === 'AbortError' ? 'Ollama request timed out (2 min)' : e.message });
+  }
+});
+
+app.get("/api/ollama/conversations", async (_req, res) => {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS ai_conversations (
+      id serial PRIMARY KEY, title text NOT NULL DEFAULT 'New Chat',
+      messages jsonb NOT NULL DEFAULT '[]', model text,
+      created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()
+    )`);
+    const { rows } = await pool.query(
+      `SELECT id, title, model, created_at, updated_at, jsonb_array_length(messages) as message_count
+       FROM ai_conversations ORDER BY updated_at DESC LIMIT 50`
+    );
+    res.json(rows);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/ollama/conversations/:id", async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT * FROM ai_conversations WHERE id=$1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/api/ollama/conversations/:id", async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM ai_conversations WHERE id=$1`, [req.params.id]);
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+// ── End Ollama AI ────────────────────────────────────────────────────────
 
 app.get("/portal/logout.php", (req, res) => {
   req.session.destroy(() => {

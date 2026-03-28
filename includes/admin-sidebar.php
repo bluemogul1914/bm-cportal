@@ -205,8 +205,14 @@
         </div>
 
         <div class="mt-8">
-            <p class="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">AI Agent Army</p>
+            <p class="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">AI &amp; Automation</p>
             <div class="space-y-1">
+                <a href="admin-ai-assistant.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-ai-assistant.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-ai-assistant">
+                    <i class="fas fa-comments w-5"></i>
+                    <span>AI Assistant</span>
+                    <span class="ml-auto bg-purple-500 text-white text-xs px-2 py-0.5 rounded-full">NEW</span>
+                </a>
+
                 <a href="admin-ai-agents.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-ai-agents.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                     <i class="fas fa-robot w-5"></i>
                     <span>AI Agents</span>
