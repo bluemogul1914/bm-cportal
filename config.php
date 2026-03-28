@@ -77,6 +77,12 @@ define('COOLIFY_TOKEN', getenv('COOLIFY_TOKEN') ?: '');
 define('ITARIAN_API_KEY', getenv('ITARIAN_API_KEY') ?: '');
 define('ITARIAN_API_URL', getenv('ITARIAN_API_URL') ?: '');
 
+// VARPHONEX CONFIGURATION
+// ============================================
+define('VARPHONEX_USERNAME', getenv('VARPHONEX_USERNAME') ?: '');
+define('VARPHONEX_PASSWORD', getenv('VARPHONEX_PASSWORD') ?: '');
+define('VARPHONEX_API_URL',  'http://partners.varphonex.com/services/api.php');
+
 // TRAVELSIM CONFIGURATION
 // ============================================
 define('TRAVELSIM_UNAME',   getenv('TRAVELSIM_UNAME')   ?: '');

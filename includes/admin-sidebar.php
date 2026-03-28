@@ -109,6 +109,11 @@
                     <span>Coolify</span>
                 </a>
 
+                <a href="admin-varphonex.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-varphonex.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-varphonex">
+                    <i class="fas fa-phone-alt w-5 text-cyan-400"></i>
+                    <span>VarPhonex</span>
+                </a>
+
                 <a href="admin-itflow.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-itflow.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                     <i class="fas fa-ticket-alt w-5"></i>
                     <span>ITFlow</span>
