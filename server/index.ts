@@ -1669,6 +1669,14 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
         } catch { /* partial JSON — skip */ }
       }
     }
+    // Flush any remaining content in the buffer (last line without trailing newline)
+    if (lineBuffer.trim()) {
+      try {
+        const chunk = JSON.parse(lineBuffer.trim()) as { message?: { content: string }; error?: string };
+        const token = chunk.message?.content ?? '';
+        if (token) { fullReply += token; sendEvent({ token }); }
+      } catch { /* partial/incomplete JSON — discard */ }
+    }
     clearTimeout(t);
 
     // Persist conversation to DB

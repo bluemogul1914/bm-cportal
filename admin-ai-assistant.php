@@ -380,12 +380,19 @@ async function checkStatus() {
     if (r.ok) {
       dot.className = 'status-dot online'; dot.title = 'Ollama connected ✓';
       bar.classList.add('hidden');
-    } else throw new Error();
+    } else {
+      // HTTP error from our API (e.g. Ollama is down) — show warning dot but no intrusive banner
+      dot.className = 'status-dot offline'; dot.title = 'Ollama: server returned ' + r.status;
+      bar.classList.add('hidden');
+    }
   } catch {
+    // True network exception — can't reach our Node server at all
     dot.className = 'status-dot offline'; dot.title = 'Ollama offline';
     bar.classList.remove('hidden');
   }
 }
+
+window.addEventListener('beforeunload', () => { activeAbortCtrl?.abort(); });
 
 async function loadConversations() {
   try {
