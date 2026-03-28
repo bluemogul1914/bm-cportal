@@ -305,6 +305,7 @@ nav::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.3);
 }
 </style>
+<?php require_once __DIR__ . '/admin-ai-widget.php'; ?>
 <script>
 function toggleLeads() {
     const nav = document.getElementById('leads-subnav');
