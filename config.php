@@ -78,6 +78,12 @@ define('ITARIAN_API_KEY', getenv('ITARIAN_API_KEY') ?: '');
 define('ITARIAN_API_URL', getenv('ITARIAN_API_URL') ?: '');
 
 // ============================================
+// TRAVELSIM CONFIGURATION
+// ============================================
+define('TRAVELSIM_UNAME',   getenv('TRAVELSIM_UNAME')   ?: '');
+define('TRAVELSIM_UPASS',   getenv('TRAVELSIM_UPASS')   ?: '');
+define('TRAVELSIM_API_URL', 'https://xml2.travelsim.com/tsim_xml/service/xmlgate');
+
 // RESELLERCLUB CONFIGURATION
 // ============================================
 define('RC_AUTH_USERID', getenv('RC_AUTH_USERID') ?: '');
