@@ -77,12 +77,6 @@ define('COOLIFY_TOKEN', getenv('COOLIFY_TOKEN') ?: '');
 define('ITARIAN_API_KEY', getenv('ITARIAN_API_KEY') ?: '');
 define('ITARIAN_API_URL', getenv('ITARIAN_API_URL') ?: '');
 
-// ============================================
-// COOLIFY CONFIGURATION
-// ============================================
-define('COOLIFY_URL',   getenv('COOLIFY_URL')   ?: '');  // e.g. https://coolify.yourdomain.com
-define('COOLIFY_TOKEN', getenv('COOLIFY_TOKEN') ?: '');
-
 // TRAVELSIM CONFIGURATION
 // ============================================
 define('TRAVELSIM_UNAME',   getenv('TRAVELSIM_UNAME')   ?: '');
