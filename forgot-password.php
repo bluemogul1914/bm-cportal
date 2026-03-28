@@ -24,8 +24,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             
             $reset_link = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'portal.bluemogul.biz') . '/portal/reset-password.php?token=' . $token;
             
+            require_once __DIR__ . '/includes/email.php';
             if (function_exists('send_email')) {
-                require_once __DIR__ . '/includes/email.php';
                 $body = email_template(
                     'Password Reset Request',
                     '<p>Hi ' . htmlspecialchars($user['name']) . ',</p>
