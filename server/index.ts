@@ -1534,11 +1534,11 @@ app.get("/api/webhook/health", (_req, res) => {
 // ── Ollama AI Assistant API ─────────────────────────────────────────────
 app.get("/api/ollama/settings", async (_req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT key, value FROM system_settings WHERE key IN ('ollama_url','ollama_model','ollama_enabled','ollama_system_prompt')`
+    const { rows } = await webhookPool.query(
+      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('ollama_url','ollama_model','ollama_enabled','ollama_system_prompt')`
     );
     const settings: Record<string, string> = {};
-    for (const r of rows) settings[r.key] = r.value;
+    for (const r of rows) settings[r.setting_key] = r.setting_value;
     res.json({
       url: settings['ollama_url'] || 'http://localhost:11434',
       model: settings['ollama_model'] || 'llama3',
@@ -1551,8 +1551,9 @@ app.get("/api/ollama/settings", async (_req, res) => {
 app.post("/api/ollama/settings", express.json(), async (req, res) => {
   try {
     const { url, model, enabled, system_prompt } = req.body;
-    const upsert = async (k: string, v: string) => pool.query(
-      `INSERT INTO system_settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2`, [k, v]
+    const upsert = async (k: string, v: string) => webhookPool.query(
+      `INSERT INTO system_settings (setting_key, setting_value) VALUES ($1,$2)
+       ON CONFLICT (setting_key) DO UPDATE SET setting_value=$2`, [k, v]
     );
     if (url !== undefined) await upsert('ollama_url', String(url));
     if (model !== undefined) await upsert('ollama_model', String(model));
@@ -1564,16 +1565,16 @@ app.post("/api/ollama/settings", express.json(), async (req, res) => {
 
 app.get("/api/ollama/models", async (_req, res) => {
   try {
-    const { rows } = await pool.query(`SELECT value FROM system_settings WHERE key='ollama_url'`);
-    const ollamaUrl = (rows[0]?.value || 'http://localhost:11434').replace(/\/$/, '');
+    const { rows } = await webhookPool.query(`SELECT setting_value FROM system_settings WHERE setting_key='ollama_url'`);
+    const ollamaUrl = (rows[0]?.setting_value || 'http://localhost:11434').replace(/\/$/, '');
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 5000);
+    const t = setTimeout(() => ctrl.abort(), 8000);
     const r = await fetch(`${ollamaUrl}/api/tags`, { signal: ctrl.signal }).finally(() => clearTimeout(t));
-    if (!r.ok) return res.status(502).json({ error: `Ollama returned ${r.status}` });
-    const data = await r.json() as { models?: { name: string }[] };
-    res.json({ models: (data.models || []).map((m: { name: string }) => m.name) });
+    if (!r.ok) return res.status(502).json({ error: `Ollama returned HTTP ${r.status}` });
+    const data = await r.json() as { models?: { name: string; modified_at?: string }[] };
+    res.json({ models: (data.models || []).map((m) => m.name) });
   } catch (e: any) {
-    res.status(503).json({ error: e.name === 'AbortError' ? 'Ollama connection timed out' : e.message });
+    res.status(503).json({ error: e.name === 'AbortError' ? 'Ollama connection timed out (8s)' : e.message });
   }
 });
 
@@ -1586,11 +1587,11 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
     };
     if (!messages?.length) return res.status(400).json({ error: 'messages required' });
 
-    const settingsRows = await pool.query(
-      `SELECT key, value FROM system_settings WHERE key IN ('ollama_url','ollama_model','ollama_system_prompt','ollama_enabled')`
+    const settingsRows = await webhookPool.query(
+      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('ollama_url','ollama_model','ollama_system_prompt','ollama_enabled')`
     );
     const s: Record<string, string> = {};
-    for (const r of settingsRows.rows) s[r.key] = r.value;
+    for (const r of settingsRows.rows) s[r.setting_key] = r.setting_value;
     if (s['ollama_enabled'] === 'false') return res.status(503).json({ error: 'AI Assistant is disabled' });
 
     const ollamaUrl = (s['ollama_url'] || 'http://localhost:11434').replace(/\/$/, '');
@@ -1617,7 +1618,7 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
     const reply = data.message?.content || '';
 
     // Persist conversation
-    await pool.query(`CREATE TABLE IF NOT EXISTS ai_conversations (
+    await webhookPool.query(`CREATE TABLE IF NOT EXISTS ai_conversations (
       id serial PRIMARY KEY,
       title text NOT NULL DEFAULT 'New Chat',
       messages jsonb NOT NULL DEFAULT '[]',
@@ -1628,13 +1629,13 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
 
     let convId = conversation_id;
     if (convId) {
-      await pool.query(
+      await webhookPool.query(
         `UPDATE ai_conversations SET messages=$1, updated_at=now() WHERE id=$2`,
         [JSON.stringify([...messages, { role: 'assistant', content: reply }]), convId]
       );
     } else {
       const convTitle = title || (messages[0]?.content?.substring(0, 60) || 'New Chat');
-      const ins = await pool.query(
+      const ins = await webhookPool.query(
         `INSERT INTO ai_conversations (title, messages, model) VALUES ($1,$2,$3) RETURNING id`,
         [convTitle, JSON.stringify([...messages, { role: 'assistant', content: reply }]), model]
       );
@@ -1649,12 +1650,12 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
 
 app.get("/api/ollama/conversations", async (_req, res) => {
   try {
-    await pool.query(`CREATE TABLE IF NOT EXISTS ai_conversations (
+    await webhookPool.query(`CREATE TABLE IF NOT EXISTS ai_conversations (
       id serial PRIMARY KEY, title text NOT NULL DEFAULT 'New Chat',
       messages jsonb NOT NULL DEFAULT '[]', model text,
       created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()
     )`);
-    const { rows } = await pool.query(
+    const { rows } = await webhookPool.query(
       `SELECT id, title, model, created_at, updated_at, jsonb_array_length(messages) as message_count
        FROM ai_conversations ORDER BY updated_at DESC LIMIT 50`
     );
@@ -1664,7 +1665,7 @@ app.get("/api/ollama/conversations", async (_req, res) => {
 
 app.get("/api/ollama/conversations/:id", async (req, res) => {
   try {
-    const { rows } = await pool.query(`SELECT * FROM ai_conversations WHERE id=$1`, [req.params.id]);
+    const { rows } = await webhookPool.query(`SELECT * FROM ai_conversations WHERE id=$1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
   } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -1672,7 +1673,7 @@ app.get("/api/ollama/conversations/:id", async (req, res) => {
 
 app.delete("/api/ollama/conversations/:id", async (req, res) => {
   try {
-    await pool.query(`DELETE FROM ai_conversations WHERE id=$1`, [req.params.id]);
+    await webhookPool.query(`DELETE FROM ai_conversations WHERE id=$1`, [req.params.id]);
     res.json({ success: true });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
