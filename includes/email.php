@@ -199,6 +199,105 @@ function send_email($to, $subject, $html_body, $plain_body = '') {
     }
 }
 
+/**
+ * Send an email with a custom From address (e.g. staff member's work email).
+ * Authenticates with the company SMTP but overrides the From header.
+ */
+function send_email_as($to, $subject, $html_body, $from_email, $from_name, $plain_body = '') {
+    $smtp = getSmtpSettings();
+    if (!$smtp || empty($smtp['host']) || empty($smtp['user'])) {
+        return ['success' => false, 'error' => 'SMTP not configured'];
+    }
+
+    $subject    = sanitize_smtp_value($subject);
+    $from_email = sanitize_smtp_value($from_email);
+    $from_name  = sanitize_smtp_value($from_name);
+    if (is_array($to)) $to = array_map('sanitize_smtp_value', $to);
+    else $to = sanitize_smtp_value($to);
+
+    if (empty($plain_body)) {
+        $plain_body = strip_tags(str_replace(['<br>','<br/>','<br />','</p>','</div>','</li>'], "\n", $html_body));
+    }
+
+    $boundary = md5(time().rand());
+    $headers  = [
+        "From: $from_name <$from_email>",
+        "Reply-To: $from_email",
+        'MIME-Version: 1.0',
+        "Content-Type: multipart/alternative; boundary=\"$boundary\"",
+        'X-Mailer: BlueMogul-Portal/1.0',
+    ];
+
+    $message  = "--$boundary\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n$plain_body\r\n\r\n";
+    $message .= "--$boundary\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n$html_body\r\n\r\n";
+    $message .= "--$boundary--";
+
+    $ctx = stream_context_create(['ssl' => ['verify_peer'=>false,'verify_peer_name'=>false,'allow_self_signed'=>true]]);
+
+    if ($smtp['port'] === 465) {
+        $socket = @stream_socket_client('ssl://'.$smtp['host'].':'.$smtp['port'], $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
+    } else {
+        $socket = @stream_socket_client('tcp://'.$smtp['host'].':'.$smtp['port'], $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
+    }
+    if (!$socket) return ['success'=>false,'error'=>"Connection failed: $errstr"];
+
+    stream_set_timeout($socket, 15);
+    $greeting = '';
+    while ($line = fgets($socket, 512)) {
+        $greeting .= $line;
+        if (substr($line,3,1)===' '||substr($line,3,1)==="\r"||strlen(trim($line))===3) break;
+    }
+    if (substr(trim($greeting),0,3)!=='220') { fclose($socket); return ['success'=>false,'error'=>"Greeting: $greeting"]; }
+
+    fwrite($socket, "EHLO ".gethostname()."\r\n");
+    $ehlo = '';
+    while ($line = fgets($socket,512)) { $ehlo .= $line; if (substr($line,3,1)===' ') break; }
+
+    if ($smtp['port']===587) {
+        if (strpos($ehlo,'STARTTLS')===false) { fclose($socket); return ['success'=>false,'error'=>'No STARTTLS']; }
+        fwrite($socket,"STARTTLS\r\n"); $tls=fgets($socket,512);
+        if (substr($tls,0,3)!=='220') { fclose($socket); return ['success'=>false,'error'=>"STARTTLS: $tls"]; }
+        @stream_socket_enable_crypto($socket,true,STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT|STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT);
+        fwrite($socket,"EHLO ".gethostname()."\r\n");
+        while ($line=fgets($socket,512)) { if (substr($line,3,1)===' ') break; }
+    }
+
+    fwrite($socket,"AUTH LOGIN\r\n"); $a1=fgets($socket,512);
+    if (substr($a1,0,3)!=='334') { fclose($socket); return ['success'=>false,'error'=>"AUTH: $a1"]; }
+    fwrite($socket,base64_encode($smtp['user'])."\r\n"); $a2=fgets($socket,512);
+    if (substr($a2,0,3)!=='334') { fclose($socket); return ['success'=>false,'error'=>"User: $a2"]; }
+    fwrite($socket,base64_encode($smtp['pass'])."\r\n"); $a3=fgets($socket,512);
+    if (substr($a3,0,3)!=='235') { fclose($socket); return ['success'=>false,'error'=>"Pass: $a3"]; }
+
+    fwrite($socket,"MAIL FROM:<$from_email>\r\n"); $mf=fgets($socket,512);
+    if (substr($mf,0,3)!=='250') { fclose($socket); return ['success'=>false,'error'=>"MAIL FROM: $mf"]; }
+
+    $recipients = is_array($to) ? $to : [$to];
+    foreach ($recipients as $rcpt) {
+        fwrite($socket,"RCPT TO:<".trim($rcpt).">\r\n"); $rr=fgets($socket,512);
+        if (substr($rr,0,3)!=='250') { fclose($socket); return ['success'=>false,'error'=>"RCPT: $rr"]; }
+    }
+
+    fwrite($socket,"DATA\r\n"); $dr=fgets($socket,512);
+    if (substr($dr,0,3)!=='354') { fclose($socket); return ['success'=>false,'error'=>"DATA: $dr"]; }
+
+    $full  = "Date: ".date('r')."\r\n";
+    $full .= "To: ".(is_array($to)?implode(', ',$to):$to)."\r\n";
+    $full .= "Subject: $subject\r\n";
+    $full .= implode("\r\n",$headers)."\r\n\r\n".$message;
+    fwrite($socket,$full."\r\n.\r\n");
+    $sr=fgets($socket,512);
+    fwrite($socket,"QUIT\r\n"); fclose($socket);
+
+    $to_str = is_array($to)?implode(', ',$to):$to;
+    if (substr($sr,0,3)==='250') {
+        log_email_sent($to_str, $subject, true, null);
+        return ['success'=>true];
+    }
+    log_email_sent($to_str, $subject, false, "Send failed: $sr");
+    return ['success'=>false,'error'=>"Send failed: $sr"];
+}
+
 function log_email_sent($to, $subject, $success, $error = null) {
     try {
         $pdo = getDB();

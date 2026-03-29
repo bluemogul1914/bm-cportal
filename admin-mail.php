@@ -1,11 +1,13 @@
 <?php
 require_once 'config.php';
+require_once 'includes/email.php';
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
     portal_redirect('/portal');
 }
 
 $user_id   = intval($_SESSION['user_id']);
 $user_name = $_SESSION['user_name'] ?? 'Admin';
+$is_admin  = $_SESSION['is_admin'] ?? false;
 $pdo = getDB();
 
 // ─── Mailbox definitions ──────────────────────────────────────────────────────
@@ -35,18 +37,58 @@ try {
             is_starred  BOOLEAN      DEFAULT false,
             source      VARCHAR(50)  DEFAULT 'internal',
             sent_by     INTEGER,
+            to_user_id  INTEGER,
             attachments JSONB        DEFAULT '[]',
             received_at TIMESTAMP    DEFAULT NOW(),
             created_at  TIMESTAMP    DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS idx_mail_mailbox_folder ON mail_messages(mailbox, folder);
         CREATE INDEX IF NOT EXISTS idx_mail_thread ON mail_messages(thread_id);
+        CREATE INDEX IF NOT EXISTS idx_mail_to_user ON mail_messages(to_user_id);
+
+        CREATE TABLE IF NOT EXISTS user_email_settings (
+            id           SERIAL PRIMARY KEY,
+            user_id      INTEGER NOT NULL UNIQUE,
+            work_email   VARCHAR(200) DEFAULT '',
+            display_name VARCHAR(200) DEFAULT '',
+            receive_group BOOLEAN DEFAULT true,
+            created_at   TIMESTAMP DEFAULT NOW(),
+            updated_at   TIMESTAMP DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS mail_group_members (
+            id          SERIAL PRIMARY KEY,
+            group_slug  VARCHAR(50) NOT NULL,
+            user_id     INTEGER NOT NULL,
+            assigned_by INTEGER,
+            assigned_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(group_slug, user_id)
+        );
     ");
+    // Add to_user_id column if it doesn't exist yet (migration-safe)
+    try { $pdo->exec("ALTER TABLE mail_messages ADD COLUMN IF NOT EXISTS to_user_id INTEGER"); } catch(Exception $e2) {}
 } catch (Exception $e) {}
 
+// ─── Load current user's email profile ────────────────────────────────────────
+$my_email_cfg = ['work_email'=>'', 'display_name'=>$user_name, 'receive_group'=>true];
+try {
+    $mec = $pdo->prepare("SELECT * FROM user_email_settings WHERE user_id=?");
+    $mec->execute([$user_id]);
+    $mec_row = $mec->fetch(PDO::FETCH_ASSOC);
+    if ($mec_row) $my_email_cfg = array_merge($my_email_cfg, $mec_row);
+} catch(Exception $e) {}
+$my_work_email   = $my_email_cfg['work_email'] ?? '';
+$my_display_name = $my_email_cfg['display_name'] ?: $user_name;
+
+// Load which groups this user belongs to
+$my_groups = [];
+try {
+    $mg = $pdo->prepare("SELECT group_slug FROM mail_group_members WHERE user_id=?");
+    $mg->execute([$user_id]); $my_groups = array_column($mg->fetchAll(PDO::FETCH_ASSOC), 'group_slug');
+} catch(Exception $e) {}
+
 // ─── State ────────────────────────────────────────────────────────────────────
-$view_mailbox = $_GET['mailbox'] ?? 'staff';
-if (!array_key_exists($view_mailbox, $MAILBOXES) && $view_mailbox !== 'all') $view_mailbox = 'staff';
+$view_mailbox = $_GET['mailbox'] ?? 'personal';
+if ($view_mailbox !== 'personal' && $view_mailbox !== 'all' && !array_key_exists($view_mailbox, $MAILBOXES)) $view_mailbox = 'personal';
 
 $view_folder  = $_GET['folder']  ?? 'inbox';
 if (!in_array($view_folder, ['inbox','starred','sent','archived','trash'])) $view_folder = 'inbox';
@@ -66,44 +108,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ── Compose
     if ($action === 'compose') {
-        $to_mailbox = $_POST['to_mailbox'] ?? 'staff';
+        $to_mailbox    = $_POST['to_mailbox']    ?? 'staff';
+        $external_to   = trim(filter_var($_POST['external_to'] ?? '', FILTER_SANITIZE_EMAIL));
+        $send_mode     = $_POST['send_mode']     ?? 'internal'; // 'internal' | 'external'
         if (!array_key_exists($to_mailbox, $MAILBOXES)) $to_mailbox = 'staff';
         $subject  = trim($_POST['subject']  ?? '') ?: '(no subject)';
         $body_html= trim($_POST['body_html']?? '');
-        $mb       = $MAILBOXES[$to_mailbox];
 
-        // Store in target mailbox inbox
+        // Determine From identity
+        $from_email_use = $my_work_email ?: ($my_display_name.'@portal');
+        $from_name_use  = $my_display_name ?: $user_name;
+
+        $smtp_result = null;
+        // If external recipient provided, send a real SMTP email too
+        if ($send_mode === 'external' && $external_to && filter_var($external_to, FILTER_VALIDATE_EMAIL)) {
+            if ($my_work_email) {
+                $smtp_result = send_email_as($external_to, $subject, $body_html, $my_work_email, $from_name_use);
+            } else {
+                // Fall back to system email
+                $smtp_result = send_email($external_to, $subject, $body_html);
+            }
+            if (!($smtp_result['success'] ?? false)) {
+                $error_msg = 'SMTP send failed: '.($smtp_result['error'] ?? 'unknown error');
+            }
+        }
+
+        // Store in target mailbox inbox (internal delivery)
         try {
+            $mb = $MAILBOXES[$to_mailbox];
+            $dest_to_name  = $send_mode === 'external' ? $external_to : $mb['label'];
+            $dest_to_email = $send_mode === 'external' ? $external_to : $mb['email'];
+
             $ins = $pdo->prepare("INSERT INTO mail_messages
                 (mailbox, folder, subject, body_html, from_name, from_email, to_name, to_email, source, sent_by, is_read, received_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,false,NOW()) RETURNING id");
             $ins->execute([
                 $to_mailbox, 'inbox', $subject, $body_html,
-                $user_name, $user_name.'@portal',
-                $mb['label'], $mb['email'],
-                'internal', $user_id,
+                $from_name_use, $from_email_use,
+                $dest_to_name, $dest_to_email,
+                $send_mode === 'external' ? 'outbound' : 'internal', $user_id,
             ]);
             $new_id = $ins->fetchColumn();
-            // Set thread_id = own id
             $pdo->prepare("UPDATE mail_messages SET thread_id=id WHERE id=?")->execute([$new_id]);
 
-            // Also store a copy in sent for the sender
+            // Fan out to group members' personal inboxes
+            try {
+                $gm = $pdo->prepare("SELECT gm.user_id FROM mail_group_members gm
+                    JOIN user_email_settings ues ON ues.user_id=gm.user_id AND ues.receive_group=true
+                    WHERE gm.group_slug=? AND gm.user_id != ?");
+                $gm->execute([$to_mailbox, $user_id]);
+                foreach ($gm->fetchAll(PDO::FETCH_ASSOC) as $member) {
+                    $pdo->prepare("INSERT INTO mail_messages
+                        (mailbox, folder, subject, body_html, from_name, from_email, to_name, to_email, source, sent_by, to_user_id, thread_id, is_read, received_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,false,NOW())")
+                        ->execute([$to_mailbox,'inbox',$subject,$body_html,$from_name_use,$from_email_use,$mb['label'],$mb['email'],'internal',$user_id,$member['user_id'],$new_id]);
+                }
+            } catch(Exception $fe) {}
+
+            // Sent copy in personal sent folder
             $ins2 = $pdo->prepare("INSERT INTO mail_messages
-                (mailbox, folder, subject, body_html, from_name, from_email, to_name, to_email, source, sent_by, is_read, received_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,true,NOW()) RETURNING id");
+                (mailbox, folder, subject, body_html, from_name, from_email, to_name, to_email, source, sent_by, to_user_id, is_read, received_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,true,NOW())");
             $ins2->execute([
                 $to_mailbox, 'sent', $subject, $body_html,
-                $user_name, $user_name.'@portal',
-                $mb['label'], $mb['email'],
-                'internal', $user_id,
+                $from_name_use, $from_email_use,
+                $dest_to_name, $dest_to_email,
+                $send_mode === 'external' ? 'outbound' : 'internal', $user_id, $user_id,
             ]);
-            $sent_id = $ins2->fetchColumn();
-            $pdo->prepare("UPDATE mail_messages SET thread_id=? WHERE id=?")->execute([$new_id, $sent_id]);
 
-            $success_msg = "Message sent to {$mb['label']} inbox.";
-            $view_mailbox = $to_mailbox;
-            $view_folder  = 'inbox';
-            $view_msg_id  = $new_id;
+            $success_msg = $send_mode === 'external'
+                ? "Email sent to $external_to via SMTP."
+                : "Message sent to {$mb['label']} inbox.";
+            $view_mailbox = 'personal';
+            $view_folder  = 'sent';
+            $view_msg_id  = 0;
         } catch(Exception $e) { $error_msg = 'Failed to send: '.$e->getMessage(); }
     }
 
@@ -204,14 +282,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $where = ['folder = ?'];
 $params = [$view_folder];
 
-if ($view_mailbox !== 'all') {
+if ($view_mailbox === 'personal') {
+    // Personal inbox: messages delivered to this user specifically
+    // OR sent by this user (sent folder), OR group messages if they're a member
+    if ($view_folder === 'sent') {
+        $where[] = 'sent_by = ?';
+        $params[] = $user_id;
+    } else {
+        $where[] = '(to_user_id = ? OR (to_user_id IS NULL AND sent_by = ?))';
+        $params[] = $user_id;
+        $params[] = $user_id;
+    }
+} elseif ($view_mailbox !== 'all') {
     $where[] = 'mailbox = ?';
     $params[] = $view_mailbox;
+    // Non-admin: only if member of that group
+    if (!$is_admin && !in_array($view_mailbox, $my_groups)) {
+        $where[] = '1=0'; // No access
+    }
 }
+
 if ($view_folder === 'starred') {
     $where = ['is_starred = true'];
     $params = [];
-    if ($view_mailbox !== 'all') { $where[] = 'mailbox = ?'; $params[] = $view_mailbox; }
+    if ($view_mailbox === 'personal') {
+        $where[] = '(to_user_id = ? OR sent_by = ?)';
+        $params = [$user_id, $user_id];
+    } elseif ($view_mailbox !== 'all') {
+        $where[] = 'mailbox = ?';
+        $params[] = $view_mailbox;
+    }
 }
 if ($search) {
     $where[] = "(subject ILIKE ? OR body_html ILIKE ? OR from_name ILIKE ? OR from_email ILIKE ?)";
@@ -220,10 +320,14 @@ if ($search) {
 
 $wh_sql = 'WHERE ' . implode(' AND ', $where);
 
-// Unread counts per mailbox
-$unread_counts = [];
+// Unread counts
+$unread_counts = ['personal' => 0];
 try {
-    $uc = $pdo->query("SELECT mailbox, COUNT(*) as cnt FROM mail_messages WHERE folder='inbox' AND is_read=false GROUP BY mailbox");
+    // Personal unread
+    $pu = $pdo->prepare("SELECT COUNT(*) FROM mail_messages WHERE folder='inbox' AND is_read=false AND (to_user_id=? OR sent_by=?)");
+    $pu->execute([$user_id, $user_id]); $unread_counts['personal'] = (int)$pu->fetchColumn();
+    // Group unread
+    $uc = $pdo->query("SELECT mailbox, COUNT(*) as cnt FROM mail_messages WHERE folder='inbox' AND is_read=false AND to_user_id IS NULL GROUP BY mailbox");
     foreach($uc->fetchAll(PDO::FETCH_ASSOC) as $r) $unread_counts[$r['mailbox']] = (int)$r['cnt'];
 } catch(Exception $e) {}
 
@@ -369,20 +473,22 @@ body { font-family: Inter, system-ui, sans-serif; }
     </div>
 
     <div class="flex-1 overflow-y-auto px-3 pb-4 space-y-1">
-        <!-- Folders -->
+
+        <!-- ── My Inbox ── -->
+        <div class="mt-1 mb-1 px-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">My Mail</div>
+
         <?php
-        $base = "admin-mail.php?mailbox=$view_mailbox";
-        $folders = [
-            ['inbox',    'fa-inbox',          'Inbox',    array_sum($unread_counts)],
-            ['starred',  'fa-star',           'Starred',  0],
-            ['sent',     'fa-paper-plane',    'Sent',     0],
-            ['archived', 'fa-box-archive',    'Archived', 0],
-            ['trash',    'fa-trash',          'Trash',    0],
+        $personal_folders = [
+            ['inbox',    'fa-inbox',       'My Inbox',  $unread_counts['personal'] ?? 0],
+            ['starred',  'fa-star',        'Starred',   0],
+            ['sent',     'fa-paper-plane', 'Sent',      0],
+            ['archived', 'fa-box-archive', 'Archived',  0],
+            ['trash',    'fa-trash',       'Trash',     0],
         ];
-        foreach ($folders as [$f,$ico,$lbl,$cnt]): ?>
-        <a href="admin-mail.php?mailbox=<?= $view_mailbox ?>&folder=<?= $f ?>"
-           class="nav-item <?= $view_folder===$f && !$search ? 'active':'' ?>"
-           data-testid="nav-<?= $f ?>">
+        foreach ($personal_folders as [$f,$ico,$lbl,$cnt]): ?>
+        <a href="admin-mail.php?mailbox=personal&folder=<?= $f ?>"
+           class="nav-item <?= $view_mailbox==='personal' && $view_folder===$f && !$search ? 'active':'' ?>"
+           data-testid="nav-personal-<?= $f ?>">
             <i class="fas <?= $ico ?> w-4 text-center opacity-75"></i>
             <span><?= $lbl ?></span>
             <?php if ($f==='inbox' && $cnt>0): ?>
@@ -391,34 +497,64 @@ body { font-family: Inter, system-ui, sans-serif; }
         </a>
         <?php endforeach; ?>
 
-        <div class="mt-3 mb-1 px-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Mailboxes</div>
+        <!-- ── Group Mailboxes ── -->
+        <div class="mt-3 mb-1 px-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Group Mailboxes</div>
 
-        <!-- All -->
         <a href="admin-mail.php?mailbox=all&folder=<?= $view_folder ?>"
            class="nav-item <?= $view_mailbox==='all'?'active':'' ?>" data-testid="nav-mailbox-all">
             <i class="fas fa-layer-group w-4 text-center opacity-75"></i>
-            <span>All Mail</span>
+            <span>All Groups</span>
         </a>
 
         <?php foreach ($MAILBOXES as $slug=>$mb):
-            $uc = $unread_counts[$slug] ?? 0; ?>
+            $uc = $unread_counts[$slug] ?? 0;
+            $is_member = in_array($slug, $my_groups) || $is_admin; ?>
         <a href="admin-mail.php?mailbox=<?= $slug ?>&folder=<?= $view_folder ?>"
-           class="nav-item <?= $view_mailbox===$slug?'active':'' ?>" data-testid="nav-mailbox-<?= $slug ?>">
+           class="nav-item <?= $view_mailbox===$slug?'active':'' ?> <?= !$is_member?'opacity-40':'' ?>"
+           title="<?= !$is_member?'Not a member — contact admin':''.htmlspecialchars($mb['label']).' mailbox' ?>"
+           data-testid="nav-mailbox-<?= $slug ?>">
             <i class="fas <?= $mb['icon'] ?> w-4 text-center opacity-75"></i>
             <span><?= htmlspecialchars($mb['label']) ?></span>
-            <?php if ($uc>0): ?>
+            <?php if ($uc>0 && $is_member): ?>
             <span class="cnt"><?= $uc ?></span>
+            <?php endif; ?>
+            <?php if ($is_member && !$is_admin): ?>
+            <span class="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0 ml-auto opacity-75"></span>
             <?php endif; ?>
         </a>
         <?php endforeach; ?>
 
+        <!-- ── Settings ── -->
         <div class="mt-3 mb-1 px-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Settings</div>
+
+        <a href="admin-mail-profile.php" class="nav-item <?= basename($_SERVER['PHP_SELF'])==='admin-mail-profile.php'?'active':'' ?>"
+           data-testid="nav-email-profile">
+            <i class="fas fa-at w-4 text-center opacity-75"></i>
+            <span>Email Profile</span>
+            <?php if (!$my_work_email): ?>
+            <span class="text-xs text-yellow-400 ml-auto" title="Work email not set">!</span>
+            <?php endif; ?>
+        </a>
+
         <a href="#" onclick="document.getElementById('webhook-info').classList.toggle('hidden');return false;"
            class="nav-item" data-testid="nav-webhook">
             <i class="fas fa-plug w-4 text-center opacity-75"></i>
             <span>Inbound Setup</span>
         </a>
     </div>
+
+    <!-- Work email status bar -->
+    <?php if ($my_work_email): ?>
+    <div class="px-3 py-2 border-t border-slate-700 text-xs text-slate-400 flex items-center gap-2 flex-shrink-0">
+        <i class="fas fa-at text-green-400"></i>
+        <span class="truncate"><?= htmlspecialchars($my_work_email) ?></span>
+    </div>
+    <?php else: ?>
+    <a href="admin-mail-profile.php" class="px-3 py-2 border-t border-slate-700 text-xs text-yellow-400 flex items-center gap-2 flex-shrink-0 hover:text-yellow-300">
+        <i class="fas fa-exclamation-triangle"></i>
+        <span>Set up work email</span>
+    </a>
+    <?php endif; ?>
 </div>
 
 <!-- ── Message list (340px) ────────────────────────────────────────────── -->
@@ -723,13 +859,53 @@ body { font-family: Inter, system-ui, sans-serif; }
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="compose">
             <input type="hidden" name="body_html" id="compose-html-input">
+            <input type="hidden" name="send_mode" id="compose-send-mode" value="internal">
 
-            <!-- To mailbox -->
-            <div class="px-4 py-2.5 border-b border-gray-100 flex items-center gap-3">
-                <span class="text-xs text-gray-400 w-14">To</span>
+            <!-- Send mode toggle -->
+            <div class="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2 flex-shrink-0">
+                <span class="text-xs text-gray-500">Send as:</span>
+                <div class="flex rounded-lg overflow-hidden border border-gray-200 text-xs">
+                    <button type="button" id="mode-internal-btn" onclick="setSendMode('internal')"
+                        class="px-3 py-1.5 bg-blue-600 text-white font-medium" data-testid="btn-mode-internal">
+                        <i class="fas fa-layer-group mr-1"></i>Internal
+                    </button>
+                    <button type="button" id="mode-external-btn" onclick="setSendMode('external')"
+                        class="px-3 py-1.5 bg-white text-gray-600 hover:bg-gray-50 font-medium" data-testid="btn-mode-external">
+                        <i class="fas fa-globe mr-1"></i>External Email
+                    </button>
+                </div>
+                <?php if ($my_work_email): ?>
+                <span class="text-xs text-gray-400 ml-auto">From: <strong class="text-gray-600"><?= htmlspecialchars($my_work_email) ?></strong></span>
+                <?php else: ?>
+                <a href="admin-mail-profile.php" class="text-xs text-yellow-600 ml-auto hover:underline"><i class="fas fa-exclamation-triangle mr-1"></i>Set work email</a>
+                <?php endif; ?>
+            </div>
+
+            <!-- To: internal mailbox -->
+            <div id="row-to-internal" class="px-4 py-2.5 border-b border-gray-100 flex items-center gap-3">
+                <span class="text-xs text-gray-400 w-14">Mailbox</span>
                 <select name="to_mailbox" id="compose-to" class="flex-1 text-sm border-none outline-none bg-transparent text-gray-800" data-testid="select-compose-to">
                     <?php foreach ($MAILBOXES as $slug=>$mb): ?>
-                    <option value="<?= $slug ?>" <?= $view_mailbox===$slug?'selected':'' ?>><?= htmlspecialchars($mb['label']) ?> Inbox (<?= htmlspecialchars($mb['email']) ?>)</option>
+                    <option value="<?= $slug ?>" <?= ($view_mailbox===$slug||$view_mailbox==='personal'&&$slug==='staff')?'selected':'' ?>><?= htmlspecialchars($mb['label']) ?> Inbox — <?= htmlspecialchars($mb['email']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <!-- To: external email (hidden by default) -->
+            <div id="row-to-external" class="px-4 py-2.5 border-b border-gray-100 flex items-center gap-3 hidden">
+                <span class="text-xs text-gray-400 w-14">To Email</span>
+                <input type="email" name="external_to" id="compose-external-to" placeholder="recipient@example.com"
+                    class="flex-1 text-sm outline-none bg-transparent text-gray-800"
+                    data-testid="input-compose-external-to">
+            </div>
+
+            <!-- CC mailbox (when external) -->
+            <div id="row-cc-mailbox" class="px-4 py-2 border-b border-gray-100 flex items-center gap-3 hidden">
+                <span class="text-xs text-gray-400 w-14">CC to</span>
+                <select name="to_mailbox" id="compose-cc-mailbox" class="flex-1 text-sm border-none outline-none bg-transparent text-gray-800">
+                    <option value="">(no group copy)</option>
+                    <?php foreach ($MAILBOXES as $slug=>$mb): ?>
+                    <option value="<?= $slug ?>"><?= htmlspecialchars($mb['label']) ?> group inbox</option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -804,6 +980,27 @@ function closeCompose() {
     document.getElementById('compose-subject').value = '';
 }
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeCompose(); });
+
+// ── Send mode toggle (internal ↔ external SMTP)
+function setSendMode(mode) {
+    document.getElementById('compose-send-mode').value = mode;
+    const isExt = mode === 'external';
+    document.getElementById('row-to-internal').classList.toggle('hidden', isExt);
+    document.getElementById('row-to-external').classList.toggle('hidden', !isExt);
+    document.getElementById('row-cc-mailbox').classList.toggle('hidden', !isExt);
+    document.getElementById('mode-internal-btn').className = 'px-3 py-1.5 font-medium ' + (isExt ? 'bg-white text-gray-600 hover:bg-gray-50' : 'bg-blue-600 text-white');
+    document.getElementById('mode-external-btn').className = 'px-3 py-1.5 font-medium ' + (isExt ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50');
+    if (isExt) {
+        // Disable mailbox select so it doesn't interfere
+        document.getElementById('compose-to').removeAttribute('name');
+        // Enable CC mailbox select
+        document.getElementById('compose-cc-mailbox').setAttribute('name', 'to_mailbox');
+        setTimeout(() => document.getElementById('compose-external-to')?.focus(), 50);
+    } else {
+        document.getElementById('compose-to').setAttribute('name', 'to_mailbox');
+        document.getElementById('compose-cc-mailbox').removeAttribute('name');
+    }
+}
 
 // ── Format helpers
 function fmtCompose(cmd, val) { document.getElementById('compose-editor').focus(); document.execCommand(cmd, false, val||null); }

@@ -151,6 +151,35 @@ try {
     // Set thread_id = self
     $pdo->prepare("UPDATE mail_messages SET thread_id=id WHERE id=?")->execute([$new_id]);
 
+    // ── Fan out to group members' personal inboxes ──────────────────────────
+    try {
+        $gm = $pdo->prepare("
+            SELECT gm.user_id, u.name, ues.work_email
+            FROM mail_group_members gm
+            JOIN users u ON u.id = gm.user_id
+            LEFT JOIN user_email_settings ues ON ues.user_id = gm.user_id AND ues.receive_group = true
+            WHERE gm.group_slug = ?
+        ");
+        $gm->execute([$mailbox]);
+        $members = $gm->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($members as $member) {
+            $pdo->prepare("
+                INSERT INTO mail_messages
+                    (mailbox, folder, subject, body_html, from_name, from_email, to_name, to_email, source, to_user_id, thread_id, is_read, received_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,false,NOW())
+            ")->execute([
+                $mailbox, 'inbox', $subject, $body_html,
+                $from['name'], $from['email'],
+                $member['name'], ($member['work_email'] ?: $member['name'].'@portal'),
+                'inbound', $member['user_id'], $new_id,
+            ]);
+        }
+        error_log("[mail-webhook] Fanned out to ".count($members)." group members");
+    } catch(Exception $fe) {
+        error_log("[mail-webhook] Fan-out error: ".$fe->getMessage());
+    }
+
     // Log
     error_log("[mail-webhook] Routed email from {$from['email']} to mailbox:{$mailbox} (msg#{$new_id}) Subject: $subject");
 
