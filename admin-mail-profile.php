@@ -9,41 +9,33 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
 $is_admin  = $_SESSION['is_admin'] ?? false;
 $pdo = getDB();
 
-// ─── DB Bootstrap ─────────────────────────────────────────────────────────────
-try {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS user_email_settings (
-            id            SERIAL PRIMARY KEY,
-            user_id       INTEGER NOT NULL UNIQUE,
-            work_email    VARCHAR(200) DEFAULT '',
-            display_name  VARCHAR(200) DEFAULT '',
-            receive_group BOOLEAN DEFAULT true,
-            smtp_user     VARCHAR(200) DEFAULT '',
-            smtp_password TEXT DEFAULT '',
-            smtp_host     VARCHAR(200) DEFAULT 'mail.bluemogul.biz',
-            smtp_port     INTEGER DEFAULT 587,
-            created_at    TIMESTAMP DEFAULT NOW(),
-            updated_at    TIMESTAMP DEFAULT NOW()
-        );
-        CREATE TABLE IF NOT EXISTS mail_group_members (
-            id          SERIAL PRIMARY KEY,
-            group_slug  VARCHAR(50) NOT NULL,
-            user_id     INTEGER NOT NULL,
-            assigned_by INTEGER,
-            assigned_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(group_slug, user_id)
-        );
-    ");
-    // Add new columns if upgrading from older schema
-    foreach (['smtp_user VARCHAR(200) DEFAULT \'\'',
-              'smtp_password TEXT DEFAULT \'\'',
-              'smtp_host VARCHAR(200) DEFAULT \'mail.bluemogul.biz\'',
-              'smtp_port INTEGER DEFAULT 587'] as $col_def) {
-        $col_name = explode(' ', $col_def)[0];
-        try { $pdo->exec("ALTER TABLE user_email_settings ADD COLUMN IF NOT EXISTS $col_name $col_def"); } catch(Exception $e) {}
-    }
-} catch(Exception $e) {
-    error_log("mail-profile bootstrap: ".$e->getMessage());
+// ─── DB Bootstrap — each statement runs independently ─────────────────────────
+$_bootstrap_stmts = [
+    "CREATE TABLE IF NOT EXISTS user_email_settings (
+        id            SERIAL PRIMARY KEY,
+        user_id       INTEGER NOT NULL UNIQUE,
+        work_email    VARCHAR(200) DEFAULT '',
+        display_name  VARCHAR(200) DEFAULT '',
+        receive_group BOOLEAN DEFAULT true,
+        created_at    TIMESTAMP DEFAULT NOW(),
+        updated_at    TIMESTAMP DEFAULT NOW()
+    )",
+    "CREATE TABLE IF NOT EXISTS mail_group_members (
+        id          SERIAL PRIMARY KEY,
+        group_slug  VARCHAR(50) NOT NULL,
+        user_id     INTEGER NOT NULL,
+        assigned_by INTEGER,
+        assigned_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(group_slug, user_id)
+    )",
+    // SMTP credential columns — safe to run every time (IF NOT EXISTS)
+    "ALTER TABLE user_email_settings ADD COLUMN IF NOT EXISTS smtp_user     VARCHAR(200) DEFAULT ''",
+    "ALTER TABLE user_email_settings ADD COLUMN IF NOT EXISTS smtp_password TEXT DEFAULT ''",
+    "ALTER TABLE user_email_settings ADD COLUMN IF NOT EXISTS smtp_host     VARCHAR(200) DEFAULT 'mail.bluemogul.biz'",
+    "ALTER TABLE user_email_settings ADD COLUMN IF NOT EXISTS smtp_port     INTEGER DEFAULT 587",
+];
+foreach ($_bootstrap_stmts as $_sql) {
+    try { $pdo->exec($_sql); } catch(Exception $e) { error_log("mail-profile bootstrap: ".$e->getMessage()); }
 }
 
 $MAILBOXES = [
