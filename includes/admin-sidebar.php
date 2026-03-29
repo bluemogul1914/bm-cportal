@@ -108,6 +108,22 @@
                 <span>Messages</span>
             </a>
 
+            <?php
+            // Unread mail badge
+            $mail_unread = 0;
+            try {
+                $mu = getDB()->query("SELECT COUNT(*) FROM mail_messages WHERE folder='inbox' AND is_read=false");
+                $mail_unread = (int)$mu->fetchColumn();
+            } catch(Exception $e) {}
+            ?>
+            <a href="admin-mail.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-mail.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-mail">
+                <i class="fas fa-inbox w-5"></i>
+                <span>Mail</span>
+                <?php if ($mail_unread > 0): ?>
+                <span class="ml-auto text-xs bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold"><?= $mail_unread ?></span>
+                <?php endif; ?>
+            </a>
+
             <a href="admin-chat.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-chat.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-chat">
                 <i class="fas fa-comments w-5"></i>
                 <span>Chat</span>
