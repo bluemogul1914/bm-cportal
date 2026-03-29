@@ -46,6 +46,15 @@ try {
             created_by  INTEGER,
             created_at  TIMESTAMP     DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS staff_signatures (
+            id           SERIAL PRIMARY KEY,
+            user_id      INTEGER       NOT NULL,
+            name         VARCHAR(100)  NOT NULL DEFAULT 'My Signature',
+            html_content TEXT          DEFAULT '',
+            is_default   BOOLEAN       DEFAULT false,
+            created_at   TIMESTAMP     DEFAULT NOW(),
+            updated_at   TIMESTAMP     DEFAULT NOW()
+        );
     ");
     // Add client_id / sent_by columns if missing (existing installations)
     foreach (['client_id INTEGER', 'sent_by INTEGER'] as $col_def) {
@@ -84,6 +93,16 @@ try {
 } catch (Exception $e) {}
 
 $smtp_ok = isSmtpConfigured();
+
+// ─── Load this user's email signatures ───────────────────────────────────────
+$my_signatures  = [];
+$default_sig    = null;
+try {
+    $sigstmt = $pdo->prepare("SELECT * FROM staff_signatures WHERE user_id=? ORDER BY is_default DESC, name ASC");
+    $sigstmt->execute([$user_id]);
+    $my_signatures = $sigstmt->fetchAll(PDO::FETCH_ASSOC);
+    $default_sig   = array_values(array_filter($my_signatures, fn($s) => $s['is_default']))[0] ?? ($my_signatures[0] ?? null);
+} catch (Exception $e) {}
 
 // ─── POST handlers ───────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -190,6 +209,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $active_tab = 'templates';
     }
+
+    // ── Save / Update Signature
+    if ($action === 'save_signature') {
+        $sig_id      = intval($_POST['sig_id'] ?? 0);
+        $sig_name    = trim($_POST['sig_name'] ?? '') ?: 'My Signature';
+        $sig_html    = $_POST['sig_html'] ?? '';
+        $sig_default = isset($_POST['sig_default']) ? 1 : 0;
+        if ($sig_default) {
+            try { $pdo->prepare("UPDATE staff_signatures SET is_default=false WHERE user_id=?")->execute([$user_id]); } catch(Exception $e){}
+        }
+        if ($sig_id > 0) {
+            // Update existing
+            try {
+                $pdo->prepare("UPDATE staff_signatures SET name=?,html_content=?,is_default=?,updated_at=NOW() WHERE id=? AND user_id=?")
+                    ->execute([$sig_name,$sig_html,$sig_default,$sig_id,$user_id]);
+                $success_msg = "Signature '{$sig_name}' updated.";
+            } catch(Exception $e) { $error_msg = 'Failed to update signature.'; }
+        } else {
+            // Insert new
+            try {
+                $pdo->prepare("INSERT INTO staff_signatures (user_id,name,html_content,is_default) VALUES (?,?,?,?)")
+                    ->execute([$user_id,$sig_name,$sig_html,$sig_default]);
+                $success_msg = "Signature '{$sig_name}' saved.";
+            } catch(Exception $e) { $error_msg = 'Failed to save signature.'; }
+        }
+        // Reload
+        try { $sigstmt = $pdo->prepare("SELECT * FROM staff_signatures WHERE user_id=? ORDER BY is_default DESC, name ASC"); $sigstmt->execute([$user_id]); $my_signatures = $sigstmt->fetchAll(PDO::FETCH_ASSOC); $default_sig = array_values(array_filter($my_signatures, fn($s) => $s['is_default']))[0] ?? ($my_signatures[0] ?? null); } catch(Exception $e){}
+        $active_tab = 'signatures';
+    }
+
+    // ── Delete Signature
+    if ($action === 'delete_signature') {
+        $sid = intval($_POST['sig_id'] ?? 0);
+        if ($sid > 0) {
+            try { $pdo->prepare("DELETE FROM staff_signatures WHERE id=? AND user_id=?")->execute([$sid,$user_id]); $success_msg = 'Signature deleted.'; } catch(Exception $e){}
+            try { $sigstmt = $pdo->prepare("SELECT * FROM staff_signatures WHERE user_id=? ORDER BY is_default DESC, name ASC"); $sigstmt->execute([$user_id]); $my_signatures = $sigstmt->fetchAll(PDO::FETCH_ASSOC); $default_sig = array_values(array_filter($my_signatures, fn($s) => $s['is_default']))[0] ?? ($my_signatures[0] ?? null); } catch(Exception $e){}
+        }
+        $active_tab = 'signatures';
+    }
+
+    // ── Set Default Signature
+    if ($action === 'set_default_sig') {
+        $sid = intval($_POST['sig_id'] ?? 0);
+        if ($sid > 0) {
+            try {
+                $pdo->prepare("UPDATE staff_signatures SET is_default=false WHERE user_id=?")->execute([$user_id]);
+                $pdo->prepare("UPDATE staff_signatures SET is_default=true WHERE id=? AND user_id=?")->execute([$sid,$user_id]);
+                $success_msg = 'Default signature updated.';
+            } catch(Exception $e){}
+            try { $sigstmt = $pdo->prepare("SELECT * FROM staff_signatures WHERE user_id=? ORDER BY is_default DESC, name ASC"); $sigstmt->execute([$user_id]); $my_signatures = $sigstmt->fetchAll(PDO::FETCH_ASSOC); $default_sig = array_values(array_filter($my_signatures, fn($s) => $s['is_default']))[0] ?? ($my_signatures[0] ?? null); } catch(Exception $e){}
+        }
+        $active_tab = 'signatures';
+    }
 }
 
 // ── History data (loaded per tab to stay lean)
@@ -293,14 +365,20 @@ try {
             <span class="text-gray-500">Templates:</span>
             <span class="font-semibold text-gray-800" data-testid="stat-templates"><?= count($templates) ?></span>
         </div>
+        <div class="flex items-center gap-2 text-sm">
+            <span class="w-2.5 h-2.5 rounded-full bg-indigo-400"></span>
+            <span class="text-gray-500">My Signatures:</span>
+            <span class="font-semibold text-gray-800" data-testid="stat-signatures"><?= count($my_signatures) ?></span>
+        </div>
     </div>
 
     <!-- Tab nav -->
     <div class="bg-white border-b border-gray-200 px-6 flex gap-1">
         <?php foreach ([
-            ['compose',   'fa-pen-to-square', 'Compose'],
-            ['history',   'fa-clock-rotate-left', 'Sent History'],
-            ['templates', 'fa-file-lines',    'Templates'],
+            ['compose',    'fa-pen-to-square',     'Compose'],
+            ['history',    'fa-clock-rotate-left',  'Sent History'],
+            ['templates',  'fa-file-lines',          'Templates'],
+            ['signatures', 'fa-signature',           'Signatures'],
         ] as [$t,$ico,$lbl]): ?>
         <a href="?tab=<?= $t ?>"
            class="flex items-center gap-2 px-5 py-3 text-sm transition <?= $active_tab===$t ? 'tab-active' : 'tab-inactive' ?>"
@@ -400,22 +478,116 @@ try {
                             </label>
                         </div>
                     </div>
-                    <!-- Simple rich text toolbar -->
-                    <div id="rich-toolbar" class="flex gap-1 bg-gray-50 border border-b-0 border-gray-200 rounded-t-lg px-2 py-1.5">
-                        <button type="button" onclick="fmt('bold')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-sm font-bold text-gray-700" title="Bold"><b>B</b></button>
-                        <button type="button" onclick="fmt('italic')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-sm italic text-gray-700" title="Italic"><i>I</i></button>
-                        <button type="button" onclick="fmt('underline')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-sm underline text-gray-700" title="Underline">U</button>
-                        <span class="w-px bg-gray-300 mx-1"></span>
-                        <button type="button" onclick="fmt('insertOrderedList')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-sm text-gray-700" title="Ordered list"><i class="fas fa-list-ol text-xs"></i></button>
-                        <button type="button" onclick="fmt('insertUnorderedList')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-sm text-gray-700" title="Unordered list"><i class="fas fa-list-ul text-xs"></i></button>
-                        <span class="w-px bg-gray-300 mx-1"></span>
-                        <button type="button" onclick="insertPlaceholder('{{ client.name }}')" class="text-xs text-blue-600 hover:bg-blue-50 px-2 h-7 rounded" title="Insert client name">{{client}}</button>
+                    <!-- Enhanced rich text toolbar -->
+                    <div id="rich-toolbar" class="bg-gray-50 border border-b-0 border-gray-200 rounded-t-lg px-2 py-1.5 flex flex-wrap gap-0.5 items-center">
+                        <!-- Font Family -->
+                        <select onchange="fmtFontFamily(this.value)" title="Font family"
+                            class="h-7 text-xs border border-gray-200 rounded px-1 bg-white text-gray-700 cursor-pointer mr-1 focus:ring-1 focus:ring-blue-400 focus:outline-none"
+                            data-testid="select-font-family">
+                            <option value="">Default Font</option>
+                            <option value="Arial, sans-serif">Arial</option>
+                            <option value="Georgia, serif">Georgia</option>
+                            <option value="'Times New Roman', serif">Times New Roman</option>
+                            <option value="Verdana, sans-serif">Verdana</option>
+                            <option value="Tahoma, sans-serif">Tahoma</option>
+                            <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                            <option value="'Courier New', monospace">Courier New</option>
+                        </select>
+                        <!-- Font Size -->
+                        <select onchange="fmtFontSize(this.value)" title="Font size"
+                            class="h-7 text-xs border border-gray-200 rounded px-1 bg-white text-gray-700 cursor-pointer mr-1 focus:ring-1 focus:ring-blue-400 focus:outline-none"
+                            data-testid="select-font-size">
+                            <option value="">Size</option>
+                            <option value="10px">10</option>
+                            <option value="11px">11</option>
+                            <option value="12px">12</option>
+                            <option value="13px">13</option>
+                            <option value="14px" selected>14</option>
+                            <option value="16px">16</option>
+                            <option value="18px">18</option>
+                            <option value="20px">20</option>
+                            <option value="24px">24</option>
+                            <option value="28px">28</option>
+                            <option value="32px">32</option>
+                            <option value="36px">36</option>
+                        </select>
+                        <span class="w-px bg-gray-300 mx-0.5 self-stretch"></span>
+                        <!-- Bold / Italic / Underline / Strikethrough -->
+                        <button type="button" onclick="fmt('bold')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 font-bold text-gray-700 text-sm" title="Bold" data-testid="btn-fmt-bold"><b>B</b></button>
+                        <button type="button" onclick="fmt('italic')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 italic text-gray-700 text-sm" title="Italic" data-testid="btn-fmt-italic"><i>I</i></button>
+                        <button type="button" onclick="fmt('underline')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 underline text-gray-700 text-sm" title="Underline" data-testid="btn-fmt-underline">U</button>
+                        <button type="button" onclick="fmt('strikeThrough')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 line-through text-gray-700 text-sm" title="Strikethrough" data-testid="btn-fmt-strike">S</button>
+                        <span class="w-px bg-gray-300 mx-0.5 self-stretch"></span>
+                        <!-- Alignment -->
+                        <button type="button" onclick="fmt('justifyLeft')"   class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-gray-700" title="Align left"><i class="fas fa-align-left text-xs"></i></button>
+                        <button type="button" onclick="fmt('justifyCenter')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-gray-700" title="Align center"><i class="fas fa-align-center text-xs"></i></button>
+                        <button type="button" onclick="fmt('justifyRight')"  class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-gray-700" title="Align right"><i class="fas fa-align-right text-xs"></i></button>
+                        <span class="w-px bg-gray-300 mx-0.5 self-stretch"></span>
+                        <!-- Lists -->
+                        <button type="button" onclick="fmt('insertOrderedList')"   class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-gray-700" title="Numbered list"><i class="fas fa-list-ol text-xs"></i></button>
+                        <button type="button" onclick="fmt('insertUnorderedList')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-gray-700" title="Bullet list"><i class="fas fa-list-ul text-xs"></i></button>
+                        <span class="w-px bg-gray-300 mx-0.5 self-stretch"></span>
+                        <!-- Text color -->
+                        <div class="relative group" title="Text color">
+                            <button type="button" class="w-7 h-7 flex flex-col items-center justify-center rounded hover:bg-gray-200 gap-0.5" onclick="document.getElementById('txt-color-picker').click()" data-testid="btn-text-color">
+                                <span class="font-bold text-sm text-gray-700 leading-none">A</span>
+                                <span class="w-5 h-1 rounded-sm" id="txt-color-bar" style="background:#000000;"></span>
+                            </button>
+                            <input type="color" id="txt-color-picker" value="#000000" class="sr-only" oninput="fmtTextColor(this.value)">
+                        </div>
+                        <!-- Highlight color -->
+                        <div class="relative group" title="Highlight color">
+                            <button type="button" class="w-7 h-7 flex flex-col items-center justify-center rounded hover:bg-gray-200 gap-0.5" onclick="document.getElementById('hl-color-picker').click()" data-testid="btn-highlight-color">
+                                <i class="fas fa-highlighter text-xs text-gray-700"></i>
+                                <span class="w-5 h-1 rounded-sm" id="hl-color-bar" style="background:#ffff00;"></span>
+                            </button>
+                            <input type="color" id="hl-color-picker" value="#ffff00" class="sr-only" oninput="fmtHighlight(this.value)">
+                        </div>
+                        <span class="w-px bg-gray-300 mx-0.5 self-stretch"></span>
+                        <!-- Insert Image -->
+                        <button type="button" onclick="insertImageDialog('rich-editor')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-gray-700" title="Insert image" data-testid="btn-insert-image">
+                            <i class="fas fa-image text-xs"></i>
+                        </button>
+                        <!-- Insert Link -->
+                        <button type="button" onclick="insertLinkDialog('rich-editor')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-gray-700" title="Insert link" data-testid="btn-insert-link">
+                            <i class="fas fa-link text-xs"></i>
+                        </button>
+                        <!-- Clear formatting -->
+                        <button type="button" onclick="fmt('removeFormat')" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-gray-400" title="Clear formatting">
+                            <i class="fas fa-text-slash text-xs"></i>
+                        </button>
+                        <span class="w-px bg-gray-300 mx-0.5 self-stretch"></span>
+                        <!-- Placeholder shortcut -->
+                        <button type="button" onclick="insertPlaceholder('{{ client.name }}')" class="text-xs text-blue-600 hover:bg-blue-50 px-2 h-7 rounded font-mono" title="Insert client name">{{client}}</button>
                     </div>
                     <div id="rich-editor" contenteditable="true"
                         class="w-full border border-gray-200 rounded-b-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none min-h-48 bg-white"
                         style="line-height:1.7;"
                         data-testid="rich-editor"></div>
                     <textarea id="plain-editor" name="body" class="hidden w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none min-h-48" placeholder="Type your message…" data-testid="textarea-body"></textarea>
+
+                    <!-- Signature strip -->
+                    <div class="mt-2 flex items-center gap-2 flex-wrap" id="sig-controls">
+                        <i class="fas fa-signature text-indigo-400 text-xs"></i>
+                        <span class="text-xs text-gray-500">Signature:</span>
+                        <select id="sig-select" onchange="changeSig(this.value)"
+                            class="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-700 focus:ring-1 focus:ring-blue-400 focus:outline-none"
+                            data-testid="select-active-sig">
+                            <option value="">— None —</option>
+                            <?php foreach ($my_signatures as $sig): ?>
+                            <option value="<?= $sig['id'] ?>" data-html="<?= htmlspecialchars($sig['html_content']) ?>"
+                                <?= ($default_sig && $sig['id'] == $default_sig['id']) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($sig['name']) ?><?= $sig['is_default'] ? ' ★' : '' ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <a href="?tab=signatures" class="text-xs text-indigo-500 hover:underline">Manage →</a>
+                        <?php if (empty($my_signatures)): ?>
+                        <a href="?tab=signatures" class="text-xs text-indigo-600 hover:underline font-medium">
+                            <i class="fas fa-plus mr-1"></i>Create signature
+                        </a>
+                        <?php endif; ?>
+                    </div>
                 </div>
 
                 <!-- Actions -->
@@ -654,6 +826,175 @@ try {
         </div>
     </div>
 
+    <?php /* ══════ SIGNATURES TAB ══════ */ elseif ($active_tab === 'signatures'): ?>
+    <div class="mt-2 grid grid-cols-3 gap-6">
+
+        <!-- Left: Saved Signatures -->
+        <div class="col-span-2">
+            <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                    <h3 class="font-semibold text-gray-800"><i class="fas fa-signature text-indigo-500 mr-2"></i>My Email Signatures</h3>
+                    <span class="text-xs text-gray-400"><?= count($my_signatures) ?> signature<?= count($my_signatures)!==1?'s':'' ?></span>
+                </div>
+                <?php if (empty($my_signatures)): ?>
+                <div class="p-12 text-center text-gray-400 text-sm">
+                    <i class="fas fa-signature text-4xl mb-3 block opacity-25"></i>
+                    No signatures yet. Create one using the form on the right.
+                </div>
+                <?php else: ?>
+                <div class="divide-y divide-gray-100">
+                    <?php foreach ($my_signatures as $sig): ?>
+                    <div class="px-5 py-4 hover:bg-gray-50" data-testid="sig-row-<?= $sig['id'] ?>">
+                        <div class="flex items-start gap-4">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="font-medium text-gray-900"><?= htmlspecialchars($sig['name']) ?></span>
+                                    <?php if ($sig['is_default']): ?>
+                                    <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
+                                        <i class="fas fa-star text-xs mr-1"></i>Default
+                                    </span>
+                                    <?php endif; ?>
+                                    <span class="text-xs text-gray-400">Updated <?= date('M j, Y', strtotime($sig['updated_at'])) ?></span>
+                                </div>
+                                <!-- Preview -->
+                                <div class="border border-gray-200 rounded-lg p-3 bg-white text-sm max-h-28 overflow-hidden relative">
+                                    <?= $sig['html_content'] ?: '<span class="text-gray-400 italic">No content</span>' ?>
+                                    <div class="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-white to-transparent pointer-events-none"></div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-2 flex-shrink-0">
+                                <!-- Set Default -->
+                                <?php if (!$sig['is_default']): ?>
+                                <form method="POST">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="set_default_sig">
+                                    <input type="hidden" name="sig_id" value="<?= $sig['id'] ?>">
+                                    <button type="submit" class="text-xs text-indigo-600 hover:bg-indigo-50 border border-indigo-200 px-3 py-1 rounded transition whitespace-nowrap" data-testid="btn-set-default-sig-<?= $sig['id'] ?>">
+                                        Set Default
+                                    </button>
+                                </form>
+                                <?php endif; ?>
+                                <!-- Edit -->
+                                <button type="button"
+                                    onclick="editSignature(<?= $sig['id'] ?>, <?= htmlspecialchars(json_encode($sig['name'])) ?>, <?= htmlspecialchars(json_encode($sig['html_content'])) ?>, <?= $sig['is_default'] ? 'true' : 'false' ?>)"
+                                    class="text-xs text-blue-600 hover:bg-blue-50 border border-blue-200 px-3 py-1 rounded transition"
+                                    data-testid="btn-edit-sig-<?= $sig['id'] ?>">
+                                    Edit
+                                </button>
+                                <!-- Delete -->
+                                <form method="POST" onsubmit="return confirm('Delete this signature?')">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="delete_signature">
+                                    <input type="hidden" name="sig_id" value="<?= $sig['id'] ?>">
+                                    <button type="submit" class="text-xs text-red-600 hover:bg-red-50 border border-red-200 px-3 py-1 rounded transition" data-testid="btn-delete-sig-<?= $sig['id'] ?>">
+                                        Delete
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Right: Signature editor -->
+        <div>
+            <div class="bg-white rounded-xl border border-gray-200 p-5">
+                <h4 class="font-semibold text-gray-800 mb-4" id="sig-form-title">
+                    <i class="fas fa-plus text-indigo-500 mr-1.5"></i>New Signature
+                </h4>
+                <form method="POST" class="space-y-4" id="sig-form" onsubmit="sigFormSubmit(this)">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="save_signature">
+                    <input type="hidden" name="sig_id" id="sig-form-id" value="0">
+                    <input type="hidden" name="sig_html" id="sig-html-input">
+
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Signature Name <span class="text-red-500">*</span></label>
+                        <input type="text" name="sig_name" id="sig-name-input" required placeholder="e.g. Tracy Williams — Support"
+                            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                            data-testid="input-sig-name">
+                    </div>
+
+                    <!-- Mini toolbar for signature editor -->
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Signature Content</label>
+                        <div class="bg-gray-50 border border-b-0 border-gray-200 rounded-t-lg px-2 py-1.5 flex flex-wrap gap-0.5 items-center">
+                            <select onchange="fmtFontFamily(this.value,'sig-rich-editor')" class="h-6 text-xs border border-gray-200 rounded px-1 bg-white text-gray-700 mr-1 focus:outline-none">
+                                <option value="">Font</option>
+                                <option value="Arial, sans-serif">Arial</option>
+                                <option value="Georgia, serif">Georgia</option>
+                                <option value="'Times New Roman', serif">Times New Roman</option>
+                                <option value="Verdana, sans-serif">Verdana</option>
+                                <option value="Tahoma, sans-serif">Tahoma</option>
+                            </select>
+                            <select onchange="fmtFontSize(this.value,'sig-rich-editor')" class="h-6 text-xs border border-gray-200 rounded px-1 bg-white text-gray-700 mr-1 focus:outline-none">
+                                <option value="">Size</option>
+                                <option value="11px">11</option>
+                                <option value="12px">12</option>
+                                <option value="13px">13</option>
+                                <option value="14px">14</option>
+                                <option value="16px">16</option>
+                                <option value="18px">18</option>
+                            </select>
+                            <span class="w-px bg-gray-300 mx-0.5 self-stretch"></span>
+                            <button type="button" onclick="fmtIn('bold','sig-rich-editor')" class="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-200 font-bold text-gray-700 text-xs"><b>B</b></button>
+                            <button type="button" onclick="fmtIn('italic','sig-rich-editor')" class="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-200 italic text-gray-700 text-xs"><i>I</i></button>
+                            <button type="button" onclick="fmtIn('underline','sig-rich-editor')" class="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-200 underline text-gray-700 text-xs">U</button>
+                            <span class="w-px bg-gray-300 mx-0.5 self-stretch"></span>
+                            <div title="Text color">
+                                <button type="button" class="w-6 h-6 flex flex-col items-center justify-center rounded hover:bg-gray-200" onclick="document.getElementById('sig-color-picker').click()">
+                                    <span class="font-bold text-xs text-gray-700 leading-none">A</span>
+                                    <span class="w-4 h-0.5 rounded-sm" id="sig-color-bar" style="background:#000;"></span>
+                                </button>
+                                <input type="color" id="sig-color-picker" value="#000000" class="sr-only" oninput="fmtTextColorIn(this.value,'sig-rich-editor','sig-color-bar')">
+                            </div>
+                            <span class="w-px bg-gray-300 mx-0.5 self-stretch"></span>
+                            <button type="button" onclick="insertImageDialog('sig-rich-editor')" class="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-200 text-gray-700" title="Insert image">
+                                <i class="fas fa-image text-xs"></i>
+                            </button>
+                            <button type="button" onclick="insertLinkDialog('sig-rich-editor')" class="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-200 text-gray-700" title="Insert link">
+                                <i class="fas fa-link text-xs"></i>
+                            </button>
+                        </div>
+                        <div id="sig-rich-editor" contenteditable="true"
+                            class="w-full border border-gray-200 rounded-b-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none min-h-32 bg-white"
+                            style="line-height:1.6;"
+                            data-testid="sig-editor"
+                            placeholder="Enter your signature HTML here…"></div>
+                    </div>
+
+                    <label class="flex items-center gap-2 cursor-pointer text-sm">
+                        <input type="checkbox" name="sig_default" id="sig-default-check" class="accent-indigo-600" data-testid="check-sig-default">
+                        <span class="text-gray-700">Set as default signature</span>
+                    </label>
+
+                    <div class="flex gap-2">
+                        <button type="submit" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm py-2 rounded-lg font-medium transition" data-testid="btn-save-sig">
+                            <i class="fas fa-save mr-1"></i><span id="sig-btn-label">Save Signature</span>
+                        </button>
+                        <button type="button" onclick="resetSigForm()" class="px-4 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition hidden" id="sig-cancel-btn">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Quick-start tips -->
+                <div class="mt-4 pt-4 border-t border-gray-100">
+                    <p class="text-xs font-medium text-gray-500 mb-2">Signature tips:</p>
+                    <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside">
+                        <li>Add your name, title, phone &amp; email</li>
+                        <li>Use an image for your logo or photo</li>
+                        <li>Keep it concise — 4–6 lines max</li>
+                        <li>Your default signature auto-appends when composing</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <?php endif; ?>
     </div><!-- /content -->
 </div><!-- /main -->
@@ -693,17 +1034,21 @@ try {
     </div>
 </div>
 
+<style>
+/* Contenteditable placeholder */
+[contenteditable][placeholder]:empty:before {
+    content: attr(placeholder);
+    color: #9ca3af;
+    pointer-events: none;
+}
+</style>
 <script>
 // ── Recipient toggle
 function toggleClientList(val) {
     document.getElementById('client-select-wrap').classList.toggle('hidden', val !== 'selected');
 }
-
-// ── Select all / clear checkboxes
 function selectAll() { document.querySelectorAll('#client-list input[type=checkbox]').forEach(c => c.checked = true); }
 function clearAll()   { document.querySelectorAll('#client-list input[type=checkbox]').forEach(c => c.checked = false); }
-
-// ── Filter client list
 function filterClients() {
     const q = document.getElementById('client-search').value.toLowerCase();
     document.querySelectorAll('.client-row').forEach(row => {
@@ -715,26 +1060,28 @@ function filterClients() {
 let bodyMode = 'rich';
 function toggleBodyMode(mode) {
     bodyMode = mode;
-    const rich  = document.getElementById('rich-editor');
+    const rich = document.getElementById('rich-editor');
     const plain = document.getElementById('plain-editor');
     const toolbar = document.getElementById('rich-toolbar');
+    const sigControls = document.getElementById('sig-controls');
     if (mode === 'rich') {
-        const txt = plain.value;
-        rich.innerHTML = txt ? txt.replace(/\n/g,'<br>') : '';
+        rich.innerHTML = plain.value ? plain.value.replace(/\n/g,'<br>') : '';
         rich.classList.remove('hidden');
         toolbar.classList.remove('hidden');
         plain.classList.add('hidden');
+        if (sigControls) sigControls.classList.remove('hidden');
     } else {
         plain.value = rich.innerText;
         plain.classList.remove('hidden');
         plain.name = 'body';
         rich.classList.add('hidden');
         toolbar.classList.add('hidden');
+        if (sigControls) sigControls.classList.add('hidden');
     }
 }
 
-// Sync rich editor → hidden textarea on submit
-document.getElementById('compose-form').addEventListener('submit', function () {
+// Sync rich → hidden textarea on submit
+document.getElementById('compose-form')?.addEventListener('submit', function () {
     if (bodyMode === 'rich') {
         const plain = document.getElementById('plain-editor');
         plain.classList.remove('hidden');
@@ -743,8 +1090,89 @@ document.getElementById('compose-form').addEventListener('submit', function () {
     }
 });
 
-// ── Rich text formatting
-function fmt(cmd) { document.execCommand(cmd, false, null); document.getElementById('rich-editor').focus(); }
+// ── Core formatting (targets the focused editor by default)
+function fmt(cmd) { document.execCommand(cmd, false, null); }
+function fmtIn(cmd, editorId) {
+    const ed = document.getElementById(editorId);
+    ed.focus();
+    document.execCommand(cmd, false, null);
+}
+
+// ── Font family
+function fmtFontFamily(family, editorId) {
+    const ed = document.getElementById(editorId || 'rich-editor');
+    ed.focus();
+    if (family) {
+        document.execCommand('styleWithCSS', false, true);
+        document.execCommand('fontName', false, family);
+    }
+}
+
+// ── Font size (uses size=7 marker trick then replaces with px)
+function fmtFontSize(size, editorId) {
+    const ed = document.getElementById(editorId || 'rich-editor');
+    ed.focus();
+    if (!size) return;
+    document.execCommand('styleWithCSS', false, false);
+    document.execCommand('fontSize', false, '7');
+    // Replace all <font size="7"> with styled spans
+    ed.querySelectorAll('font[size="7"]').forEach(el => {
+        const span = document.createElement('span');
+        span.style.fontSize = size;
+        span.innerHTML = el.innerHTML;
+        el.parentNode.replaceChild(span, el);
+    });
+    ed.focus();
+}
+
+// ── Text colour
+function fmtTextColor(color) {
+    document.execCommand('foreColor', false, color);
+    const bar = document.getElementById('txt-color-bar');
+    if (bar) bar.style.background = color;
+    document.getElementById('rich-editor').focus();
+}
+function fmtTextColorIn(color, editorId, barId) {
+    document.getElementById(editorId).focus();
+    document.execCommand('foreColor', false, color);
+    const bar = document.getElementById(barId);
+    if (bar) bar.style.background = color;
+    document.getElementById(editorId).focus();
+}
+
+// ── Highlight / background colour
+function fmtHighlight(color) {
+    document.execCommand('styleWithCSS', false, true);
+    document.execCommand('hiliteColor', false, color);
+    const bar = document.getElementById('hl-color-bar');
+    if (bar) bar.style.background = color;
+    document.getElementById('rich-editor').focus();
+}
+
+// ── Insert image dialog
+function insertImageDialog(editorId) {
+    const url = prompt('Image URL (https://…):');
+    if (!url) return;
+    const width = prompt('Width (e.g. 200px, 100%)', '300px') || '300px';
+    const alt   = prompt('Alt text (optional)', '') || '';
+    const ed = document.getElementById(editorId || 'rich-editor');
+    ed.focus();
+    document.execCommand('insertHTML', false,
+        `<img src="${url.replace(/"/g,'&quot;')}" alt="${alt.replace(/"/g,'&quot;')}" style="max-width:${width};height:auto;display:inline-block;" />`
+    );
+}
+
+// ── Insert link dialog
+function insertLinkDialog(editorId) {
+    const url  = prompt('Link URL (https://…):');
+    if (!url) return;
+    const text = prompt('Link text:', url) || url;
+    const ed = document.getElementById(editorId || 'rich-editor');
+    ed.focus();
+    document.execCommand('insertHTML', false,
+        `<a href="${url.replace(/"/g,'&quot;')}" style="color:#2563eb;">${text.replace(/</g,'&lt;')}</a>`
+    );
+}
 
 // ── Insert placeholder into active editor
 function insertPlaceholder(text) {
@@ -753,13 +1181,11 @@ function insertPlaceholder(text) {
         editor.focus();
         const sel = window.getSelection();
         if (sel && sel.rangeCount) {
-            const range = sel.getRangeAt(0);
-            range.deleteContents();
-            range.insertNode(document.createTextNode(text));
-            range.collapse(false);
-        } else {
-            editor.innerHTML += text;
-        }
+            const r = sel.getRangeAt(0);
+            r.deleteContents();
+            r.insertNode(document.createTextNode(text));
+            r.collapse(false);
+        } else { editor.innerHTML += text; }
     } else {
         const ta = document.getElementById('plain-editor');
         const s = ta.selectionStart, e = ta.selectionEnd;
@@ -771,16 +1197,27 @@ function insertPlaceholder(text) {
 
 // ── Load template into compose form
 function loadTemplate(subject, body) {
-    document.getElementById('subject-input').value = subject;
+    const si = document.getElementById('subject-input');
+    if (si) si.value = subject;
     if (bodyMode === 'rich') {
-        document.getElementById('rich-editor').innerHTML = body.replace(/\n/g,'<br>');
+        const re = document.getElementById('rich-editor');
+        if (re) {
+            // Keep signature, replace only message part before sig block
+            const sigBlock = re.querySelector('[data-sig]');
+            if (sigBlock) {
+                re.innerHTML = body.replace(/\n/g,'<br>');
+                re.appendChild(sigBlock);
+            } else {
+                re.innerHTML = body.replace(/\n/g,'<br>');
+            }
+        }
     } else {
-        document.getElementById('plain-editor').value = body;
+        const pe = document.getElementById('plain-editor');
+        if (pe) pe.value = body;
     }
 }
 
 // ── Pre-fill modal with current compose content
-document.getElementById('save-tpl-modal')?.addEventListener('transitionend', prefillModal);
 document.querySelector('[onclick*="save-tpl-modal"]')?.addEventListener('click', prefillModal);
 function prefillModal() {
     const subj = document.getElementById('subject-input');
@@ -788,10 +1225,75 @@ function prefillModal() {
     const mBody = document.getElementById('modal-body');
     if (subj && mSubj) mSubj.value = subj.value;
     if (mBody) {
-        mBody.value = bodyMode === 'rich'
-            ? document.getElementById('rich-editor').innerHTML
-            : document.getElementById('plain-editor').value;
+        if (bodyMode === 'rich') {
+            const re = document.getElementById('rich-editor');
+            // Exclude sig block from template body
+            const clone = re.cloneNode(true);
+            clone.querySelectorAll('[data-sig]').forEach(el => el.remove());
+            mBody.value = clone.innerHTML;
+        } else {
+            mBody.value = document.getElementById('plain-editor').value;
+        }
     }
+}
+
+// ─── Signature management ──────────────────────────────────────────────────
+
+// Change active signature in compose dropdown
+function changeSig(sigId) {
+    const ed = document.getElementById('rich-editor');
+    if (!ed) return;
+    // Remove existing sig block
+    ed.querySelectorAll('[data-sig]').forEach(el => el.remove());
+    if (!sigId) return;
+
+    const opt = document.querySelector(`#sig-select option[value="${sigId}"]`);
+    if (!opt) return;
+    const html = opt.dataset.html || '';
+    if (!html) return;
+
+    const sigDiv = document.createElement('div');
+    sigDiv.dataset.sig = '1';
+    sigDiv.setAttribute('contenteditable', 'false');
+    sigDiv.style.cssText = 'margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;color:#374151;';
+    sigDiv.innerHTML = html;
+    ed.appendChild(sigDiv);
+}
+
+// Auto-inject default signature on page load
+(function initSig() {
+    const sel = document.getElementById('sig-select');
+    if (sel && sel.value) {
+        // Slight delay to let editor render
+        setTimeout(() => changeSig(sel.value), 100);
+    }
+})();
+
+// ── Signature form (create / edit)
+function editSignature(id, name, html, isDefault) {
+    document.getElementById('sig-form-id').value    = id;
+    document.getElementById('sig-name-input').value = name;
+    document.getElementById('sig-rich-editor').innerHTML = html;
+    document.getElementById('sig-default-check').checked = isDefault;
+    document.getElementById('sig-form-title').innerHTML = '<i class="fas fa-pen text-indigo-500 mr-1.5"></i>Edit Signature';
+    document.getElementById('sig-btn-label').textContent = 'Update Signature';
+    document.getElementById('sig-cancel-btn').classList.remove('hidden');
+    document.getElementById('sig-form').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function resetSigForm() {
+    document.getElementById('sig-form-id').value    = '0';
+    document.getElementById('sig-name-input').value = '';
+    document.getElementById('sig-rich-editor').innerHTML = '';
+    document.getElementById('sig-default-check').checked = false;
+    document.getElementById('sig-form-title').innerHTML = '<i class="fas fa-plus text-indigo-500 mr-1.5"></i>New Signature';
+    document.getElementById('sig-btn-label').textContent = 'Save Signature';
+    document.getElementById('sig-cancel-btn').classList.add('hidden');
+}
+
+function sigFormSubmit(form) {
+    const html = document.getElementById('sig-rich-editor').innerHTML;
+    document.getElementById('sig-html-input').value = html;
 }
 </script>
 
