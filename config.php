@@ -364,7 +364,7 @@ function verify_csrf($token) {
  * Checks both 'csrf_token' and '_csrf_token' POST keys.
  */
 function validate_csrf_token($token = null) {
-    if ($token === null) {
+    if (empty($token)) {
         $token = $_POST['_csrf_token'] ?? $_POST['csrf_token'] ?? '';
     }
     return verify_csrf($token);
