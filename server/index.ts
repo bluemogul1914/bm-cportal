@@ -1747,6 +1747,74 @@ app.delete("/api/ollama/conversations/:id", async (req, res) => {
     res.json({ success: true });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
+// ── Support Presence & Ticket (client AI widget) ─────────────────────────
+
+// Bootstrap user_presence table
+const ensurePresenceTable = async () => {
+  await webhookPool.query(`CREATE TABLE IF NOT EXISTS user_presence (
+    user_id integer PRIMARY KEY,
+    user_name text,
+    last_seen timestamptz DEFAULT now()
+  )`);
+};
+
+// Admin heartbeat — called from admin pages every 60s
+app.post("/api/support/presence", express.json(), async (req, res) => {
+  try {
+    await ensurePresenceTable();
+    const { user_id, user_name } = req.body as { user_id?: number; user_name?: string };
+    if (!user_id) return res.status(400).json({ error: 'user_id required' });
+    await webhookPool.query(
+      `INSERT INTO user_presence (user_id, user_name, last_seen) VALUES ($1,$2,now())
+       ON CONFLICT (user_id) DO UPDATE SET user_name=$2, last_seen=now()`,
+      [user_id, user_name || 'Staff']
+    );
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Client check — is any staff member online right now?
+app.get("/api/support/availability", async (_req, res) => {
+  try {
+    await ensurePresenceTable();
+    const { rows } = await webhookPool.query(
+      `SELECT user_name FROM user_presence WHERE last_seen > now() - interval '5 minutes' ORDER BY last_seen DESC`
+    );
+    res.json({ available: rows.length > 0, online_count: rows.length, agents: rows.map(r => r.user_name) });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Quick ticket creation from client AI widget
+app.post("/api/support/ticket", express.json(), async (req, res) => {
+  try {
+    const { user_id, subject, description, priority } = req.body as {
+      user_id?: number; subject?: string; description?: string; priority?: string;
+    };
+    if (!subject || !user_id) return res.status(400).json({ error: 'user_id and subject required' });
+    const prio = ['low','medium','high','urgent'].includes(priority||'') ? priority : 'medium';
+
+    // Get client_id from clients table (falls back to user_id if no client record)
+    const cl = await webhookPool.query(`SELECT id FROM clients WHERE user_id=$1 LIMIT 1`, [user_id]);
+    const client_id = cl.rows[0]?.id ?? user_id;
+
+    const ins = await webhookPool.query(
+      `INSERT INTO tickets (client_id, subject, description, status, priority, ticket_group, source, created_at, updated_at)
+       VALUES ($1,$2,$3,'open',$4,'support','ai_widget',now(),now()) RETURNING id`,
+      [client_id, subject.substring(0,200), description?.substring(0,2000) || '', prio]
+    );
+    const ticket_id = ins.rows[0].id;
+
+    // Log activity
+    await webhookPool.query(
+      `INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address)
+       VALUES ($1,'ticket_created','ticket',$2,'Created via AI widget: ' || $3, '0.0.0.0')`,
+      [user_id, ticket_id, subject.substring(0,100)]
+    ).catch(() => {}); // non-fatal
+
+    res.json({ success: true, ticket_id });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 // ── End Ollama AI ────────────────────────────────────────────────────────
 
 app.get("/portal/logout.php", (req, res) => {

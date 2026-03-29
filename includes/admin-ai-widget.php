@@ -4,6 +4,8 @@
 $ai_widget_page = basename($_SERVER['PHP_SELF'] ?? 'Admin Panel');
 $ai_widget_page_label = pathinfo($ai_widget_page, PATHINFO_FILENAME);
 $ai_widget_page_label = ucwords(str_replace(['-','admin','_'], [' ','',''], $ai_widget_page_label));
+$_aip_uid  = intval($_SESSION['user_id'] ?? 0);
+$_aip_name = htmlspecialchars($_SESSION['user_name'] ?? 'Staff', ENT_QUOTES);
 ?>
 <style>
 /* ── AI Float Button ─── */
@@ -234,6 +236,8 @@ $ai_widget_page_label = ucwords(str_replace(['-','admin','_'], [' ','',''], $ai_
   let aipSettings = {};
   let aipAbort = null;
   const PAGE_CONTEXT = <?= json_encode($ai_widget_page_label) ?>;
+  const STAFF_USER_ID   = <?= intval($_aip_uid) ?>;
+  const STAFF_USER_NAME = <?= json_encode($_aip_name) ?>;
 
   // ── Boot ──────────────────────────────────────────────────────────────
   fetch('/api/ollama/settings').then(r=>r.json()).then(d=>{
@@ -243,6 +247,17 @@ $ai_widget_page_label = ucwords(str_replace(['-','admin','_'], [' ','',''], $ai_
   }).catch(()=>{});
 
   fetch('/api/ollama/models').then(r=>{ if(r.ok) showBadge(); }).catch(()=>{});
+
+  // ── Staff presence heartbeat — marks this admin as "online" ────────────
+  function pingPresence() {
+    if (!STAFF_USER_ID) return;
+    fetch('/api/support/presence', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ user_id: STAFF_USER_ID, user_name: STAFF_USER_NAME }),
+    }).catch(()=>{});
+  }
+  pingPresence(); // immediate on page load
+  setInterval(pingPresence, 60000); // every 60 seconds
 
   function showBadge() {
     const b = document.getElementById('ai-float-badge');

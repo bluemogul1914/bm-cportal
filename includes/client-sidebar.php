@@ -224,3 +224,5 @@ nav::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.3);
 }
 </style>
+
+<?php require_once __DIR__ . '/client-ai-widget.php'; ?>
