@@ -941,7 +941,7 @@ $tlds = ['com','net','org','io','co','info','biz','us','me','online','store','ap
                 <!-- About + links -->
                 <div class="bg-white rounded-lg border border-gray-200 p-6">
                     <h3 class="text-base font-semibold text-gray-900 mb-4"><i class="fas fa-info-circle text-blue-500 mr-2"></i>About the Enom Reseller API</h3>
-                    <p class="text-sm text-gray-600 mb-4">The Enom Reseller API allows you to manage domains, DNS, contacts, renewals, and transfers programmatically. All requests are sent to <code class="bg-gray-100 px-1 rounded text-xs">reseller.enom.com/interface.asp</code> using URL query parameters.</p>
+                    <p class="text-sm text-gray-600 mb-4">The Enom Reseller API allows you to manage domains, DNS, contacts, renewals, and transfers programmatically. All requests are sent to <code class="bg-gray-100 px-1 rounded text-xs">reseller.enom.com</code> using URL query parameters.</p>
                     <div class="space-y-2 mb-4">
                         <a href="https://cp.enom.com//resellers/api-reseller.aspx" target="_blank" class="flex items-center gap-3 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-sm text-gray-700">
                             <i class="fas fa-book text-violet-500 w-4"></i><span>Enom Reseller API Docs</span>

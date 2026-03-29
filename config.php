@@ -103,8 +103,9 @@ define('ENOM_API_URL', 'https://reseller.enom.com/interface.asp');
 
 // HOSTWINDS CLOUD CONFIGURATION
 // ============================================
-define('HOSTWINDS_API_KEY', getenv('HOSTWINDS_API_KEY') ?: '');
-define('HOSTWINDS_API_URL', 'https://api.hostwinds.com/v1');
+define('HOSTWINDS_API_EMAIL', getenv('HOSTWINDS_API_EMAIL') ?: '');
+define('HOSTWINDS_API_KEY',   getenv('HOSTWINDS_API_KEY')   ?: '');
+define('HOSTWINDS_API_URL',   'https://clients.hostwinds.com/HostwindsResellerAPI/api.php');
 
 // ACTION1 RMM CONFIGURATION
 // ============================================
