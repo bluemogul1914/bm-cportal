@@ -215,6 +215,13 @@ define('FLOWISE_URL', getenv('FLOWISE_URL') ?: '');
 define('ANYTHINGLLM_URL', getenv('ANYTHINGLLM_URL') ?: '');
 
 // ============================================
+// MAIL CREDENTIAL ENCRYPTION
+// ============================================
+// Key derived from existing secrets — never stored directly
+define('MAIL_CRYPT_KEY', substr(hash('sha256', (getenv('DB_PASS') ?: 'bm_fallback') . 'BlueMogulMailCrypt_v1'), 0, 32));
+define('MAIL_CRYPT_IV',  substr(hash('md5',  (getenv('DB_PASS') ?: 'bm_fallback') . 'bm_iv_salt'), 0, 16));
+
+// ============================================
 // BRANDING
 // ============================================
 define('BRAND_PRIMARY_COLOR', '#1a56db');

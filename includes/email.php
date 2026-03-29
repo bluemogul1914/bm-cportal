@@ -1,5 +1,47 @@
 <?php
 
+// ─── Per-user SMTP credential helpers ────────────────────────────────────────
+
+function mail_encrypt_password(string $plain): string {
+    if (empty($plain)) return '';
+    $encrypted = openssl_encrypt($plain, 'aes-256-cbc', MAIL_CRYPT_KEY, 0, MAIL_CRYPT_IV);
+    return $encrypted ?: '';
+}
+
+function mail_decrypt_password(string $encrypted): string {
+    if (empty($encrypted)) return '';
+    $decrypted = openssl_decrypt($encrypted, 'aes-256-cbc', MAIL_CRYPT_KEY, 0, MAIL_CRYPT_IV);
+    return $decrypted ?: '';
+}
+
+/**
+ * Get per-user SMTP settings. Returns null if not configured,
+ * falls back to company SMTP shape if only work email is set.
+ */
+function getUserSmtpSettings(int $user_id): ?array {
+    try {
+        $pdo = getDB();
+        $st = $pdo->prepare("SELECT work_email, display_name, smtp_user, smtp_password, smtp_host, smtp_port FROM user_email_settings WHERE user_id=?");
+        $st->execute([$user_id]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$row || empty($row['work_email'])) return null;
+
+        $has_creds = !empty($row['smtp_user']) && !empty($row['smtp_password']);
+        return [
+            'work_email'   => $row['work_email'],
+            'display_name' => $row['display_name'] ?: $row['work_email'],
+            'has_own_creds'=> $has_creds,
+            'smtp_user'    => $row['smtp_user'] ?? '',
+            'smtp_pass'    => $has_creds ? mail_decrypt_password($row['smtp_password']) : '',
+            'smtp_host'    => $row['smtp_host'] ?: 'mail.bluemogul.biz',
+            'smtp_port'    => intval($row['smtp_port'] ?: 587),
+        ];
+    } catch (Exception $e) {
+        error_log("getUserSmtpSettings error: ".$e->getMessage());
+        return null;
+    }
+}
+
 function getSmtpSettings() {
     try {
         $pdo = getDB();
@@ -200,13 +242,32 @@ function send_email($to, $subject, $html_body, $plain_body = '') {
 }
 
 /**
- * Send an email with a custom From address (e.g. staff member's work email).
- * Authenticates with the company SMTP but overrides the From header.
+ * Send an email with a custom From address (staff member's work email).
+ * Uses per-user SMTP credentials if configured; falls back to company SMTP.
+ * Pass $user_id to automatically resolve credentials from user profile.
  */
-function send_email_as($to, $subject, $html_body, $from_email, $from_name, $plain_body = '') {
-    $smtp = getSmtpSettings();
+function send_email_as($to, $subject, $html_body, $from_email, $from_name, $plain_body = '', $user_id = null) {
+    // Try per-user credentials first
+    $user_creds = null;
+    if ($user_id) {
+        $user_creds = getUserSmtpSettings((int)$user_id);
+    }
+
+    if ($user_creds && $user_creds['has_own_creds']) {
+        // Use individual credentials
+        $smtp = [
+            'host' => $user_creds['smtp_host'],
+            'port' => $user_creds['smtp_port'],
+            'user' => $user_creds['smtp_user'],
+            'pass' => $user_creds['smtp_pass'],
+        ];
+    } else {
+        // Fall back to company SMTP
+        $smtp = getSmtpSettings();
+    }
+
     if (!$smtp || empty($smtp['host']) || empty($smtp['user'])) {
-        return ['success' => false, 'error' => 'SMTP not configured'];
+        return ['success' => false, 'error' => 'SMTP not configured — set up credentials in Email Profile'];
     }
 
     $subject    = sanitize_smtp_value($subject);

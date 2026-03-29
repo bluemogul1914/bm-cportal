@@ -13,13 +13,17 @@ $pdo = getDB();
 try {
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS user_email_settings (
-            id           SERIAL PRIMARY KEY,
-            user_id      INTEGER NOT NULL UNIQUE,
-            work_email   VARCHAR(200) DEFAULT '',
-            display_name VARCHAR(200) DEFAULT '',
+            id            SERIAL PRIMARY KEY,
+            user_id       INTEGER NOT NULL UNIQUE,
+            work_email    VARCHAR(200) DEFAULT '',
+            display_name  VARCHAR(200) DEFAULT '',
             receive_group BOOLEAN DEFAULT true,
-            created_at   TIMESTAMP DEFAULT NOW(),
-            updated_at   TIMESTAMP DEFAULT NOW()
+            smtp_user     VARCHAR(200) DEFAULT '',
+            smtp_password TEXT DEFAULT '',
+            smtp_host     VARCHAR(200) DEFAULT 'mail.bluemogul.biz',
+            smtp_port     INTEGER DEFAULT 587,
+            created_at    TIMESTAMP DEFAULT NOW(),
+            updated_at    TIMESTAMP DEFAULT NOW()
         );
         CREATE TABLE IF NOT EXISTS mail_group_members (
             id          SERIAL PRIMARY KEY,
@@ -30,7 +34,17 @@ try {
             UNIQUE(group_slug, user_id)
         );
     ");
-} catch(Exception $e) {}
+    // Add new columns if upgrading from older schema
+    foreach (['smtp_user VARCHAR(200) DEFAULT \'\'',
+              'smtp_password TEXT DEFAULT \'\'',
+              'smtp_host VARCHAR(200) DEFAULT \'mail.bluemogul.biz\'',
+              'smtp_port INTEGER DEFAULT 587'] as $col_def) {
+        $col_name = explode(' ', $col_def)[0];
+        try { $pdo->exec("ALTER TABLE user_email_settings ADD COLUMN IF NOT EXISTS $col_name $col_def"); } catch(Exception $e) {}
+    }
+} catch(Exception $e) {
+    error_log("mail-profile bootstrap: ".$e->getMessage());
+}
 
 $MAILBOXES = [
     'staff'   => ['label'=>'Staff',   'icon'=>'fa-users',      'color'=>'#2563eb'],
@@ -45,20 +59,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
     $action = $_POST['action'] ?? '';
 
-    // ── Save personal email settings
+    // ── Save personal email settings + SMTP credentials
     if ($action === 'save_profile') {
         $target_uid   = $is_admin && isset($_POST['target_user_id']) ? intval($_POST['target_user_id']) : $user_id;
         $work_email   = trim(filter_var($_POST['work_email']   ?? '', FILTER_SANITIZE_EMAIL));
         $display_name = trim(htmlspecialchars($_POST['display_name'] ?? '', ENT_QUOTES));
         $recv_group   = isset($_POST['receive_group']) ? true : false;
 
+        // SMTP credential fields
+        $smtp_user = trim($_POST['smtp_user'] ?? '');
+        $smtp_host = trim($_POST['smtp_host'] ?? 'mail.bluemogul.biz') ?: 'mail.bluemogul.biz';
+        $smtp_port = max(1, min(65535, intval($_POST['smtp_port'] ?? 587)));
+
+        // Password: only update if a new value was entered
+        $new_pass_raw = $_POST['smtp_password_new'] ?? '';
+        $current_enc  = '';
+        try {
+            $cur = $pdo->prepare("SELECT smtp_password FROM user_email_settings WHERE user_id=?");
+            $cur->execute([$target_uid]); $cur = $cur->fetch(PDO::FETCH_ASSOC);
+            $current_enc = $cur['smtp_password'] ?? '';
+        } catch(Exception $e) {}
+        $smtp_password = trim($new_pass_raw) !== '' ? mail_encrypt_password(trim($new_pass_raw)) : $current_enc;
+
         try {
             $pdo->prepare("
-                INSERT INTO user_email_settings (user_id, work_email, display_name, receive_group, updated_at)
-                VALUES (?,?,?,?,NOW())
-                ON CONFLICT (user_id) DO UPDATE SET work_email=EXCLUDED.work_email, display_name=EXCLUDED.display_name, receive_group=EXCLUDED.receive_group, updated_at=NOW()
-            ")->execute([$target_uid, $work_email, $display_name, $recv_group ? 'true' : 'false']);
-            $success = 'Email profile saved.';
+                INSERT INTO user_email_settings
+                    (user_id, work_email, display_name, receive_group, smtp_user, smtp_password, smtp_host, smtp_port, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,NOW())
+                ON CONFLICT (user_id) DO UPDATE SET
+                    work_email=EXCLUDED.work_email,
+                    display_name=EXCLUDED.display_name,
+                    receive_group=EXCLUDED.receive_group,
+                    smtp_user=EXCLUDED.smtp_user,
+                    smtp_password=EXCLUDED.smtp_password,
+                    smtp_host=EXCLUDED.smtp_host,
+                    smtp_port=EXCLUDED.smtp_port,
+                    updated_at=NOW()
+            ")->execute([$target_uid, $work_email, $display_name, $recv_group ? 'true' : 'false',
+                         $smtp_user, $smtp_password, $smtp_host, $smtp_port]);
+            $success = 'Email profile and credentials saved.';
         } catch(Exception $e) { $error = 'Save failed: '.$e->getMessage(); }
     }
 
@@ -86,15 +125,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $cfg->execute([$target_uid]); $cfg = $cfg->fetch(PDO::FETCH_ASSOC);
         $work_email = $cfg['work_email'] ?? '';
         $disp_name  = $cfg['display_name'] ?? $user_name;
+        $has_creds  = !empty($cfg['smtp_user']) && !empty($cfg['smtp_password']);
         if (!$work_email) {
             $error = 'No work email configured.';
         } else {
+            $cred_note = $has_creds ? 'using <strong>individual</strong> credentials' : 'using <strong>company</strong> SMTP fallback';
             $result = send_email_as(
-                $work_email, 'Test Email — Blue Mogul Portal',
-                '<p>This is a test email from <strong>Blue Mogul Admin Portal</strong>.</p><p>Your work email is correctly configured and ready to send.</p>',
-                $work_email, $disp_name
+                $work_email,
+                'Test Email — Blue Mogul Portal',
+                "<p>This is a test email from <strong>Blue Mogul Admin Portal</strong>.</p><p>Your work email is correctly configured and sending $cred_note.</p>",
+                $work_email, $disp_name, '', $target_uid
             );
-            if ($result['success']) $success = "Test email sent to $work_email ✓";
+            if ($result['success']) $success = "Test email sent to $work_email ✓ ($cred_note)";
             else $error = 'Test failed: '.$result['error'];
         }
     }
@@ -126,14 +168,24 @@ try {
     $vs->execute([$view_uid]); $view_cfg = $vs->fetch(PDO::FETCH_ASSOC) ?: [];
 
     if (empty($view_cfg)) {
-        // Load just from users table
         $vu = $pdo->prepare("SELECT name, email FROM users WHERE id=?");
         $vu->execute([$view_uid]); $vu = $vu->fetch(PDO::FETCH_ASSOC) ?: [];
-        $view_cfg['name']  = $vu['name'] ?? '';
-        $view_cfg['email'] = $vu['email'] ?? '';
-        $view_cfg['work_email'] = '';
-        $view_cfg['display_name'] = $vu['name'] ?? '';
+        $view_cfg['name']          = $vu['name'] ?? '';
+        $view_cfg['email']         = $vu['email'] ?? '';
+        $view_cfg['work_email']    = '';
+        $view_cfg['display_name']  = $vu['name'] ?? '';
         $view_cfg['receive_group'] = true;
+        $view_cfg['smtp_user']     = '';
+        $view_cfg['smtp_password'] = '';
+        $view_cfg['smtp_host']     = 'mail.bluemogul.biz';
+        $view_cfg['smtp_port']     = 587;
+    } else {
+        // Ensure defaults for new columns (upgrade path)
+        $view_cfg['smtp_user']    = $view_cfg['smtp_user']  ?? '';
+        $view_cfg['smtp_host']    = $view_cfg['smtp_host']  ?: 'mail.bluemogul.biz';
+        $view_cfg['smtp_port']    = intval($view_cfg['smtp_port'] ?: 587);
+        // Never expose the encrypted password to the form value — just track "has password"
+        $view_cfg['has_smtp_password'] = !empty($view_cfg['smtp_password']);
     }
 } catch(Exception $e) {}
 
@@ -319,6 +371,114 @@ try {
             </form>
         </div>
 
+        <!-- ── SMTP Credentials card ── -->
+        <div class="bg-white rounded-xl border border-gray-200">
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center gap-3">
+                <div class="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">
+                    <i class="fas fa-lock text-amber-600"></i>
+                </div>
+                <div class="flex-1">
+                    <h2 class="font-semibold text-gray-900">Email Credentials</h2>
+                    <p class="text-xs text-gray-500 mt-0.5">Set your personal SMTP login so mail sends from your own account</p>
+                </div>
+                <?php if ($view_cfg['has_smtp_password'] ?? false): ?>
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                    <i class="fas fa-check-circle"></i> Configured
+                </span>
+                <?php else: ?>
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                    <i class="fas fa-exclamation-triangle"></i> Not set — using company SMTP
+                </span>
+                <?php endif; ?>
+            </div>
+
+            <form method="POST" class="p-6 space-y-5">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="save_profile">
+                <?php if ($is_admin): ?><input type="hidden" name="target_user_id" value="<?= $view_uid ?>"><?php endif; ?>
+                <!-- Preserve other profile fields so they don't get cleared -->
+                <input type="hidden" name="work_email"    value="<?= htmlspecialchars($view_cfg['work_email']   ?? '') ?>">
+                <input type="hidden" name="display_name"  value="<?= htmlspecialchars($view_cfg['display_name'] ?? '') ?>">
+                <?php if ($view_cfg['receive_group'] ?? true): ?><input type="hidden" name="receive_group" value="1"><?php endif; ?>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- SMTP Username (usually the full email address) -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">
+                            SMTP Username <span class="font-normal text-gray-400">(usually your full email address)</span>
+                        </label>
+                        <div class="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-200">
+                            <i class="fas fa-user text-gray-400 text-xs"></i>
+                            <input type="text" name="smtp_user"
+                                value="<?= htmlspecialchars($view_cfg['smtp_user'] ?? '') ?>"
+                                placeholder="<?= htmlspecialchars($view_cfg['work_email'] ?? 'john@bluemogul.biz') ?>"
+                                class="flex-1 outline-none text-sm text-gray-800"
+                                data-testid="input-smtp-user">
+                        </div>
+                    </div>
+
+                    <!-- SMTP Password -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">
+                            SMTP Password
+                            <?php if ($view_cfg['has_smtp_password'] ?? false): ?>
+                            <span class="font-normal text-green-600 ml-1"><i class="fas fa-lock text-xs"></i> Saved — leave blank to keep</span>
+                            <?php endif; ?>
+                        </label>
+                        <div class="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-200">
+                            <i class="fas fa-key text-gray-400 text-xs"></i>
+                            <input type="password" name="smtp_password_new" id="smtp-pass-input"
+                                autocomplete="new-password"
+                                placeholder="<?= ($view_cfg['has_smtp_password'] ?? false) ? '••••••••• (unchanged)' : 'Enter SMTP password' ?>"
+                                class="flex-1 outline-none text-sm text-gray-800"
+                                data-testid="input-smtp-password">
+                            <button type="button" onclick="togglePassVisibility()" class="text-gray-400 hover:text-gray-600" title="Show/hide password">
+                                <i class="fas fa-eye text-xs" id="pass-eye-icon"></i>
+                            </button>
+                        </div>
+                        <p class="mt-1 text-xs text-gray-400">Password is stored encrypted on the server</p>
+                    </div>
+                </div>
+
+                <!-- SMTP Host / Port -->
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">SMTP Host</label>
+                        <div class="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-200">
+                            <i class="fas fa-server text-gray-400 text-xs"></i>
+                            <input type="text" name="smtp_host"
+                                value="<?= htmlspecialchars($view_cfg['smtp_host'] ?? 'mail.bluemogul.biz') ?>"
+                                placeholder="mail.bluemogul.biz"
+                                class="flex-1 outline-none text-sm text-gray-800"
+                                data-testid="input-smtp-host">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Port</label>
+                        <div class="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-200">
+                            <input type="number" name="smtp_port" min="1" max="65535"
+                                value="<?= intval($view_cfg['smtp_port'] ?? 587) ?>"
+                                class="flex-1 outline-none text-sm text-gray-800 w-full"
+                                data-testid="input-smtp-port">
+                        </div>
+                        <p class="mt-1 text-xs text-gray-400">587=STARTTLS, 465=SSL</p>
+                    </div>
+                </div>
+
+                <!-- Info banner -->
+                <div class="flex gap-3 p-3.5 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700">
+                    <i class="fas fa-info-circle mt-0.5 flex-shrink-0"></i>
+                    <span>If credentials are not set, emails will fall back to the company SMTP account configured in <a href="admin-smtp-settings.php" class="underline font-medium hover:text-blue-900">Settings → Email SMTP</a>.</span>
+                </div>
+
+                <button type="submit"
+                    class="bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                    data-testid="btn-save-credentials">
+                    <i class="fas fa-save mr-1.5"></i>Save Credentials
+                </button>
+            </form>
+        </div>
+
         <!-- Group memberships -->
         <div class="bg-white rounded-xl border border-gray-200">
             <div class="px-6 py-5 border-b border-gray-100 flex items-center gap-3">
@@ -377,28 +537,49 @@ try {
             </form>
         </div>
 
-        <!-- SMTP info card -->
-        <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-6 text-white">
+        <!-- Send status card -->
+        <?php
+        $has_own = !empty($view_cfg['smtp_user']) && ($view_cfg['has_smtp_password'] ?? false);
+        $display_host = $has_own ? htmlspecialchars($view_cfg['smtp_host'] ?? 'mail.bluemogul.biz') : 'mail.bluemogul.biz';
+        $display_port = $has_own ? intval($view_cfg['smtp_port'] ?? 587) : 587;
+        ?>
+        <div class="bg-gradient-to-br <?= $has_own ? 'from-green-800 to-emerald-900' : 'from-slate-800 to-slate-900' ?> rounded-xl p-6 text-white">
             <div class="flex items-start gap-4">
                 <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
-                    <i class="fas fa-server text-blue-300"></i>
+                    <i class="fas <?= $has_own ? 'fa-user-check' : 'fa-server' ?> text-<?= $has_own ? 'green' : 'blue' ?>-300"></i>
                 </div>
-                <div>
-                    <h3 class="font-semibold text-white mb-1">Company SMTP Server</h3>
-                    <p class="text-sm text-slate-300 mb-3">All emails are sent via the company mail server. Your work email is used as the From address.</p>
+                <div class="flex-1">
+                    <h3 class="font-semibold text-white mb-1">
+                        <?= $has_own ? 'Sending via Individual Account' : 'Sending via Company SMTP' ?>
+                    </h3>
+                    <p class="text-sm text-slate-300 mb-3">
+                        <?= $has_own
+                            ? 'Outbound emails authenticate with <strong>'.$display_host.'</strong> using your personal credentials.'
+                            : 'No individual credentials set — outbound mail uses the shared company SMTP account. Set credentials above to send independently.' ?>
+                    </p>
                     <div class="grid grid-cols-2 gap-3">
                         <div class="bg-white/10 rounded-lg px-3 py-2">
                             <div class="text-xs text-slate-400">Host</div>
-                            <div class="text-sm font-mono text-white">mail.bluemogul.biz</div>
+                            <div class="text-sm font-mono text-white"><?= $display_host ?></div>
                         </div>
                         <div class="bg-white/10 rounded-lg px-3 py-2">
                             <div class="text-xs text-slate-400">Port</div>
-                            <div class="text-sm font-mono text-white">587 (STARTTLS)</div>
+                            <div class="text-sm font-mono text-white"><?= $display_port ?> (<?= $display_port===465?'SSL':'STARTTLS' ?>)</div>
                         </div>
+                        <?php if ($has_own): ?>
+                        <div class="bg-white/10 rounded-lg px-3 py-2 col-span-2 flex items-center gap-2">
+                            <i class="fas fa-user text-xs text-slate-400"></i>
+                            <div>
+                                <div class="text-xs text-slate-400">Authenticated as</div>
+                                <div class="text-sm text-white font-mono"><?= htmlspecialchars($view_cfg['smtp_user'] ?? '') ?></div>
+                            </div>
+                        </div>
+                        <?php else: ?>
                         <div class="bg-white/10 rounded-lg px-3 py-2 col-span-2">
                             <div class="text-xs text-slate-400">Authentication</div>
-                            <div class="text-sm text-white">Company SMTP credentials (configured in Settings → Email SMTP)</div>
+                            <div class="text-sm text-white">Company credentials (<a href="admin-smtp-settings.php" class="underline text-blue-300 hover:text-blue-200">Settings → Email SMTP</a>)</div>
                         </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -409,5 +590,19 @@ try {
 </div>
 </div>
 
+<script>
+function togglePassVisibility() {
+    const inp = document.getElementById('smtp-pass-input');
+    const ico = document.getElementById('pass-eye-icon');
+    if (!inp) return;
+    if (inp.type === 'password') {
+        inp.type = 'text';
+        ico.className = 'fas fa-eye-slash text-xs';
+    } else {
+        inp.type = 'password';
+        ico.className = 'fas fa-eye text-xs';
+    }
+}
+</script>
 </body>
 </html>
