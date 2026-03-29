@@ -41,7 +41,7 @@
             </div>
 
             <?php
-            $leads_pages = ['admin-leads-dashboard.php','admin-leads-add.php','admin-leads-list.php','admin-leads-view.php','admin-leads-quotes.php','admin-leads-maps.php','admin-smtp-settings.php'];
+            $leads_pages = ['admin-leads-dashboard.php','admin-leads-add.php','admin-leads-list.php','admin-leads-view.php','admin-leads-quotes.php','admin-leads-maps.php','admin-smtp-settings.php','admin-companies.php'];
             $leads_open  = in_array($current_page, $leads_pages);
             ?>
             <div>
@@ -54,11 +54,12 @@
                 </button>
                 <div id="leads-subnav" class="<?= $leads_open ? '' : 'hidden' ?> ml-4 mt-1 space-y-0.5 border-l-2 border-gray-700 pl-3">
                     <?php foreach ([
-                        ['admin-leads-dashboard.php', 'fa-tachometer-alt', 'Dashboard',     'link-leads-dashboard'],
-                        ['admin-leads-add.php',       'fa-plus',           'Add Lead',      'link-leads-add'],
-                        ['admin-leads-list.php',      'fa-list',           'List',          'link-leads-list'],
-                        ['admin-leads-quotes.php',    'fa-file-alt',       'Quotes',        'link-leads-quotes'],
-                        ['admin-leads-maps.php',      'fa-map-marked-alt', 'Maps',          'link-leads-maps'],
+                        ['admin-leads-dashboard.php', 'fa-tachometer-alt',   'Dashboard',   'link-leads-dashboard'],
+                        ['admin-leads-add.php',       'fa-plus',             'Add Lead',    'link-leads-add'],
+                        ['admin-leads-list.php',      'fa-list',             'List',        'link-leads-list'],
+                        ['admin-companies.php',       'fa-building',         'Companies',   'link-companies'],
+                        ['admin-leads-quotes.php',    'fa-file-alt',         'Quotes',      'link-leads-quotes'],
+                        ['admin-leads-maps.php',      'fa-map-marked-alt',   'Maps',        'link-leads-maps'],
                         ['admin-smtp-settings.php',   'fa-envelope-open-text','Email SMTP', 'link-smtp-settings'],
                     ] as [$href,$icon,$label,$tid]): ?>
                     <a href="<?= $href ?>" class="flex items-center space-x-3 px-3 py-2 rounded-lg text-sm <?= $current_page===$href ? 'bg-blue-600 text-white font-medium' : 'text-gray-400 hover:bg-gray-700 hover:text-white transition' ?>" data-testid="<?= $tid ?>">
@@ -213,10 +214,6 @@
                     <span>Hostwinds Cloud</span>
                 </a>
 
-                <a href="admin-providers.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-providers.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-providers">
-                    <i class="fas fa-plug w-5"></i>
-                    <span>Provider Accounts</span>
-                </a>
             </div>
         </div>
 

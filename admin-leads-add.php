@@ -24,13 +24,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $zip_code        = trim($_POST['zip_code']        ?? '');
         $geo_data        = trim($_POST['geo_data']        ?? '');
         $custom_status   = trim($_POST['custom_status']   ?? 'customer');
+        $company_id      = !empty($_POST['company_id']) ? (int)$_POST['company_id'] : null;
+        // Resolve company name from ID
+        $company_name    = '';
+        if ($company_id) {
+            try {
+                $cn = $pdo->prepare("SELECT name FROM companies WHERE id=?");
+                $cn->execute([$company_id]);
+                $company_name = $cn->fetchColumn() ?: '';
+            } catch (Exception $e) {}
+        }
 
         if (!$full_name) {
             $error_msg = 'Full name is required.';
         } else {
             try {
-                $st = $pdo->prepare("INSERT INTO leads (full_name,pipeline_status,owner,phone,email,source,partner,location,city,street,zip_code,geo_data,custom_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id");
-                $st->execute([$full_name,$pipeline_status,$owner,$phone,$email,$source,$partner,$location,$city,$street,$zip_code,$geo_data,$custom_status]);
+                $st = $pdo->prepare("INSERT INTO leads (full_name,pipeline_status,owner,phone,email,source,partner,location,city,street,zip_code,geo_data,custom_status,company_id,company_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id");
+                $st->execute([$full_name,$pipeline_status,$owner,$phone,$email,$source,$partner,$location,$city,$street,$zip_code,$geo_data,$custom_status,$company_id,$company_name]);
                 $lead_id = $st->fetchColumn();
                 // Generate lead number
                 $pdo->prepare("UPDATE leads SET lead_number=LPAD(id::text,6,'0') WHERE id=?")->execute([$lead_id]);
@@ -49,6 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $existing_sources = $pdo->query("SELECT DISTINCT source FROM leads WHERE source IS NOT NULL AND source!='' ORDER BY source")->fetchAll(PDO::FETCH_COLUMN);
 $partners         = $pdo->query("SELECT DISTINCT partner FROM leads WHERE partner IS NOT NULL AND partner!='' ORDER BY partner")->fetchAll(PDO::FETCH_COLUMN);
 $locations        = $pdo->query("SELECT DISTINCT location FROM leads WHERE location IS NOT NULL AND location!='' ORDER BY location")->fetchAll(PDO::FETCH_COLUMN);
+// Companies for dropdown
+$companies = [];
+try { $companies = $pdo->query("SELECT id,name FROM companies ORDER BY name")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -99,6 +112,29 @@ $locations        = $pdo->query("SELECT DISTINCT location FROM leads WHERE locat
                 <input type="text" name="full_name" required
                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     data-testid="input-full-name">
+            </div>
+        </div>
+
+        <!-- Company -->
+        <div class="grid grid-cols-3 items-start gap-4">
+            <label class="text-sm font-medium text-gray-600 text-right pt-2">Company</label>
+            <div class="col-span-2">
+                <div class="flex gap-2">
+                    <select name="company_id" id="company-select"
+                            class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            data-testid="select-company">
+                        <option value="">— None —</option>
+                        <?php foreach ($companies as $co): ?>
+                        <option value="<?= $co['id'] ?>"><?= htmlspecialchars($co['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="button" onclick="openQuickAddCompany()"
+                            class="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-sm font-medium transition whitespace-nowrap"
+                            title="Add new company" data-testid="button-quick-add-company">
+                        <i class="fas fa-plus mr-1"></i>New
+                    </button>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">Optional — link this lead to a company</p>
             </div>
         </div>
 
@@ -257,5 +293,104 @@ $locations        = $pdo->query("SELECT DISTINCT location FROM leads WHERE locat
 </div>
 </div>
 </div>
+
+<!-- ── Quick-Add Company Modal ─────────────────────────────────────────────── -->
+<div id="quick-company-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/50" onclick="closeQuickAddCompany()"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md pointer-events-auto">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h3 class="text-base font-semibold text-gray-900"><i class="fas fa-building text-indigo-500 mr-2"></i>Quick-Add Company</h3>
+                <button type="button" onclick="closeQuickAddCompany()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="p-5 space-y-3" id="qac-body">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Company Name <span class="text-red-500">*</span></label>
+                    <input type="text" id="qac-name" placeholder="Acme Corp"
+                           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           data-testid="input-qac-name">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Phone</label>
+                        <input type="tel" id="qac-phone" placeholder="(555) 555-0100"
+                               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Email</label>
+                        <input type="email" id="qac-email" placeholder="info@company.com"
+                               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Industry</label>
+                    <input type="text" id="qac-industry" placeholder="Technology, Healthcare…"
+                           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <p id="qac-error" class="hidden text-sm text-red-600"></p>
+            </div>
+            <div class="px-5 pb-5 flex justify-end gap-3">
+                <button type="button" onclick="closeQuickAddCompany()" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 transition">Cancel</button>
+                <button type="button" onclick="saveQuickCompany()" id="qac-save"
+                        class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition"
+                        data-testid="button-qac-save">
+                    <i class="fas fa-save mr-1"></i>Save &amp; Select
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openQuickAddCompany()  { document.getElementById('quick-company-modal').classList.remove('hidden'); document.getElementById('qac-name').focus(); }
+function closeQuickAddCompany() { document.getElementById('quick-company-modal').classList.add('hidden'); }
+
+async function saveQuickCompany() {
+    const name     = document.getElementById('qac-name').value.trim();
+    const phone    = document.getElementById('qac-phone').value.trim();
+    const email    = document.getElementById('qac-email').value.trim();
+    const industry = document.getElementById('qac-industry').value.trim();
+    const errEl    = document.getElementById('qac-error');
+    const saveBtn  = document.getElementById('qac-save');
+
+    if (!name) { errEl.textContent = 'Company name is required.'; errEl.classList.remove('hidden'); return; }
+    errEl.classList.add('hidden');
+
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Saving…';
+
+    // Use a hidden form to POST via AJAX (avoids CSRF issues by posting the existing token)
+    const csrf = document.querySelector('input[name="_csrf_token"]')?.value || '';
+    const body = new URLSearchParams({ action:'add_company', name, phone, email, industry, _csrf_token: csrf });
+
+    try {
+        const res  = await fetch('admin-companies.php', { method:'POST', body, headers:{'Content-Type':'application/x-www-form-urlencoded'} });
+        // Re-fetch company list from API to get the new ID
+        const listRes  = await fetch('admin-companies.php?ajax_companies=1');
+        const listJson = await listRes.json().catch(() => null);
+
+        if (listJson && listJson.companies) {
+            const sel = document.getElementById('company-select');
+            // Rebuild options
+            while (sel.options.length > 1) sel.remove(1);
+            listJson.companies.forEach(co => {
+                const opt = new Option(co.name, co.id);
+                sel.add(opt);
+            });
+            // Select the latest (highest ID among newly added)
+            const newest = listJson.companies.reduce((a,b) => +a.id > +b.id ? a : b, {id:0});
+            sel.value = newest.id;
+        }
+        closeQuickAddCompany();
+        document.getElementById('qac-name').value = document.getElementById('qac-phone').value = document.getElementById('qac-email').value = document.getElementById('qac-industry').value = '';
+    } catch(e) {
+        errEl.textContent = 'Save failed — please try again.';
+        errEl.classList.remove('hidden');
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fas fa-save mr-1"></i>Save &amp; Select';
+    }
+}
+</script>
 </body>
 </html>

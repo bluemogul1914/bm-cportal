@@ -4,6 +4,24 @@
  * Creates all required tables if they don't exist.
  */
 function leads_bootstrap(PDO $pdo): void {
+    // Companies table — must exist before leads (FK reference)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS companies (
+            id         SERIAL PRIMARY KEY,
+            name       VARCHAR(200) NOT NULL,
+            website    VARCHAR(300),
+            phone      VARCHAR(50),
+            email      VARCHAR(200),
+            industry   VARCHAR(100),
+            city       VARCHAR(100),
+            state_prov VARCHAR(100),
+            address    VARCHAR(300),
+            notes      TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    ");
+
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS leads (
             id            SERIAL PRIMARY KEY,
@@ -21,6 +39,8 @@ function leads_bootstrap(PDO $pdo): void {
             zip_code      VARCHAR(20),
             geo_data      VARCHAR(200),
             custom_status VARCHAR(50)  DEFAULT 'customer',
+            company_id    INT,
+            company_name  VARCHAR(200),
             deal_value    DECIMAL(12,2) DEFAULT 0,
             notes         TEXT,
             last_contacted TIMESTAMP,
@@ -90,6 +110,14 @@ function leads_bootstrap(PDO $pdo): void {
             UNIQUE(provider, key_name)
         );
     ");
+
+    // Migrate existing leads table — add company columns if missing
+    foreach ([
+        "ALTER TABLE leads ADD COLUMN IF NOT EXISTS company_id   INT",
+        "ALTER TABLE leads ADD COLUMN IF NOT EXISTS company_name VARCHAR(200)",
+    ] as $sql) {
+        try { $pdo->exec($sql); } catch (Exception $e) {}
+    }
 }
 
 // Pipeline status helpers
