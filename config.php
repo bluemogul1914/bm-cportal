@@ -359,6 +359,17 @@ function verify_csrf($token) {
     return hash_equals($_SESSION['csrf_token'], $token);
 }
 
+/**
+ * Compatibility wrapper used by pages that call validate_csrf_token().
+ * Checks both 'csrf_token' and '_csrf_token' POST keys.
+ */
+function validate_csrf_token($token = null) {
+    if ($token === null) {
+        $token = $_POST['_csrf_token'] ?? $_POST['csrf_token'] ?? '';
+    }
+    return verify_csrf($token);
+}
+
 function require_csrf() {
     if (!verify_csrf($_POST['csrf_token'] ?? '')) {
         logMessage('WARNING', 'CSRF token validation failed', [
