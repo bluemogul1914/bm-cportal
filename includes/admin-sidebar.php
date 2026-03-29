@@ -69,6 +69,11 @@
                 </div>
             </div>
 
+            <a href="admin-crm.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-crm.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-crm">
+                <i class="fas fa-handshake w-5 text-emerald-400"></i>
+                <span>CRM</span>
+            </a>
+
             <a href="admin-tickets.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-tickets.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                 <i class="fas fa-ticket-alt w-5"></i>
                 <span>Tickets</span>
