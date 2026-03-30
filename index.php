@@ -161,37 +161,6 @@
 
                     </form>
 
-                    <!-- Divider -->
-                    <div class="relative my-6">
-                        <div class="absolute inset-0 flex items-center">
-                            <div class="w-full border-t border-gray-200"></div>
-                        </div>
-                        <div class="relative flex justify-center text-xs">
-                            <span class="px-3 bg-white text-gray-400 uppercase tracking-wide">Or access directly</span>
-                        </div>
-                    </div>
-
-                    <!-- Quick Access -->
-                    <div class="grid grid-cols-2 gap-3">
-                        <a
-                            href="https://itflow.bluemogul.us"
-                            target="_blank"
-                            data-testid="link-itflow"
-                            class="flex items-center justify-center px-3 py-2.5 border-2 border-gray-200 rounded-xl hover:border-blue-mogul-primary hover:bg-blue-50 transition-all group"
-                        >
-                            <i class="fas fa-ticket-alt mr-2 text-gray-400 group-hover:text-blue-mogul-primary text-sm"></i>
-                            <span class="text-xs font-semibold text-gray-600 group-hover:text-blue-mogul-primary">ITFlow Portal</span>
-                        </a>
-                        <a
-                            href="https://uisp.bluemogul.us/crm/client-zone"
-                            target="_blank"
-                            data-testid="link-uisp"
-                            class="flex items-center justify-center px-3 py-2.5 border-2 border-gray-200 rounded-xl hover:border-blue-mogul-primary hover:bg-blue-50 transition-all group"
-                        >
-                            <i class="fas fa-network-wired mr-2 text-gray-400 group-hover:text-blue-mogul-primary text-sm"></i>
-                            <span class="text-xs font-semibold text-gray-600 group-hover:text-blue-mogul-primary">UISP Zone</span>
-                        </a>
-                    </div>
 
                 </div>
 
