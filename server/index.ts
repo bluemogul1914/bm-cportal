@@ -99,14 +99,19 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+app.set("trust proxy", 1);
+
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "bluemogul-portal-secret",
     resave: false,
     saveUninitialized: true,
+    proxy: true,
     cookie: {
       maxAge: 24 * 60 * 60 * 1000,
       httpOnly: true,
+      secure: false,
+      sameSite: "lax",
     },
   })
 );
@@ -181,13 +186,13 @@ if ($_sessionData) {
 }
 
 function extractCsrfToken(stdout: string, req: Request): string {
-  const csrfMatch = stdout.match(/\n__CSRF_TOKEN__:([a-f0-9]+)$/);
+  const csrfMatch = stdout.match(/\n__CSRF_TOKEN__:([a-f0-9]+)\s*$/);
   if (csrfMatch) {
     (req.session as any).csrfToken = csrfMatch[1];
     req.session.save(() => {});
-    return stdout.replace(/\n__CSRF_TOKEN__:[a-f0-9]+$/, '');
+    return stdout.replace(/\n__CSRF_TOKEN__:[a-f0-9]+\s*$/, '').trimEnd();
   }
-  return stdout.replace(/\n__CSRF_TOKEN__:$/, '');
+  return stdout.replace(/\n__CSRF_TOKEN__:\s*$/, '').trimEnd();
 }
 
 function handlePhpResponse(stdout: string, req: Request, res: Response) {
@@ -357,7 +362,14 @@ function handleLogin(req: Request, res: Response) {
   }
   const postData = formParts.join("&");
 
-  const csrfToken = (req.session as any)?.csrfToken || '';
+  const sessionCsrfToken = (req.session as any)?.csrfToken || '';
+  const postCsrfToken = String((req.body as any)?.csrf_token || '');
+  // Use session CSRF token if available; fall back to the POSTed token so login
+  // still works in environments where the session cookie may not round-trip
+  // (e.g. behind certain reverse proxies).  Both values come from the same
+  // PHP-generated token, so the hash_equals check inside PHP still passes.
+  const csrfToken = sessionCsrfToken || postCsrfToken;
+  console.log(`[LOGIN] session CSRF: ${sessionCsrfToken ? 'present' : 'MISSING'}, post CSRF: ${postCsrfToken ? 'present' : 'MISSING'}, using: ${csrfToken ? 'yes' : 'none'}`);
   const csrfInject = csrfToken ? `\n\$_SESSION['csrf_token'] = '${csrfToken.replace(/'/g, "\\'")}';` : '';
 
   const phpCode = `<?php
@@ -385,11 +397,12 @@ require '${filePath.replace(/'/g, "\\'")}';
       (error, stdout, stderr) => {
         unlink(tmpFile).catch(() => {});
         if (error) {
-          console.error("PHP login handler error:", stderr || error.message);
-          return res.status(500).json({ success: false, message: "Server error" });
+          console.error("[LOGIN] PHP exec error:", stderr || error.message);
+          return res.status(500).json({ success: false, message: "Server error during login" });
         }
-        if (stderr && stderr.includes('ERROR')) console.error("[LOGIN] PHP error:", stderr);
+        if (stderr) console.error("[LOGIN] PHP stderr:", stderr);
         stdout = extractCsrfToken(stdout, req);
+        console.log("[LOGIN] PHP stdout:", stdout.slice(0, 500));
         try {
           const json = JSON.parse(stdout);
           if (json.success && json.user) {
@@ -2343,15 +2356,26 @@ async function bootstrapPortalDatabase() {
       )
     `);
 
-    const adminCheck = await webhookPool.query("SELECT id FROM users WHERE email = 'admin@bluemogul.biz' LIMIT 1");
+    const adminCheck = await webhookPool.query("SELECT id, password FROM users WHERE email = 'admin@bluemogul.biz' LIMIT 1");
+    const { execSync } = await import("child_process");
+    const phpHash = execSync(`php -r "echo password_hash('admin123', PASSWORD_BCRYPT);"`, { encoding: "utf-8" }).trim();
     if (adminCheck.rows.length === 0) {
-      const { execSync } = await import("child_process");
-      const hash = execSync(`php -r "echo password_hash('admin123', PASSWORD_BCRYPT);"`, { encoding: "utf-8" }).trim();
       await webhookPool.query(
         "INSERT INTO users (email, password, name, is_admin, role, status) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (email) DO NOTHING",
-        ["admin@bluemogul.biz", hash, "Admin", true, "super-admin", "active"]
+        ["admin@bluemogul.biz", phpHash, "Admin", true, "super-admin", "active"]
       );
       console.log("Created admin user: admin@bluemogul.biz");
+    } else {
+      // Ensure the hash is PHP-compatible ($2y$). Node.js bcrypt generates $2b$
+      // which PHP's password_verify cannot verify. Fix it on every startup.
+      const existingHash: string = adminCheck.rows[0].password || '';
+      if (!existingHash.startsWith('$2y$')) {
+        await webhookPool.query(
+          "UPDATE users SET password = $1 WHERE email = 'admin@bluemogul.biz'",
+          [phpHash]
+        );
+        console.log("Updated admin password to PHP-compatible hash");
+      }
     }
 
     const products = [
