@@ -15,6 +15,8 @@ FROM node:20-alpine AS runner
 RUN apk add --no-cache \
     php \
     php-pgsql \
+    php-pdo \
+    php-pdo_pgsql \
     php-curl \
     php-mbstring \
     php-dom \
