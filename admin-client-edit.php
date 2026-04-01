@@ -47,7 +47,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
         $error_msg = 'Name and email are required.';
     } else {
         try {
-            $stmt = $pdo->prepare("UPDATE clients SET name = ?, email = ?, phone = ?, company = ?, address = ?, city = ?, state = ?, zip = ?, notes = ?, latitude = ?, longitude = ?, credit_balance = ?, parent_client_id = ?, updated_at = NOW() WHERE id = ?");
+            $stmt = $pdo->prepare("UPDATE clients SET name = ?, email = ?, phone = ?, company = ?, address = ?, city = ?, state = ?, zip = ?, notes = ?, latitude = ?, longitude = ?, credit_balance = ?, parent_id = ?, updated_at = NOW() WHERE id = ?");
             $stmt->execute([$name, $email, $phone, $company, $address, $city, $state, $zip, $notes, $latitude ?: null, $longitude ?: null, $credit_balance, $parent_client_id, $client_id]);
             $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'client_updated', 'client', $client_id, 'Updated client: ' . $name, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             $success_msg = 'Client updated successfully!';
@@ -182,7 +182,7 @@ if (preg_match('/\[TAGS:(.*?)\]/', $client_notes_raw, $m)) {
                                 <option value="0">— No Parent (This is a Master Account) —</option>
                                 <?php foreach ($all_clients as $c): ?>
                                     <?php if ($c['id'] !== $client_id): ?>
-                                    <option value="<?php echo $c['id']; ?>" <?php echo ($client['parent_client_id'] ?? 0) == $c['id'] ? 'selected' : ''; ?>>
+                                    <option value="<?php echo $c['id']; ?>" <?php echo ($client['parent_id'] ?? 0) == $c['id'] ? 'selected' : ''; ?>>
                                         <?php echo htmlspecialchars($c['name']); ?><?php if ($c['company']) echo ' (' . htmlspecialchars($c['company']) . ')'; ?>
                                     </option>
                                     <?php endif; ?>

@@ -223,14 +223,14 @@ try {
     }
 
     $parent_client = null;
-    if (!empty($client['parent_client_id'])) {
+    if (!empty($client['parent_id'])) {
         $stmt = $pdo->prepare("SELECT id, name, company, email FROM clients WHERE id = ?");
-        $stmt->execute([$client['parent_client_id']]);
+        $stmt->execute([$client['parent_id']]);
         $parent_client = $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
     $sub_accounts = [];
-    $stmt = $pdo->prepare("SELECT id, name, email, company, status FROM clients WHERE parent_client_id = ? ORDER BY name ASC");
+    $stmt = $pdo->prepare("SELECT id, name, email, company, status FROM clients WHERE parent_id = ? ORDER BY name ASC");
     $stmt->execute([$client_id]);
     $sub_accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

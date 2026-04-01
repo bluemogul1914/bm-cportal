@@ -55,7 +55,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
         $error_msg = 'Name and email are required.';
     } else {
         try {
-            $stmt = $pdo->prepare("INSERT INTO clients (name, email, phone, company, address, city, state, zip, notes, latitude, longitude, credit_balance, parent_client_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()) RETURNING id");
+            $stmt = $pdo->prepare("INSERT INTO clients (name, email, phone, company, address, city, state, zip, notes, latitude, longitude, credit_balance, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()) RETURNING id");
             $stmt->execute([$name, $email, $phone, $company, $address, $city, $state, $zip, $notes, $latitude ?: null, $longitude ?: null, $credit_balance, $parent_client_id]);
             $new_client_id = $stmt->fetchColumn();
             $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'client_created', 'client', $new_client_id, 'Created client: ' . $name, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);

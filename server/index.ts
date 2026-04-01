@@ -247,6 +247,7 @@ require '${filePath.replace(/'/g, "\\'")}';
   });
 }
 
+
 app.get("/portal", (req, res) => {
   executePhpFile(join(projectRoot, "index.php"), req, res);
 });
