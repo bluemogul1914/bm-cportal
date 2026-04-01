@@ -2005,12 +2005,16 @@ async function bootstrapPortalDatabase() {
         total DECIMAL(10,2) DEFAULT 0,
         status VARCHAR(20) DEFAULT 'unpaid',
         due_date DATE,
+        paid_date DATE,
         notes TEXT,
         footer TEXT,
         items JSONB DEFAULT '[]',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        external_id VARCHAR(100)
       )
     `);
+    await webhookPool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS paid_date DATE`);
+    await webhookPool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS external_id VARCHAR(100)`);
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS payments (
         id SERIAL PRIMARY KEY,

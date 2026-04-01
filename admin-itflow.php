@@ -285,6 +285,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
     if ($action === 'sync_invoices') {
         $result = itflow_api_request('invoices', 'read');
         $contacts_result = itflow_api_request('contacts', 'read');
+        $clients_result = itflow_api_request('clients', 'read');
 
         if ($result['success'] && isset($result['data'])) {
             $invoices_data = $result['data']['data'] ?? [];
@@ -297,6 +298,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
                     if ($cid && !isset($contact_email_by_client[$cid]) && !empty($ct['contact_email'])) {
                         $contact_email_by_client[$cid] = $ct['contact_email'];
                     }
+                }
+            }
+
+            // Build client name lookup from ITFlow clients
+            $itf_client_name_by_id = [];
+            if ($clients_result['success'] && isset($clients_result['data']['data'])) {
+                foreach ($clients_result['data']['data'] as $cl) {
+                    $cid = $cl['client_id'] ?? '';
+                    $cname = $cl['client_name'] ?? '';
+                    if ($cid && $cname) $itf_client_name_by_id[$cid] = $cname;
                 }
             }
 
@@ -334,6 +345,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
 
                 try {
                     $client_id = null;
+                    $itf_inv_id = $itf_inv['invoice_id'] ?? '';
                     $client_email = $contact_email_by_client[$itf_client_id] ?? '';
                     if ($client_email) {
                         $cl = $db->prepare("SELECT id FROM clients WHERE email = ?");
@@ -341,22 +353,42 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
                         $client_row = $cl->fetch();
                         if ($client_row) $client_id = $client_row['id'];
                     }
+                    // Fallback: match by ITFlow client name against portal client name/company
+                    if (!$client_id && !empty($itf_client_name_by_id[$itf_client_id])) {
+                        $itf_name = $itf_client_name_by_id[$itf_client_id];
+                        $cl = $db->prepare("SELECT id FROM clients WHERE name ILIKE ? OR company ILIKE ? LIMIT 1");
+                        $cl->execute([$itf_name, $itf_name]);
+                        $client_row = $cl->fetch();
+                        if ($client_row) $client_id = $client_row['id'];
+                    }
 
                     if (!$client_id) { $skipped++; continue; }
 
-                    $dup = $db->prepare("SELECT id FROM invoices WHERE invoice_number = ? AND client_id = ?");
-                    $dup->execute([$inv_number, $client_id]);
-                    if ($dup->fetch()) {
-                        $db->prepare("UPDATE invoices SET amount = ?, status = ?, due_date = ?, paid_date = ? WHERE invoice_number = ? AND client_id = ?")
-                           ->execute([$amount, $status, $due_date, $paid_date, $inv_number, $client_id]);
+                    // Check for existing by external_id first, then by invoice_number
+                    $dup_row = null;
+                    if ($itf_inv_id) {
+                        $dup = $db->prepare("SELECT id FROM invoices WHERE external_id = ?");
+                        $dup->execute(['itflow_' . $itf_inv_id]);
+                        $dup_row = $dup->fetch();
+                    }
+                    if (!$dup_row) {
+                        $dup = $db->prepare("SELECT id FROM invoices WHERE invoice_number = ? AND client_id = ?");
+                        $dup->execute([$inv_number, $client_id]);
+                        $dup_row = $dup->fetch();
+                    }
+
+                    if ($dup_row) {
+                        $db->prepare("UPDATE invoices SET amount = ?, status = ?, due_date = ?, paid_date = ?, external_id = ? WHERE id = ?")
+                           ->execute([$amount, $status, $due_date ?: null, $paid_date, 'itflow_' . $itf_inv_id, $dup_row['id']]);
                         $synced++;
                         continue;
                     }
 
-                    $db->prepare("INSERT INTO invoices (client_id, invoice_number, amount, status, due_date, paid_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                       ->execute([$client_id, $inv_number, $amount, $status, $due_date, $paid_date, $inv_date ?? date('Y-m-d')]);
+                    $db->prepare("INSERT INTO invoices (client_id, invoice_number, amount, status, due_date, paid_date, external_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                       ->execute([$client_id, $inv_number, $amount, $status, $due_date ?: null, $paid_date, 'itflow_' . $itf_inv_id, $inv_date ?? date('Y-m-d')]);
                     $synced++;
                 } catch (Exception $e) {
+                    error_log('ITFlow invoice sync error: ' . $e->getMessage());
                     $errors++;
                 }
             }
