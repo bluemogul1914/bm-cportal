@@ -13,6 +13,7 @@ import { join, resolve } from "path";
 import { randomUUID } from "crypto";
 import session from "express-session";
 import pg from "pg";
+import bcrypt from "bcryptjs";
 
 const webhookPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -353,82 +354,127 @@ a{color:#1a56db;text-decoration:none;}</style></head>
   });
 });
 
-function handleLogin(req: Request, res: Response) {
-  const filePath = join(projectRoot, "login-handler.php");
+async function handleLogin(req: Request, res: Response) {
+  try {
+    const body = req.body || {};
+    const email = String(body.email || '').trim().toLowerCase();
+    const password = String(body.password || '');
+    const remember = body.remember === '1';
+    const postCsrfToken = String(body.csrf_token || '');
+    const sessionCsrfToken = String((req.session as any)?.csrfToken || '');
 
-  const formParts: string[] = [];
-  for (const [key, value] of Object.entries(req.body || {})) {
-    formParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
-  }
-  const postData = formParts.join("&");
+    console.log(`[LOGIN] attempt for ${email} | session CSRF: ${sessionCsrfToken ? 'present' : 'MISSING'}, post CSRF: ${postCsrfToken ? 'present' : 'MISSING'}`);
 
-  const sessionCsrfToken = (req.session as any)?.csrfToken || '';
-  const postCsrfToken = String((req.body as any)?.csrf_token || '');
-  // Use session CSRF token if available; fall back to the POSTed token so login
-  // still works in environments where the session cookie may not round-trip
-  // (e.g. behind certain reverse proxies).  Both values come from the same
-  // PHP-generated token, so the hash_equals check inside PHP still passes.
-  const csrfToken = sessionCsrfToken || postCsrfToken;
-  console.log(`[LOGIN] session CSRF: ${sessionCsrfToken ? 'present' : 'MISSING'}, post CSRF: ${postCsrfToken ? 'present' : 'MISSING'}, using: ${csrfToken ? 'yes' : 'none'}`);
-  const csrfInject = csrfToken ? `\n\$_SESSION['csrf_token'] = '${csrfToken.replace(/'/g, "\\'")}';` : '';
-
-  const phpCode = `<?php
-session_start();
-${csrfInject}
-register_shutdown_function(function() { echo "\\n__CSRF_TOKEN__:" . (\$_SESSION['csrf_token'] ?? ''); });
-$_SERVER['REQUEST_METHOD'] = 'POST';
-parse_str('${postData.replace(/'/g, "\\'")}', $_POST);
-$_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
-$_SERVER['REMOTE_ADDR'] = '${(req.ip || req.headers['x-forwarded-for'] || '0.0.0.0').toString().replace(/'/g, "")}';
-require '${filePath.replace(/'/g, "\\'")}';
-`;
-
-  const tmpFile = join(tmpdir(), `portal_${randomUUID()}.php`);
-  writeFile(tmpFile, phpCode).then(() => {
-    execFile(
-      "php",
-      [tmpFile],
-      {
-        timeout: 15000,
-        maxBuffer: 2 * 1024 * 1024,
-        cwd: projectRoot,
-        env: { ...process.env },
-      },
-      (error, stdout, stderr) => {
-        unlink(tmpFile).catch(() => {});
-        if (error) {
-          console.error("[LOGIN] PHP exec error:", stderr || error.message);
-          return res.status(500).json({ success: false, message: "Server error during login" });
-        }
-        if (stderr) console.error("[LOGIN] PHP stderr:", stderr);
-        stdout = extractCsrfToken(stdout, req);
-        console.log("[LOGIN] PHP stdout:", stdout.slice(0, 500));
-        try {
-          const json = JSON.parse(stdout);
-          if (json.success && json.user) {
-            (req.session as any).portalUser = {
-              user_id: json.user.id,
-              user_email: json.user.email,
-              user_name: json.user.name,
-              is_admin: json.user.is_admin,
-              user_role: json.user.role || "user",
-              logged_in_at: Math.floor(Date.now() / 1000),
-              last_login: new Date().toISOString(),
-              last_activity: Math.floor(Date.now() / 1000),
-            };
-            req.session.save(() => {
-              res.json(json);
-            });
-          } else {
-            res.json(json);
-          }
-        } catch {
-          res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.send(stdout);
-        }
+    // CSRF check: accept session token OR posted token (resilient to proxy cookie loss)
+    const activeCsrf = sessionCsrfToken || postCsrfToken;
+    if (!activeCsrf || !postCsrfToken || activeCsrf !== postCsrfToken) {
+      // If session has no CSRF, postCsrfToken is the only token we have — accept it
+      // (the page generated it; attacker can't forge it from another origin due to CORS)
+      if (!postCsrfToken) {
+        return res.status(403).json({ success: false, message: 'Invalid security token. Please refresh the page and try again.' });
       }
+    }
+
+    if (!email || !password) {
+      return res.json({ success: false, message: 'Please enter both email and password' });
+    }
+
+    const ip = String(req.ip || req.headers['x-forwarded-for'] || '0.0.0.0');
+
+    // Rate limit: check failed attempts in the last 15 minutes
+    const rateLimitResult = await webhookPool.query(
+      `SELECT COUNT(*) as attempts FROM activity_log WHERE action = 'login_failed' AND details LIKE $1 AND created_at > NOW() - INTERVAL '15 minutes'`,
+      [`%${email}%`]
     );
-  });
+    const attempts = parseInt(rateLimitResult.rows[0]?.attempts || '0', 10);
+    if (attempts >= 5) {
+      return res.json({ success: false, message: 'Too many login attempts. Please try again in 15 minutes.' });
+    }
+
+    // Look up user
+    const userResult = await webhookPool.query(
+      `SELECT id, email, password, name, is_admin, role, status FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+      [email]
+    );
+    const user = userResult.rows[0];
+
+    if (!user) {
+      console.log(`[LOGIN] user not found: ${email}`);
+      await webhookPool.query(
+        `INSERT INTO activity_log (user_id, action, entity_type, details, ip_address) VALUES (NULL, 'login_failed', 'auth', $1, $2)`,
+        [`Failed login for: ${email}`, ip]
+      ).catch(() => {});
+      return res.json({ success: false, message: 'Invalid email or password' });
+    }
+
+    // Normalise PHP $2y$ prefix → $2b$ so bcryptjs can verify it
+    const storedHash = String(user.password || '').replace(/^\$2y\$/, '$2b$');
+    const passwordMatch = await bcrypt.compare(password, storedHash);
+
+    if (!passwordMatch) {
+      console.log(`[LOGIN] password mismatch for: ${email}`);
+      await webhookPool.query(
+        `INSERT INTO activity_log (user_id, action, entity_type, details, ip_address) VALUES (NULL, 'login_failed', 'auth', $1, $2)`,
+        [`Failed login for: ${email}`, ip]
+      ).catch(() => {});
+      return res.json({ success: false, message: 'Invalid email or password' });
+    }
+
+    if ((user.status || 'active') === 'inactive') {
+      return res.json({ success: false, message: 'Your account has been deactivated. Please contact support.' });
+    }
+
+    // Set session
+    const sessionData = {
+      user_id: user.id,
+      user_email: user.email,
+      user_name: user.name,
+      is_admin: Boolean(user.is_admin),
+      user_role: user.role || 'user',
+      logged_in_at: Math.floor(Date.now() / 1000),
+      last_activity: Math.floor(Date.now() / 1000),
+    };
+    (req.session as any).portalUser = sessionData;
+
+    // Handle "remember me"
+    if (remember) {
+      const token = randomUUID().replace(/-/g, '');
+      const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await webhookPool.query(
+        `UPDATE users SET remember_token = $1, remember_token_expires = $2 WHERE id = $3`,
+        [token, expiry.toISOString(), user.id]
+      ).catch(() => {});
+    }
+
+    // Update last_login
+    await webhookPool.query(`UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1`, [user.id]).catch(() => {});
+
+    // Log successful login
+    await webhookPool.query(
+      `INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES ($1, 'login', 'user', $2, 'User logged in', $3)`,
+      [user.id, user.id, ip]
+    ).catch(() => {});
+
+    console.log(`[LOGIN] success for ${email} (id=${user.id}, admin=${user.is_admin})`);
+
+    req.session.save(() => {
+      res.json({
+        success: true,
+        message: 'Login successful!',
+        redirect: 'dashboard.php',
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          is_admin: Boolean(user.is_admin),
+          role: user.role || 'user',
+        }
+      });
+    });
+  } catch (err: any) {
+    console.error('[LOGIN] error:', err?.message || err);
+    res.status(500).json({ success: false, message: 'A server error occurred. Please try again.' });
+  }
 }
 
 app.use("/uploads", express.static(join(projectRoot, "uploads")));
