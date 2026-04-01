@@ -1344,6 +1344,10 @@ if ($lid_param && $tab === 'leads') {
                             <label class="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
                             <input type="text" name="company_name" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-name">
                         </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                            <input type="text" name="company_address" placeholder="Street address" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-address">
+                        </div>
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
