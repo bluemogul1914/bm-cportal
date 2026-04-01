@@ -213,8 +213,11 @@ function handlePhpResponse(stdout: string, req: Request, res: Response) {
 function executePhpFile(filePath: string, req: Request, res: Response) {
   const sessionCode = buildSessionPhpCode(req);
   const queryParams = Object.entries(req.query || {}).map(([k, v]) => `$_GET['${k.replace(/'/g, "\\'")}'] = '${String(v).replace(/'/g, "\\'")}';`).join("\n");
+  const phpSelf = '/' + filePath.replace(/\\/g, '/').split('/').pop();
   const phpCode = `<?php
 error_reporting(E_ERROR | E_PARSE);
+$_SERVER['PHP_SELF'] = '${phpSelf.replace(/'/g, "\\'")}';
+$_SERVER['SCRIPT_NAME'] = '${phpSelf.replace(/'/g, "\\'")}';
 session_start();
 ${sessionCode}
 ${queryParams}
@@ -301,8 +304,11 @@ app.post("/portal/:file", (req, res) => {
   // postData is fully URL-encoded so it's safe in a single-quoted PHP string
   // Query params may contain arbitrary chars — escape backslashes then single quotes
   const safeQ = (s: string) => s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const phpSelfPost = '/' + filePath.replace(/\\/g, '/').split('/').pop();
   const phpCode = `<?php
 error_reporting(E_ERROR | E_PARSE);
+$_SERVER['PHP_SELF'] = '${phpSelfPost.replace(/'/g, "\\'")}';
+$_SERVER['SCRIPT_NAME'] = '${phpSelfPost.replace(/'/g, "\\'")}';
 session_start();
 ${sessionCode}
 $_SERVER['REQUEST_METHOD'] = 'POST';
