@@ -87,12 +87,25 @@ XML;
     }
 
     private function buildPreOrderEnvelope(array $d): string {
-        $ccna         = htmlspecialchars($this->ccna);
-        $pon          = htmlspecialchars($d['pon']           ?? '');
-        $addressLine1 = htmlspecialchars($d['address_line1'] ?? '');
-        $city         = htmlspecialchars($d['city']          ?? '');
-        $state        = htmlspecialchars($d['state']         ?? '');
-        $zip          = htmlspecialchars($d['zip']           ?? '');
+        // Values are placed inside CDATA — do NOT entity-encode them.
+        // Entity-encoding produces &lt;PreOrder&gt; which causes a SAXException
+        // on Frontier's parser. CDATA lets the inner XML pass through verbatim.
+        $ccna         = $this->ccna;
+        $pon          = $d['pon']           ?? '';
+        $addressLine1 = $d['address_line1'] ?? '';
+        $city         = $d['city']          ?? '';
+        $state        = $d['state']         ?? '';
+        $zip          = $d['zip']           ?? '';
+
+        // CORRECT: CDATA-wrapped inner XML (no entity encoding)
+        $innerXml = "<PreOrder>"
+            . "<CCNA>{$ccna}</CCNA>"
+            . "<PON>{$pon}</PON>"
+            . "<LOCADDR>{$addressLine1}</LOCADDR>"
+            . "<LOCCITY>{$city}</LOCCITY>"
+            . "<LOCSTATE>{$state}</LOCSTATE>"
+            . "<LOCZIP>{$zip}</LOCZIP>"
+            . "</PreOrder>";
 
         return <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
@@ -101,18 +114,7 @@ XML;
     xmlns:asr="http://www.atis.org/tml/asr">
   <soapenv:Header/>
   <soapenv:Body>
-    <asr:ASRPreOrderRequest>
-      <asr:Header>
-        <asr:CCNA>{$ccna}</asr:CCNA>
-        <asr:PON>{$pon}</asr:PON>
-      </asr:Header>
-      <asr:ServiceAddress>
-        <asr:AddressLine1>{$addressLine1}</asr:AddressLine1>
-        <asr:City>{$city}</asr:City>
-        <asr:State>{$state}</asr:State>
-        <asr:Zip>{$zip}</asr:Zip>
-      </asr:ServiceAddress>
-    </asr:ASRPreOrderRequest>
+    <string><![CDATA[{$innerXml}]]></string>
   </soapenv:Body>
 </soapenv:Envelope>
 XML;
