@@ -252,6 +252,90 @@ app.get("/portal", (req, res) => {
   executePhpFile(join(projectRoot, "index.php"), req, res);
 });
 
+// ── LinkedIn Lookup API ─────────────────────────────────────────────────────
+app.post("/portal/api/linkedin-lookup", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
+
+  const { linkedin_url, entity_type, entity_id, search_name, search_email, profile_type } = req.body;
+  const proxycurlKey = process.env.PROXYCURL_API_KEY || "";
+
+  if (!proxycurlKey) return res.status(400).json({ error: "ProxyCurl API key not configured. Add PROXYCURL_API_KEY to environment variables." });
+
+  try {
+    let apiUrl = "";
+    const url = (linkedin_url || "").trim();
+
+    if (url) {
+      const isCompany = profile_type === "company" || url.includes("/company/");
+      apiUrl = isCompany
+        ? `https://nubela.co/proxycurl/api/v2/linkedin/company?url=${encodeURIComponent(url)}`
+        : `https://nubela.co/proxycurl/api/v2/linkedin?url=${encodeURIComponent(url)}`;
+    } else if (search_email) {
+      apiUrl = `https://nubela.co/proxycurl/api/linkedin/profile/resolve/email?email=${encodeURIComponent(search_email)}&enrich_profile=enrich`;
+    } else if (search_name) {
+      const firstName = search_name.split(" ")[0] || "";
+      const lastName = search_name.split(" ").slice(1).join(" ") || "";
+      apiUrl = `https://nubela.co/proxycurl/api/v2/search/person?first_name=${encodeURIComponent(firstName)}&last_name=${encodeURIComponent(lastName)}&enrich_profiles=enrich`;
+    } else {
+      return res.status(400).json({ error: "Provide linkedin_url, search_email, or search_name" });
+    }
+
+    const response = await fetch(apiUrl, {
+      headers: { Authorization: `Bearer ${proxycurlKey}` }
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: `ProxyCurl API error ${response.status}: ${errText}` });
+    }
+
+    const data: any = await response.json();
+
+    // Handle search results (returns array of results)
+    const profile = data.results ? data.results[0]?.profile || data.results[0] : data;
+
+    // Cache in DB if entity specified
+    if (entity_type && entity_id && profile) {
+      const table = entity_type === "client" ? "clients" : "leads";
+      const urlToSave = profile.public_identifier
+        ? `https://www.linkedin.com/in/${profile.public_identifier}`
+        : (url || null);
+      try {
+        await webhookPool.query(
+          `UPDATE ${table} SET linkedin_url = COALESCE($1, linkedin_url), linkedin_data = $2, updated_at = NOW() WHERE id = $3`,
+          [urlToSave, JSON.stringify(profile), parseInt(entity_id)]
+        );
+      } catch (e) {}
+    }
+
+    res.json({ success: true, profile });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/portal/api/linkedin-save-url", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
+
+  const { entity_type, entity_id, linkedin_url, clear_data } = req.body;
+  if (!entity_type || !entity_id) return res.status(400).json({ error: "entity_type and entity_id required" });
+
+  const table = entity_type === "client" ? "clients" : "leads";
+  try {
+    if (clear_data) {
+      await webhookPool.query(`UPDATE ${table} SET linkedin_url = $1, linkedin_data = NULL, updated_at = NOW() WHERE id = $2`, [linkedin_url || null, parseInt(entity_id)]);
+    } else {
+      await webhookPool.query(`UPDATE ${table} SET linkedin_url = $1, updated_at = NOW() WHERE id = $2`, [linkedin_url || null, parseInt(entity_id)]);
+    }
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+// ── End LinkedIn Lookup API ─────────────────────────────────────────────────
+
 app.get("/portal/:file", (req, res) => {
   const file = req.params.file;
   const phpFile = file.endsWith(".php") ? file : `${file}.php`;
@@ -2015,6 +2099,10 @@ async function bootstrapPortalDatabase() {
     `);
     await webhookPool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS paid_date DATE`);
     await webhookPool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS external_id VARCHAR(100)`);
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR(500)`);
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS linkedin_data JSONB`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR(500)`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS linkedin_data JSONB`);
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS payments (
         id SERIAL PRIMARY KEY,

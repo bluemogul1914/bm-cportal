@@ -416,6 +416,7 @@ $show_map = $has_location || $has_address;
                     'network'    => 'Network',
                     'cloud'      => 'Cloud',
                     'projects'   => 'Projects',
+                    'linkedin'   => '🔗 LinkedIn',
                 ];
                 foreach ($tabs as $tk => $tv):
                     $tab_active = ($active_tab === $tk) ? 'border-b-2 border-primary text-primary font-medium' : 'text-gray-500 hover:text-gray-700';
@@ -1543,6 +1544,236 @@ $show_map = $has_location || $has_address;
                 </div><!-- /divide-y -->
                 <?php endif; ?>
             </div>
+
+            <?php elseif ($active_tab === 'linkedin'): ?>
+            <?php
+            $li_url  = $client['linkedin_url'] ?? '';
+            $li_data = !empty($client['linkedin_data']) ? (is_string($client['linkedin_data']) ? json_decode($client['linkedin_data'], true) : $client['linkedin_data']) : null;
+            $proxycurl_configured = defined('PROXYCURL_API_KEY') && PROXYCURL_API_KEY !== '';
+            ?>
+
+            <div class="space-y-5 max-w-3xl">
+                <!-- URL & Controls Card -->
+                <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                    <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
+                        <svg class="w-6 h-6 flex-shrink-0" style="fill:#0A66C2" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                        <h2 class="text-base font-semibold text-gray-900">LinkedIn Profile</h2>
+                        <?php if ($li_data): ?>
+                        <span class="ml-auto text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full font-medium"><i class="fas fa-check-circle mr-1"></i>Data fetched</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="p-5 space-y-4">
+                        <!-- URL Input -->
+                        <div class="flex gap-2 items-end">
+                            <div class="flex-1">
+                                <label class="block text-xs font-medium text-gray-500 mb-1">LinkedIn Profile URL (person or company)</label>
+                                <input type="url" id="li-url-input" value="<?php echo htmlspecialchars($li_url); ?>" placeholder="https://www.linkedin.com/in/username  or  /company/name"
+                                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" data-testid="input-linkedin-url-detail">
+                            </div>
+                            <button onclick="liSaveUrl()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg border border-gray-300 transition" data-testid="button-save-linkedin-url">Save URL</button>
+                            <?php if ($li_url): ?>
+                            <a href="<?php echo htmlspecialchars($li_url); ?>" target="_blank" class="px-4 py-2 bg-[#0A66C2] hover:bg-[#0856A8] text-white text-sm rounded-lg transition flex items-center gap-1" data-testid="link-open-linkedin">
+                                <svg class="w-4 h-4" style="fill:white" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                                Open
+                            </a>
+                            <?php endif; ?>
+                        </div>
+                        <?php if (!$proxycurl_configured): ?>
+                        <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                            <i class="fas fa-info-circle mt-0.5 flex-shrink-0"></i>
+                            <div>Add <code class="bg-amber-100 px-1 rounded">PROXYCURL_API_KEY</code> to your environment variables to enable automated LinkedIn data fetching. <a href="https://nubela.co/proxycurl" target="_blank" class="underline">Get a key at ProxyCurl</a>.</div>
+                        </div>
+                        <?php else: ?>
+                        <!-- Fetch / Search Controls -->
+                        <div class="flex flex-wrap gap-2 items-center">
+                            <?php if ($li_url): ?>
+                            <button onclick="liFetch()" class="px-4 py-2 bg-[#0A66C2] hover:bg-[#0856A8] text-white text-sm rounded-lg transition flex items-center gap-2" data-testid="button-fetch-linkedin">
+                                <i class="fas fa-sync-alt"></i> Fetch Profile Data
+                            </button>
+                            <?php endif; ?>
+                            <button onclick="liSearchByEmail()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg border border-gray-300 transition" data-testid="button-search-linkedin-email">
+                                <i class="fas fa-envelope mr-1"></i>Lookup by Email
+                            </button>
+                            <button onclick="liSearchByName()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg border border-gray-300 transition" data-testid="button-search-linkedin-name">
+                                <i class="fas fa-user mr-1"></i>Lookup by Name
+                            </button>
+                        </div>
+                        <?php endif; ?>
+                        <div id="li-status" class="hidden text-sm"></div>
+                    </div>
+                </div>
+
+                <!-- Profile Card (shown when data is available) -->
+                <div id="li-profile-card" class="<?php echo $li_data ? '' : 'hidden'; ?>">
+                    <?php if ($li_data): ?>
+                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <!-- Header Banner -->
+                        <div class="h-20 bg-gradient-to-r from-[#0A66C2] to-[#0856A8]"></div>
+                        <div class="px-6 pb-6 -mt-10">
+                            <?php if (!empty($li_data['profile_pic_url'])): ?>
+                            <img src="<?php echo htmlspecialchars($li_data['profile_pic_url']); ?>" class="w-20 h-20 rounded-full border-4 border-white shadow object-cover mb-3" onerror="this.style.display='none'" data-testid="img-linkedin-photo">
+                            <?php else: ?>
+                            <div class="w-20 h-20 rounded-full border-4 border-white shadow bg-gray-200 flex items-center justify-center mb-3"><i class="fas fa-user text-3xl text-gray-400"></i></div>
+                            <?php endif; ?>
+                            <h3 class="text-xl font-bold text-gray-900" data-testid="text-linkedin-name"><?php echo htmlspecialchars($li_data['full_name'] ?? $li_data['name'] ?? ''); ?></h3>
+                            <?php if (!empty($li_data['headline'])): ?><p class="text-gray-600 mt-0.5" data-testid="text-linkedin-headline"><?php echo htmlspecialchars($li_data['headline']); ?></p><?php endif; ?>
+                            <div class="flex flex-wrap gap-3 mt-2 text-sm text-gray-500">
+                                <?php if (!empty($li_data['city']) || !empty($li_data['state']) || !empty($li_data['country_full_name'])): ?>
+                                <span><i class="fas fa-map-marker-alt text-[#0A66C2] mr-1"></i><?php echo htmlspecialchars(implode(', ', array_filter([$li_data['city'] ?? '', $li_data['state'] ?? '', $li_data['country_full_name'] ?? '']))); ?></span>
+                                <?php endif; ?>
+                                <?php if (!empty($li_data['connections'])): ?><span><i class="fas fa-users text-[#0A66C2] mr-1"></i><?php echo number_format($li_data['connections']); ?>+ connections</span><?php endif; ?>
+                                <?php if (!empty($li_data['followers_count'])): ?><span><i class="fas fa-user-check text-[#0A66C2] mr-1"></i><?php echo number_format($li_data['followers_count']); ?> followers</span><?php endif; ?>
+                            </div>
+                        </div>
+                        <?php if (!empty($li_data['summary'])): ?>
+                        <div class="px-6 py-4 border-t border-gray-100">
+                            <h4 class="text-sm font-semibold text-gray-700 mb-2">About</h4>
+                            <p class="text-sm text-gray-600 leading-relaxed"><?php echo nl2br(htmlspecialchars(substr($li_data['summary'], 0, 500))); ?><?php if (strlen($li_data['summary']) > 500) echo '...'; ?></p>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!empty($li_data['experiences'])): ?>
+                        <div class="px-6 py-4 border-t border-gray-100">
+                            <h4 class="text-sm font-semibold text-gray-700 mb-3">Experience</h4>
+                            <div class="space-y-3">
+                            <?php foreach (array_slice($li_data['experiences'], 0, 4) as $exp): ?>
+                            <div class="flex gap-3">
+                                <?php if (!empty($exp['logo_url'])): ?><img src="<?php echo htmlspecialchars($exp['logo_url']); ?>" class="w-10 h-10 rounded object-contain border border-gray-100 flex-shrink-0" onerror="this.style.display='none'"><?php else: ?><div class="w-10 h-10 rounded bg-gray-100 flex items-center justify-center flex-shrink-0"><i class="fas fa-building text-gray-400 text-sm"></i></div><?php endif; ?>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($exp['title'] ?? ''); ?></p>
+                                    <p class="text-xs text-gray-500"><?php echo htmlspecialchars($exp['company'] ?? ''); ?><?php if (!empty($exp['location'])) echo ' · ' . htmlspecialchars($exp['location']); ?></p>
+                                    <?php
+                                    $start = '';
+                                    if (!empty($exp['starts_at'])) { $s=$exp['starts_at']; $start = ($s['month']??'?') . '/' . ($s['year']??'?'); }
+                                    $end = '';
+                                    if (!empty($exp['ends_at'])) { $e=$exp['ends_at']; $end = ($e['month']??'?') . '/' . ($e['year']??'?'); } else { $end = 'Present'; }
+                                    ?>
+                                    <?php if ($start): ?><p class="text-xs text-gray-400"><?php echo $start . ' – ' . $end; ?></p><?php endif; ?>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!empty($li_data['education'])): ?>
+                        <div class="px-6 py-4 border-t border-gray-100">
+                            <h4 class="text-sm font-semibold text-gray-700 mb-3">Education</h4>
+                            <div class="space-y-2">
+                            <?php foreach (array_slice($li_data['education'], 0, 3) as $edu): ?>
+                            <div>
+                                <p class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($edu['school'] ?? ''); ?></p>
+                                <p class="text-xs text-gray-500"><?php echo htmlspecialchars($edu['degree_name'] ?? ''); ?><?php if (!empty($edu['field_of_study'])) echo ' · ' . htmlspecialchars($edu['field_of_study']); ?></p>
+                            </div>
+                            <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                        <!-- Company-type data (if fetched a company page) -->
+                        <?php if (!empty($li_data['description']) && empty($li_data['full_name'])): ?>
+                        <div class="px-6 py-4 border-t border-gray-100">
+                            <h4 class="text-sm font-semibold text-gray-700 mb-2">About</h4>
+                            <p class="text-sm text-gray-600 leading-relaxed"><?php echo nl2br(htmlspecialchars(substr($li_data['description'], 0, 500))); ?></p>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!empty($li_data['specialities'])): ?>
+                        <div class="px-6 py-4 border-t border-gray-100">
+                            <h4 class="text-sm font-semibold text-gray-700 mb-2">Specialties</h4>
+                            <div class="flex flex-wrap gap-2">
+                            <?php foreach (array_slice($li_data['specialities'], 0, 10) as $spec): ?>
+                            <span class="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded"><?php echo htmlspecialchars($spec); ?></span>
+                            <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                        <div class="px-6 py-3 bg-gray-50 border-t border-gray-100 flex justify-between items-center text-xs text-gray-400">
+                            <span>Data cached from ProxyCurl</span>
+                            <button onclick="liClearData()" class="text-red-500 hover:text-red-700 transition" data-testid="button-clear-linkedin-data"><i class="fas fa-trash-alt mr-1"></i>Clear cached data</button>
+                        </div>
+                    </div>
+                    <?php else: ?>
+                    <div class="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400">
+                        <svg class="w-12 h-12 mx-auto mb-3 opacity-30" style="fill:#0A66C2" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                        <p>No profile data yet.</p>
+                        <p class="text-xs mt-1">Set a LinkedIn URL above and click "Fetch Profile Data".</p>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <script>
+            const liEntityType = 'client';
+            const liEntityId   = <?php echo $client_id; ?>;
+            const liEntityEmail = <?php echo json_encode($client['email'] ?? ''); ?>;
+            const liEntityName  = <?php echo json_encode($client['name'] ?? ''); ?>;
+
+            function liStatus(msg, type='info') {
+                const el = document.getElementById('li-status');
+                el.className = 'text-sm px-3 py-2 rounded-lg ' + (type==='error' ? 'bg-red-50 text-red-700' : type==='ok' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700');
+                el.textContent = msg;
+                el.classList.remove('hidden');
+            }
+
+            function liSaveUrl() {
+                const url = document.getElementById('li-url-input').value.trim();
+                liStatus('Saving URL…');
+                fetch('/portal/api/linkedin-save-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entity_type: liEntityType, entity_id: liEntityId, linkedin_url: url })
+                }).then(r=>r.json()).then(d => {
+                    if (d.success) { liStatus('URL saved. Reload to see changes.', 'ok'); setTimeout(()=>location.reload(), 1200); }
+                    else liStatus('Error: ' + d.error, 'error');
+                }).catch(()=>liStatus('Network error', 'error'));
+            }
+
+            function liFetch() {
+                const url = document.getElementById('li-url-input').value.trim();
+                liStatus('Fetching from LinkedIn via ProxyCurl…');
+                fetch('/portal/api/linkedin-lookup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ linkedin_url: url, entity_type: liEntityType, entity_id: liEntityId })
+                }).then(r=>r.json()).then(d => {
+                    if (d.success) { liStatus('Profile fetched and saved!', 'ok'); setTimeout(()=>location.reload(), 1200); }
+                    else liStatus('Error: ' + d.error, 'error');
+                }).catch(()=>liStatus('Network error', 'error'));
+            }
+
+            function liSearchByEmail() {
+                liStatus('Searching LinkedIn by email…');
+                fetch('/portal/api/linkedin-lookup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ search_email: liEntityEmail, entity_type: liEntityType, entity_id: liEntityId })
+                }).then(r=>r.json()).then(d => {
+                    if (d.success) { liStatus('Profile found and saved!', 'ok'); setTimeout(()=>location.reload(), 1200); }
+                    else liStatus('Error: ' + d.error, 'error');
+                }).catch(()=>liStatus('Network error', 'error'));
+            }
+
+            function liSearchByName() {
+                liStatus('Searching LinkedIn by name…');
+                fetch('/portal/api/linkedin-lookup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ search_name: liEntityName, entity_type: liEntityType, entity_id: liEntityId })
+                }).then(r=>r.json()).then(d => {
+                    if (d.success) { liStatus('Profile found and saved!', 'ok'); setTimeout(()=>location.reload(), 1200); }
+                    else liStatus('Error: ' + d.error, 'error');
+                }).catch(()=>liStatus('Network error', 'error'));
+            }
+
+            function liClearData() {
+                if (!confirm('Clear cached LinkedIn data?')) return;
+                fetch('/portal/api/linkedin-save-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entity_type: liEntityType, entity_id: liEntityId, linkedin_url: document.getElementById('li-url-input').value, clear_data: true })
+                }).then(r=>r.json()).then(d => {
+                    if (d.success) location.reload();
+                    else liStatus('Error: ' + d.error, 'error');
+                });
+            }
+            </script>
 
             <?php endif; ?>
         </div>

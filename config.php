@@ -194,6 +194,11 @@ define('JUMPCLOUD_API_V2',  'https://console.jumpcloud.com/api/v2');
 define('JUMPCLOUD_ORG_ID',  getenv('JUMPCLOUD_ORG_ID') ?: '');
 
 // ============================================
+// LINKEDIN / PROXYCURL CONFIGURATION
+// ============================================
+define('PROXYCURL_API_KEY', getenv('PROXYCURL_API_KEY') ?: '');
+
+// ============================================
 // NEXTCLOUD CONFIGURATION
 // ============================================
 define('NEXTCLOUD_URL', getenv('NEXTCLOUD_URL') ?: '');

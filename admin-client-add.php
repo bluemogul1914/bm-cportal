@@ -48,15 +48,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
     $credit_balance = floatval($_POST['credit_balance'] ?? 0);
     $parent_client_id = intval($_POST['parent_client_id'] ?? 0);
     if ($parent_client_id <= 0) $parent_client_id = null;
+    $linkedin_url = trim($_POST['linkedin_url'] ?? '');
 
-    $form_data = compact('name', 'email', 'phone', 'company', 'address', 'city', 'state', 'zip', 'notes', 'latitude', 'longitude', 'credit_balance', 'parent_client_id');
+    $form_data = compact('name', 'email', 'phone', 'company', 'address', 'city', 'state', 'zip', 'notes', 'latitude', 'longitude', 'credit_balance', 'parent_client_id', 'linkedin_url');
 
     if (empty($name) || empty($email)) {
         $error_msg = 'Name and email are required.';
     } else {
         try {
-            $stmt = $pdo->prepare("INSERT INTO clients (name, email, phone, company, address, city, state, zip, notes, latitude, longitude, credit_balance, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()) RETURNING id");
-            $stmt->execute([$name, $email, $phone, $company, $address, $city, $state, $zip, $notes, $latitude ?: null, $longitude ?: null, $credit_balance, $parent_client_id]);
+            $stmt = $pdo->prepare("INSERT INTO clients (name, email, phone, company, address, city, state, zip, notes, latitude, longitude, credit_balance, parent_id, linkedin_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()) RETURNING id");
+            $stmt->execute([$name, $email, $phone, $company, $address, $city, $state, $zip, $notes, $latitude ?: null, $longitude ?: null, $credit_balance, $parent_client_id, $linkedin_url ?: null]);
             $new_client_id = $stmt->fetchColumn();
             $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([$user_id, 'client_created', 'client', $new_client_id, 'Created client: ' . $name, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
             $success_msg = 'Client created successfully!';
@@ -64,7 +65,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && 
                 'name' => '', 'email' => '', 'phone' => '', 'company' => '',
                 'address' => '', 'city' => '', 'state' => '', 'zip' => '',
                 'notes' => '', 'latitude' => '', 'longitude' => '',
-                'credit_balance' => '0.00', 'parent_client_id' => 0,
+                'credit_balance' => '0.00', 'parent_client_id' => 0, 'linkedin_url' => '',
             ];
         } catch (PDOException $e) {
             error_log("Client create error: " . $e->getMessage());
@@ -154,6 +155,10 @@ try {
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Company</label>
                                 <input type="text" name="company" value="<?php echo htmlspecialchars($form_data['company']); ?>" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-testid="input-company">
                             </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1"><svg class="inline-block w-4 h-4 mr-1" style="fill:#0A66C2;vertical-align:-2px" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>LinkedIn Profile URL</label>
+                            <input type="url" name="linkedin_url" value="<?php echo htmlspecialchars($form_data['linkedin_url'] ?? ''); ?>" placeholder="https://www.linkedin.com/in/username" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-testid="input-linkedin-url">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
