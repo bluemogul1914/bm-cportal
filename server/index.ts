@@ -274,28 +274,45 @@ async function scrapeWithWebScrapingAI(url: string, key: string): Promise<string
   return (await resp.text()).slice(0, 12000);
 }
 
-async function extractProfileWithAI(text: string, profileType: string, openaiKey: string): Promise<any> {
-  const systemPrompt = profileType === "company"
-    ? "Extract company info from web page text. Return JSON: {name, industry, website, phone, email, address, employees, description, social_links:[{type,url}]}"
-    : "Extract person info from web page text. Return JSON: {full_name, first_name, last_name, headline, job_title, company, location, email, phone, about, experience:[{title,company,dates}], education:[{school,degree,dates}], linkedin_url}";
+const OLLAMA_BASE_URL = (process.env.OLLAMA_URL || "https://ollama.bluemogul.us").replace(/\/$/, "");
+const OLLAMA_MODEL    = process.env.OLLAMA_MODEL || "llama3.1:8b";
 
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+function extractJsonFromText(text: string): any {
+  // Try direct parse first
+  try { return JSON.parse(text); } catch {}
+  // Strip markdown code fences and try again
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) { try { return JSON.parse(fenced[1].trim()); } catch {} }
+  // Find first { } block
+  const start = text.indexOf("{");
+  const end   = text.lastIndexOf("}");
+  if (start !== -1 && end !== -1) { try { return JSON.parse(text.slice(start, end + 1)); } catch {} }
+  throw new Error("Could not parse JSON from Ollama response");
+}
+
+async function extractProfileWithAI(text: string, profileType: string): Promise<any> {
+  const systemPrompt = profileType === "company"
+    ? 'Extract company info from the web page text. Respond with ONLY a valid JSON object, no explanation. Schema: {"name":"","industry":"","website":"","phone":"","email":"","address":"","employees":"","description":"","social_links":[{"type":"","url":""}]}'
+    : 'Extract person info from the web page text. Respond with ONLY a valid JSON object, no explanation. Schema: {"full_name":"","first_name":"","last_name":"","headline":"","job_title":"","company":"","location":"","email":"","phone":"","about":"","experience":[{"title":"","company":"","dates":""}],"education":[{"school":"","degree":"","dates":""}],"linkedin_url":""}';
+
+  const resp = await fetch(`${OLLAMA_BASE_URL}/v1/chat/completions`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: OLLAMA_MODEL,
       temperature: 0,
+      stream: false,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: text.slice(0, 8000) },
+        { role: "user", content: `Extract structured data from this page content:\n\n${text.slice(0, 8000)}` },
       ],
-      response_format: { type: "json_object" },
     }),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(60000),
   });
-  if (!resp.ok) throw new Error(`OpenAI returned ${resp.status}`);
+  if (!resp.ok) throw new Error(`Ollama returned ${resp.status}: ${await resp.text()}`);
   const data: any = await resp.json();
-  return JSON.parse(data.choices[0].message.content);
+  const content = data.choices?.[0]?.message?.content || "";
+  return extractJsonFromText(content);
 }
 
 app.post("/portal/api/scrape-lookup", async (req, res) => {
@@ -303,8 +320,7 @@ app.post("/portal/api/scrape-lookup", async (req, res) => {
   if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
 
   const { url, search_query, entity_type, entity_id, profile_type } = req.body;
-  const wsaiKey    = process.env.WEBSCRAPING_AI_KEY || "";
-  const openaiKey  = process.env.OPENAI_API_KEY || "";
+  const wsaiKey = process.env.WEBSCRAPING_AI_KEY || "";
 
   try {
     let targetUrl = (url || "").trim();
@@ -334,20 +350,18 @@ app.post("/portal/api/scrape-lookup", async (req, res) => {
       rawText = await scrapeWithJina(targetUrl);
     }
 
-    // Extract structured data with AI if available
-    let profile: any = { raw_text: rawText.slice(0, 500), scraped_url: targetUrl };
-    if (openaiKey && rawText.length > 50) {
+    // Extract structured data with Ollama (self-hosted)
+    let profile: any = { raw_snippet: rawText.slice(0, 500), scraped_url: targetUrl };
+    if (rawText.length > 50) {
       try {
         const pType = profile_type || (targetUrl.includes("/company/") ? "company" : "person");
-        profile = await extractProfileWithAI(rawText, pType, openaiKey);
+        profile = await extractProfileWithAI(rawText, pType);
         profile.scraped_url = targetUrl;
+        profile.model_used   = OLLAMA_MODEL;
       } catch (e: any) {
-        profile.ai_error = e.message;
+        profile.ai_error    = e.message;
         profile.raw_snippet = rawText.slice(0, 800);
       }
-    } else if (!openaiKey) {
-      profile.notice = "Add OPENAI_API_KEY to enable AI-powered structured extraction. Raw page text returned.";
-      profile.raw_snippet = rawText.slice(0, 1500);
     }
 
     // Cache in DB if entity specified
