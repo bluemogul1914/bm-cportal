@@ -157,7 +157,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php"];
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-xero.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -252,61 +252,120 @@ app.get("/portal", (req, res) => {
   executePhpFile(join(projectRoot, "index.php"), req, res);
 });
 
-// ── LinkedIn Lookup API ─────────────────────────────────────────────────────
-app.post("/portal/api/linkedin-lookup", async (req, res) => {
+// ── Web Scraping AI — LinkedIn & Company Website Enrichment ─────────────────
+// Uses Jina AI Reader (free, no key needed) to scrape public pages,
+// optionally uses WebScraping.AI (WEBSCRAPING_AI_KEY) for enhanced LinkedIn,
+// and optionally uses OpenAI (OPENAI_API_KEY) to extract structured data.
+
+async function scrapeWithJina(url: string): Promise<string> {
+  const jinaUrl = `https://r.jina.ai/${url}`;
+  const resp = await fetch(jinaUrl, {
+    headers: { Accept: "text/plain", "X-No-Cache": "true" },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!resp.ok) throw new Error(`Jina AI returned ${resp.status}`);
+  return (await resp.text()).slice(0, 12000); // cap at 12k chars
+}
+
+async function scrapeWithWebScrapingAI(url: string, key: string): Promise<string> {
+  const apiUrl = `https://api.webscraping.ai/text?url=${encodeURIComponent(url)}&api_key=${key}&js=false`;
+  const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(20000) });
+  if (!resp.ok) throw new Error(`WebScraping.AI returned ${resp.status}`);
+  return (await resp.text()).slice(0, 12000);
+}
+
+async function extractProfileWithAI(text: string, profileType: string, openaiKey: string): Promise<any> {
+  const systemPrompt = profileType === "company"
+    ? "Extract company info from web page text. Return JSON: {name, industry, website, phone, email, address, employees, description, social_links:[{type,url}]}"
+    : "Extract person info from web page text. Return JSON: {full_name, first_name, last_name, headline, job_title, company, location, email, phone, about, experience:[{title,company,dates}], education:[{school,degree,dates}], linkedin_url}";
+
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text.slice(0, 8000) },
+      ],
+      response_format: { type: "json_object" },
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!resp.ok) throw new Error(`OpenAI returned ${resp.status}`);
+  const data: any = await resp.json();
+  return JSON.parse(data.choices[0].message.content);
+}
+
+app.post("/portal/api/scrape-lookup", async (req, res) => {
   const session = req.session as any;
   if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
 
-  const { linkedin_url, entity_type, entity_id, search_name, search_email, profile_type } = req.body;
-  const proxycurlKey = process.env.PROXYCURL_API_KEY || "";
-
-  if (!proxycurlKey) return res.status(400).json({ error: "ProxyCurl API key not configured. Add PROXYCURL_API_KEY to environment variables." });
+  const { url, search_query, entity_type, entity_id, profile_type } = req.body;
+  const wsaiKey    = process.env.WEBSCRAPING_AI_KEY || "";
+  const openaiKey  = process.env.OPENAI_API_KEY || "";
 
   try {
-    let apiUrl = "";
-    const url = (linkedin_url || "").trim();
+    let targetUrl = (url || "").trim();
+    let rawText   = "";
 
-    if (url) {
-      const isCompany = profile_type === "company" || url.includes("/company/");
-      apiUrl = isCompany
-        ? `https://nubela.co/proxycurl/api/v2/linkedin/company?url=${encodeURIComponent(url)}`
-        : `https://nubela.co/proxycurl/api/v2/linkedin?url=${encodeURIComponent(url)}`;
-    } else if (search_email) {
-      apiUrl = `https://nubela.co/proxycurl/api/linkedin/profile/resolve/email?email=${encodeURIComponent(search_email)}&enrich_profile=enrich`;
-    } else if (search_name) {
-      const firstName = search_name.split(" ")[0] || "";
-      const lastName = search_name.split(" ").slice(1).join(" ") || "";
-      apiUrl = `https://nubela.co/proxycurl/api/v2/search/person?first_name=${encodeURIComponent(firstName)}&last_name=${encodeURIComponent(lastName)}&enrich_profiles=enrich`;
+    if (!targetUrl && search_query) {
+      // Use DuckDuckGo Instant Answer API to find a LinkedIn or company URL
+      const query = encodeURIComponent(search_query);
+      const ddgResp = await fetch(`https://api.duckduckgo.com/?q=${query}&format=json&no_redirect=1`, { signal: AbortSignal.timeout(8000) });
+      const ddgData: any = await ddgResp.json();
+      targetUrl = ddgData.AbstractURL || ddgData.Redirect || "";
+      if (!targetUrl && ddgData.RelatedTopics?.length) {
+        targetUrl = ddgData.RelatedTopics[0]?.FirstURL || "";
+      }
+      if (!targetUrl) {
+        return res.status(400).json({ error: "Could not find a URL for that query. Try pasting the URL directly." });
+      }
+    }
+
+    if (!targetUrl) return res.status(400).json({ error: "Provide a url or search_query" });
+
+    // Choose scraping method
+    const isLinkedIn = targetUrl.includes("linkedin.com");
+    if (isLinkedIn && wsaiKey) {
+      rawText = await scrapeWithWebScrapingAI(targetUrl, wsaiKey);
     } else {
-      return res.status(400).json({ error: "Provide linkedin_url, search_email, or search_name" });
+      rawText = await scrapeWithJina(targetUrl);
     }
 
-    const response = await fetch(apiUrl, {
-      headers: { Authorization: `Bearer ${proxycurlKey}` }
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(response.status).json({ error: `ProxyCurl API error ${response.status}: ${errText}` });
+    // Extract structured data with AI if available
+    let profile: any = { raw_text: rawText.slice(0, 500), scraped_url: targetUrl };
+    if (openaiKey && rawText.length > 50) {
+      try {
+        const pType = profile_type || (targetUrl.includes("/company/") ? "company" : "person");
+        profile = await extractProfileWithAI(rawText, pType, openaiKey);
+        profile.scraped_url = targetUrl;
+      } catch (e: any) {
+        profile.ai_error = e.message;
+        profile.raw_snippet = rawText.slice(0, 800);
+      }
+    } else if (!openaiKey) {
+      profile.notice = "Add OPENAI_API_KEY to enable AI-powered structured extraction. Raw page text returned.";
+      profile.raw_snippet = rawText.slice(0, 1500);
     }
-
-    const data: any = await response.json();
-
-    // Handle search results (returns array of results)
-    const profile = data.results ? data.results[0]?.profile || data.results[0] : data;
 
     // Cache in DB if entity specified
-    if (entity_type && entity_id && profile) {
+    if (entity_type && entity_id) {
       const table = entity_type === "client" ? "clients" : "leads";
-      const urlToSave = profile.public_identifier
-        ? `https://www.linkedin.com/in/${profile.public_identifier}`
-        : (url || null);
+      const urlToSave = (isLinkedIn ? targetUrl : null);
       try {
         await webhookPool.query(
-          `UPDATE ${table} SET linkedin_url = COALESCE($1, linkedin_url), linkedin_data = $2, updated_at = NOW() WHERE id = $3`,
-          [urlToSave, JSON.stringify(profile), parseInt(entity_id)]
+          `UPDATE ${table} SET ${isLinkedIn ? "linkedin_url = COALESCE($1, linkedin_url)," : ""} linkedin_data = $2, updated_at = NOW() WHERE id = $3`,
+          isLinkedIn ? [urlToSave, JSON.stringify(profile), parseInt(entity_id)] : [JSON.stringify(profile), parseInt(entity_id)]
         );
-      } catch (e) {}
+      } catch (e) {
+        // cache is best-effort
+        await webhookPool.query(
+          `UPDATE ${table} SET linkedin_data = $1, updated_at = NOW() WHERE id = $2`,
+          [JSON.stringify(profile), parseInt(entity_id)]
+        ).catch(() => {});
+      }
     }
 
     res.json({ success: true, profile });
@@ -315,13 +374,29 @@ app.post("/portal/api/linkedin-lookup", async (req, res) => {
   }
 });
 
+// Keep legacy endpoint as alias (backward compat for existing detail pages)
+app.post("/portal/api/linkedin-lookup", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
+  const { linkedin_url, entity_type, entity_id, search_name, search_email, profile_type } = req.body;
+  req.body.url = linkedin_url;
+  req.body.search_query = search_email
+    ? `site:linkedin.com/in ${search_email}`
+    : search_name ? `site:linkedin.com/in ${search_name}` : "";
+  req.body.profile_type = profile_type || "person";
+  // Forward to new handler
+  return fetch(`http://localhost:5000/portal/api/scrape-lookup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: req.headers.cookie || "" },
+    body: JSON.stringify({ ...req.body, url: linkedin_url, entity_type, entity_id }),
+  }).then(r => r.json()).then(d => res.json(d)).catch((e: any) => res.status(500).json({ error: e.message }));
+});
+
 app.post("/portal/api/linkedin-save-url", async (req, res) => {
   const session = req.session as any;
   if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
-
   const { entity_type, entity_id, linkedin_url, clear_data } = req.body;
   if (!entity_type || !entity_id) return res.status(400).json({ error: "entity_type and entity_id required" });
-
   const table = entity_type === "client" ? "clients" : "leads";
   try {
     if (clear_data) {
@@ -334,7 +409,101 @@ app.post("/portal/api/linkedin-save-url", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-// ── End LinkedIn Lookup API ─────────────────────────────────────────────────
+
+// ── Xero OAuth ────────────────────────────────────────────────────────────────
+const XERO_CLIENT_ID     = process.env.XERO_CLIENT_ID || "";
+const XERO_CLIENT_SECRET = process.env.XERO_CLIENT_SECRET || "";
+const XERO_SCOPES = "openid profile email accounting.transactions accounting.contacts.read offline_access";
+
+app.get("/portal/api/xero/connect", (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).send("Unauthorized");
+  if (!XERO_CLIENT_ID) return res.status(400).send("XERO_CLIENT_ID not configured");
+  const redirectUri = `${req.protocol}://${req.headers.host}/portal/api/xero/callback`;
+  const state = Math.random().toString(36).slice(2);
+  session.xeroState = state;
+  const url = `https://login.xero.com/identity/connect/authorize?response_type=code&client_id=${XERO_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(XERO_SCOPES)}&state=${state}`;
+  res.redirect(url);
+});
+
+app.get("/portal/api/xero/callback", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).send("Unauthorized");
+  const { code, state } = req.query;
+  if (state !== session.xeroState) return res.status(400).send("Invalid state");
+  const redirectUri = `${req.protocol}://${req.headers.host}/portal/api/xero/callback`;
+  try {
+    const tokenResp = await fetch("https://identity.xero.com/connect/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + Buffer.from(`${XERO_CLIENT_ID}:${XERO_CLIENT_SECRET}`).toString("base64") },
+      body: new URLSearchParams({ grant_type: "authorization_code", code: String(code), redirect_uri: redirectUri }).toString(),
+    });
+    if (!tokenResp.ok) throw new Error(`Token exchange failed: ${await tokenResp.text()}`);
+    const tokens: any = await tokenResp.json();
+    // Get tenant list
+    const tenantResp = await fetch("https://api.xero.com/connections", { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+    const tenants: any[] = await tenantResp.json();
+    const tenantId = tenants[0]?.tenantId || "";
+    // Store in provider_settings
+    await webhookPool.query(`INSERT INTO provider_settings (provider_name, settings, updated_at) VALUES ('xero', $1, NOW()) ON CONFLICT (provider_name) DO UPDATE SET settings = $1, updated_at = NOW()`,
+      [JSON.stringify({ access_token: tokens.access_token, refresh_token: tokens.refresh_token, expires_at: Date.now() + tokens.expires_in * 1000, tenant_id: tenantId, tenants })]);
+    res.redirect("/portal/admin-xero.php?connected=1");
+  } catch (e: any) {
+    res.redirect(`/portal/admin-xero.php?error=${encodeURIComponent(e.message)}`);
+  }
+});
+
+app.post("/portal/api/xero/refresh", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
+  try {
+    const row = await webhookPool.query("SELECT settings FROM provider_settings WHERE provider_name='xero'");
+    if (!row.rows.length) return res.status(404).json({ error: "Xero not connected" });
+    const cfg = row.rows[0].settings;
+    const tokenResp = await fetch("https://identity.xero.com/connect/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + Buffer.from(`${XERO_CLIENT_ID}:${XERO_CLIENT_SECRET}`).toString("base64") },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: cfg.refresh_token }).toString(),
+    });
+    const tokens: any = await tokenResp.json();
+    await webhookPool.query("UPDATE provider_settings SET settings = settings || $1::jsonb, updated_at = NOW() WHERE provider_name='xero'",
+      [JSON.stringify({ access_token: tokens.access_token, refresh_token: tokens.refresh_token || cfg.refresh_token, expires_at: Date.now() + (tokens.expires_in || 1800) * 1000 })]);
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/portal/api/xero/data", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
+  const { resource } = req.query; // 'invoices', 'contacts', 'accounts', 'reports/BankSummary'
+  try {
+    const row = await webhookPool.query("SELECT settings FROM provider_settings WHERE provider_name='xero'");
+    if (!row.rows.length) return res.status(404).json({ error: "Xero not connected" });
+    const cfg = row.rows[0].settings;
+    // Auto-refresh if expired
+    if (cfg.expires_at && Date.now() > cfg.expires_at - 60000) {
+      try {
+        const tr = await fetch("https://identity.xero.com/connect/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + Buffer.from(`${XERO_CLIENT_ID}:${XERO_CLIENT_SECRET}`).toString("base64") },
+          body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: cfg.refresh_token }).toString(),
+        });
+        const t: any = await tr.json();
+        cfg.access_token = t.access_token;
+        if (t.refresh_token) cfg.refresh_token = t.refresh_token;
+        await webhookPool.query("UPDATE provider_settings SET settings = settings || $1::jsonb, updated_at = NOW() WHERE provider_name='xero'",
+          [JSON.stringify({ access_token: t.access_token, refresh_token: t.refresh_token || cfg.refresh_token, expires_at: Date.now() + (t.expires_in || 1800) * 1000 })]);
+      } catch (e) { /* use existing token */ }
+    }
+    const endpoint = `https://api.xero.com/api.xro/2.0/${resource || "Invoices"}`;
+    const xeroResp = await fetch(`${endpoint}?${new URLSearchParams(req.query as any).toString().replace(/^resource=[^&]*&?/, "")}`, {
+      headers: { Authorization: `Bearer ${cfg.access_token}`, "Xero-Tenant-Id": cfg.tenant_id, Accept: "application/json" },
+    });
+    if (!xeroResp.ok) return res.status(xeroResp.status).json({ error: await xeroResp.text() });
+    res.json(await xeroResp.json());
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+// ── End Xero OAuth ────────────────────────────────────────────────────────────
 
 app.get("/portal/:file", (req, res) => {
   const file = req.params.file;
@@ -2103,6 +2272,24 @@ async function bootstrapPortalDatabase() {
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS linkedin_data JSONB`);
     await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR(500)`);
     await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS linkedin_data JSONB`);
+    // New "New Person" individual fields
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)`);
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_name  VARCHAR(100)`);
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS title      VARCHAR(30)`);
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS job_title  VARCHAR(150)`);
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS website    VARCHAR(500)`);
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS tags       TEXT[]`);
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phones     JSONB DEFAULT '[]'::jsonb`);
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS emails     JSONB DEFAULT '[]'::jsonb`);
+    await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS social_links JSONB DEFAULT '[]'::jsonb`);
+    // New Organisation fields for crm_companies
+    await webhookPool.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS tags         TEXT[]`);
+    await webhookPool.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS phones       JSONB DEFAULT '[]'::jsonb`);
+    await webhookPool.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS emails       JSONB DEFAULT '[]'::jsonb`);
+    await webhookPool.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS social_links JSONB DEFAULT '[]'::jsonb`);
+    await webhookPool.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR(500)`);
+    await webhookPool.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS scrape_data  JSONB`);
+    // Xero token storage (uses provider_settings which already exists)
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS payments (
         id SERIAL PRIMARY KEY,

@@ -42,9 +42,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
     if ($action === 'add_company') {
         $cname = trim($_POST['company_name'] ?? '');
-        $phone = trim($_POST['company_phone'] ?? '');
-        $email = trim($_POST['company_email'] ?? '');
-        $website = trim($_POST['company_website'] ?? '');
+        $phones_json  = $_POST['co_phones_json']  ?? '[]';
+        $emails_json  = $_POST['co_emails_json']  ?? '[]';
+        $socials_json = $_POST['co_socials_json'] ?? '[]';
+        $phones_arr  = json_decode($phones_json,  true) ?: [];
+        $emails_arr  = json_decode($emails_json,  true) ?: [];
+        $socials_arr = json_decode($socials_json, true) ?: [];
+        $phone   = $phones_arr[0]['value'] ?? '';
+        $email   = $emails_arr[0]['value'] ?? '';
+        $website = '';
+        $linkedin_url = '';
+        foreach ($socials_arr as $s) {
+            if (strtolower($s['type'] ?? '') === 'linkedin')      { $linkedin_url = $s['value'] ?? ''; }
+            elseif (strtolower($s['type'] ?? '') === 'website')   { $website = $s['value'] ?? ''; }
+        }
         $city = trim($_POST['company_city'] ?? '');
         $state = trim($_POST['company_state'] ?? '');
         $country = trim($_POST['company_country'] ?? 'United States');
@@ -55,9 +66,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $owner = trim($_POST['company_owner'] ?? '');
         $lifecycle = $_POST['company_lifecycle'] ?? 'lead';
         $notes = trim($_POST['company_notes'] ?? '');
+        $tags_raw = trim($_POST['company_tags'] ?? '');
+        $tags_arr = array_filter(array_map('trim', explode(',', $tags_raw)));
+        $tags_pg  = empty($tags_arr) ? null : '{' . implode(',', array_map(fn($t) => '"' . str_replace('"', '\\"', $t) . '"', $tags_arr)) . '}';
         if ($cname) {
-            $pdo->prepare("INSERT INTO crm_companies (name, phone, email, website, city, state, country, address, postal_code, industry, employee_count, company_owner, lifecycle_stage, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-                ->execute([$cname, $phone ?: null, $email ?: null, $website ?: null, $city ?: null, $state ?: null, $country, $address ?: null, $postal_code ?: null, $industry ?: null, $employee_count ?: null, $owner ?: null, $lifecycle, $notes ?: null, $_SESSION['user_id']]);
+            $pdo->prepare("INSERT INTO crm_companies (name, phone, email, website, linkedin_url, phones, emails, social_links, tags, city, state, country, address, postal_code, industry, employee_count, company_owner, lifecycle_stage, notes, created_by) VALUES (?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?,?,?,?,?,?,?,?,?,?,?,?)")
+                ->execute([$cname, $phone ?: null, $email ?: null, $website ?: null, $linkedin_url ?: null, $phones_json, $emails_json, $socials_json, $tags_pg, $city ?: null, $state ?: null, $country, $address ?: null, $postal_code ?: null, $industry ?: null, $employee_count ?: null, $owner ?: null, $lifecycle, $notes ?: null, $_SESSION['user_id']]);
             $success_msg = "Company '$cname' added.";
         } else { $error_msg = 'Company name is required.'; }
         $tab = 'companies';
@@ -1332,104 +1346,186 @@ if ($lid_param && $tab === 'leads') {
 
             <!-- Add Company Modal -->
             <div id="add-company-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div class="bg-white rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
-                    <div class="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
-                        <h3 class="text-lg font-semibold">Add Company</h3>
+                <div class="bg-white rounded-xl w-full max-w-xl shadow-2xl flex flex-col max-h-[92vh]">
+                    <div class="flex items-center justify-between px-5 py-4 border-b flex-shrink-0">
+                        <h3 class="text-lg font-semibold text-gray-900">New Organisation</h3>
                         <button onclick="document.getElementById('add-company-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
                     </div>
-                    <form method="POST" class="p-6 space-y-4 overflow-y-auto">
+                    <form method="POST" id="coForm" class="overflow-y-auto">
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="add_company">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
-                            <input type="text" name="company_name" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-name">
+                        <input type="hidden" name="co_phones_json"  id="co_phones_json"  value="[]">
+                        <input type="hidden" name="co_emails_json"  id="co_emails_json"  value="[]">
+                        <input type="hidden" name="co_socials_json" id="co_socials_json" value="[]">
+
+                        <div class="p-5 space-y-4">
+                            <!-- Name -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Name <span class="text-red-500">*</span></label>
+                                <input type="text" name="company_name" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-company-name" autofocus>
+                            </div>
+
+                            <!-- Tags -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                                <div class="border border-gray-300 rounded-md px-3 py-2 min-h-[38px] flex flex-wrap gap-1 items-center cursor-text" id="coTagContainer" onclick="document.getElementById('coTagInput').focus()">
+                                    <input id="coTagInput" class="outline-none text-sm flex-1 min-w-[80px] bg-transparent" placeholder="Type and press Enter…" data-testid="input-company-tags">
+                                </div>
+                                <input type="hidden" name="company_tags" id="coTagsHidden">
+                            </div>
+
+                            <!-- Lifecycle + Industry row -->
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Lifecycle Stage</label>
+                                    <select name="company_lifecycle" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="select-company-lifecycle">
+                                        <option value="lead">Lead</option><option value="prospect">Prospect</option>
+                                        <option value="customer">Customer</option><option value="churned">Churned</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Industry</label>
+                                    <select name="company_industry" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="select-company-industry">
+                                        <option value="">— Select —</option>
+                                        <option>Technology</option><option>Healthcare</option><option>Finance</option>
+                                        <option>Education</option><option>Manufacturing</option><option>Retail</option>
+                                        <option>Real Estate</option><option>Government</option>
+                                        <option>Management Consulting</option><option>Consumer Services</option>
+                                        <option>Cosmetics</option><option>Other</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Employees</label>
+                                    <select name="company_employee_count" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="select-company-employees">
+                                        <option value="">— Select —</option>
+                                        <option>1-10</option><option>11-50</option><option>51-200</option><option>201-500</option><option>500+</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Owner</label>
+                                    <input type="text" name="company_owner" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-company-owner">
+                                </div>
+                            </div>
+
+                            <!-- Contact Details -->
+                            <div class="border-t border-gray-100 pt-4">
+                                <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Contact Details</div>
+
+                                <div class="space-y-3">
+                                    <!-- Phone Numbers -->
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Phone Numbers</label>
+                                        <div id="co-phones-container"></div>
+                                        <span class="text-xs text-blue-600 cursor-pointer hover:underline" onclick="coAddRow('phones')" data-testid="button-co-add-phone">+ Add another phone number</span>
+                                    </div>
+                                    <!-- Email Addresses -->
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Email Addresses</label>
+                                        <div id="co-emails-container"></div>
+                                        <span class="text-xs text-blue-600 cursor-pointer hover:underline" onclick="coAddRow('emails')" data-testid="button-co-add-email">+ Add another email address</span>
+                                    </div>
+                                    <!-- Websites & Social Networks -->
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Websites &amp; Social Networks</label>
+                                        <div id="co-socials-container"></div>
+                                        <span class="text-xs text-blue-600 cursor-pointer hover:underline" onclick="coAddRow('socials')" data-testid="button-co-add-social">+ Add another website address</span>
+                                    </div>
+                                    <!-- Address -->
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                                        <input type="text" name="company_address" placeholder="Street address" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none mb-2" data-testid="input-company-address">
+                                        <div class="grid grid-cols-3 gap-2">
+                                            <input type="text" name="company_city"        placeholder="City"    class="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-company-city">
+                                            <input type="text" name="company_state"       placeholder="State"   class="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-company-state">
+                                            <input type="text" name="company_postal_code" placeholder="ZIP"     class="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-company-postal">
+                                        </div>
+                                        <input type="text" name="company_country" value="United States" class="mt-2 w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-company-country">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                                <textarea name="company_notes" rows="2" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="textarea-company-notes"></textarea>
+                            </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                            <input type="text" name="company_address" placeholder="Street address" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-address">
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                                <input type="text" name="company_phone" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-phone">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                                <input type="email" name="company_email" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-email">
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Website</label>
-                                <input type="url" name="company_website" placeholder="https://" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-website">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Industry</label>
-                                <select name="company_industry" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-company-industry">
-                                    <option value="">-- Select --</option>
-                                    <option>Technology</option><option>Healthcare</option><option>Finance</option>
-                                    <option>Education</option><option>Manufacturing</option><option>Retail</option>
-                                    <option>Real Estate</option><option>Government</option>
-                                    <option>Consumer Services</option><option>Health, Wellness and Fitness</option>
-                                    <option>Management Consulting</option><option>Cosmetics</option>
-                                    <option>Other</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-3 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">City</label>
-                                <input type="text" name="company_city" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-city">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">State/Region</label>
-                                <input type="text" name="company_state" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-state">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
-                                <input type="text" name="company_postal_code" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-postal">
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Country/Region</label>
-                                <input type="text" name="company_country" value="United States" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-country">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Employees</label>
-                                <select name="company_employee_count" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-company-employees">
-                                    <option value="">-- Select --</option>
-                                    <option>1-10</option><option>11-50</option><option>51-200</option><option>201-500</option><option>500+</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Company Owner</label>
-                                <input type="text" name="company_owner" placeholder="Assigned to..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="input-company-owner">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Lifecycle Stage</label>
-                                <select name="company_lifecycle" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="select-company-lifecycle">
-                                    <option value="lead">Lead</option>
-                                    <option value="prospect">Prospect</option>
-                                    <option value="customer">Customer</option>
-                                    <option value="churned">Churned</option>
-                                    <option value="other">Other</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                            <textarea name="company_notes" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-testid="textarea-company-notes"></textarea>
-                        </div>
-                        <div class="flex justify-end gap-3 pt-2">
+
+                        <div class="flex justify-end gap-3 px-5 py-4 border-t bg-gray-50 rounded-b-xl flex-shrink-0">
                             <button type="button" onclick="document.getElementById('add-company-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium" data-testid="button-submit-company">Add Company</button>
+                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium" data-testid="button-submit-company">Save</button>
                         </div>
                     </form>
                 </div>
             </div>
+
+            <script>
+            /* Company modal dynamic rows */
+            const coRowConfig = {
+                phones:  { types: ['Work','Mobile','Home','Other'],   placeholder: 'Phone number', jsonKey: 'co_phones_json',  containerId: 'co-phones-container' },
+                emails:  { types: ['Work','Personal','Other'],         placeholder: 'Email address', jsonKey: 'co_emails_json',  containerId: 'co-emails-container' },
+                socials: { types: ['Website','LinkedIn','Twitter / X','Facebook','Instagram','GitHub','Other'], placeholder: 'URL', jsonKey: 'co_socials_json', containerId: 'co-socials-container' },
+            };
+            const coState = { phones: [], emails: [], socials: [] };
+
+            function coSyncJSON() {
+                ['phones','emails','socials'].forEach(k => {
+                    document.getElementById('co_' + k + '_json').value = JSON.stringify(coState[k].filter(r=>r.value));
+                });
+            }
+
+            function coAddRow(kind, value='', type='') {
+                const idx = coState[kind].length;
+                coState[kind].push({ value, type: type || coRowConfig[kind].types[0] });
+                const container = document.getElementById(coRowConfig[kind].containerId);
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px';
+
+                const inp = document.createElement('input');
+                inp.type = kind === 'emails' ? 'email' : (kind === 'socials' ? 'url' : 'text');
+                inp.placeholder = coRowConfig[kind].placeholder;
+                inp.value = value;
+                inp.style.cssText = 'flex:1;border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:13px;outline:none';
+                inp.addEventListener('input', () => { coState[kind][idx].value = inp.value; coSyncJSON(); });
+
+                const sel = document.createElement('select');
+                sel.style.cssText = 'width:130px;border:1px solid #d1d5db;border-radius:6px;padding:6px 8px;font-size:13px;background:white;outline:none';
+                coRowConfig[kind].types.forEach(t => { const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o); });
+                if (type) sel.value = type;
+                coState[kind][idx].type = sel.value;
+                sel.addEventListener('change', () => { coState[kind][idx].type = sel.value; coSyncJSON(); });
+
+                const rm = document.createElement('span');
+                rm.innerHTML = '✕'; rm.title='Remove';
+                rm.style.cssText = 'cursor:pointer;color:#9ca3af;font-size:14px;flex-shrink:0';
+                rm.onmouseenter = ()=>rm.style.color='#ef4444'; rm.onmouseleave = ()=>rm.style.color='#9ca3af';
+                rm.addEventListener('click', () => { coState[kind].splice(idx,1); row.remove(); coSyncJSON(); });
+
+                row.appendChild(inp); row.appendChild(sel); row.appendChild(rm);
+                container.appendChild(row);
+                coSyncJSON();
+            }
+            coAddRow('phones'); coAddRow('emails'); coAddRow('socials');
+
+            document.getElementById('coForm').addEventListener('submit', coSyncJSON);
+
+            /* Company Tags */
+            const coTags = [];
+            const coTagInput = document.getElementById('coTagInput');
+            function coAddTag(v) {
+                v=v.trim(); if(!v||coTags.includes(v))return; coTags.push(v);
+                const chip=document.createElement('span');
+                chip.style.cssText='display:inline-flex;align-items:center;gap:3px;background:#eff6ff;color:#1d4ed8;border-radius:9999px;padding:2px 10px;font-size:12px;margin:2px';
+                chip.innerHTML=v+' <button type="button" style="color:#93c5fd;font-size:10px" onclick="coRemoveTag(\''+v.replace(/'/g,"\\'")+"',this.parentElement)\">✕</button>";
+                document.getElementById('coTagContainer').insertBefore(chip,coTagInput);
+                document.getElementById('coTagsHidden').value=coTags.join(',');
+            }
+            function coRemoveTag(v,chip){const i=coTags.indexOf(v);if(i!==-1)coTags.splice(i,1);chip.remove();document.getElementById('coTagsHidden').value=coTags.join(',');}
+            coTagInput.addEventListener('keydown',e=>{if(['Enter','Tab',','].includes(e.key)){e.preventDefault();coAddTag(coTagInput.value);coTagInput.value='';}});
+            coTagInput.addEventListener('blur',()=>{if(coTagInput.value){coAddTag(coTagInput.value);coTagInput.value='';}});
+            </script>
             <?php endif; ?>
             <?php endif; ?>
 

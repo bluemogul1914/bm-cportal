@@ -209,6 +209,11 @@
                     <span>Stripe</span>
                 </a>
 
+                <a href="admin-xero.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-xero.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-xero">
+                    <svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 512 512" fill="none"><circle cx="256" cy="256" r="256" fill="#13B5EA"/><path d="M256 151c-57.9 0-105 47.1-105 105s47.1 105 105 105 105-47.1 105-105-47.1-105-105-105zm0 172.5c-37.2 0-67.5-30.3-67.5-67.5s30.3-67.5 67.5-67.5 67.5 30.3 67.5 67.5-30.3 67.5-67.5 67.5z" fill="white"/></svg>
+                    <span>Xero</span>
+                </a>
+
                 <a href="admin-vultr.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-vultr.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-vultr">
                     <i class="fas fa-cloud w-5"></i>
                     <span>Vultr Cloud</span>
