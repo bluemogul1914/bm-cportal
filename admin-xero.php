@@ -21,6 +21,15 @@ $tenant_id    = $xero['tenant_id'] ?? '';
 $tenants      = $xero['tenants']   ?? [];
 $expires_at   = $xero['expires_at'] ?? 0;
 $xero_client_id = getenv('XERO_CLIENT_ID') ?: '';
+/* Compute the redirect URI the same way the server does:
+   prefer XERO_REDIRECT_URI env var, otherwise auto-build WITHOUT /portal/ prefix */
+$_xero_redirect_uri = getenv('XERO_REDIRECT_URI') ?: '';
+if (!$_xero_redirect_uri) {
+    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    // Prefer X-Forwarded-Host so this works behind Nginx/Coolify
+    $host  = $_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'portal.bluemogul.us';
+    $_xero_redirect_uri = "$proto://$host/api/xero/callback";
+}
 $connected_msg = $_GET['connected'] ?? '';
 $error_msg_url = $_GET['error'] ?? '';
 
@@ -102,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'disco
                     <ol class="text-sm text-amber-700 space-y-2 list-decimal list-inside">
                         <li>Go to <a href="https://developer.xero.com/app/manage" target="_blank" class="underline font-medium">developer.xero.com/app/manage</a></li>
                         <li>Click <strong>New app</strong> → choose <strong>Web app</strong></li>
-                        <li>Set Redirect URI to: <code class="bg-amber-100 px-1 rounded text-xs"><?php echo (isset($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST']; ?>/portal/api/xero/callback</code></li>
+                        <li>Set Redirect URI to: <code class="bg-amber-100 px-1 rounded text-xs"><?php echo htmlspecialchars($_xero_redirect_uri); ?></code></li>
                         <li>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong></li>
                         <li>Add to environment: <code class="bg-amber-100 px-1 rounded text-xs">XERO_CLIENT_ID</code> and <code class="bg-amber-100 px-1 rounded text-xs">XERO_CLIENT_SECRET</code></li>
                     </ol>
@@ -110,8 +119,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'disco
                 <?php else: ?>
                 <p class="text-sm text-gray-600 mb-5">Click the button below to authorise Blue Mogul Admin to access your Xero organisation's financial data. You'll be redirected to Xero's secure login page.</p>
                 <div class="mb-5 p-3 bg-gray-50 border border-gray-200 rounded-md text-xs text-gray-500">
-                    <strong>Redirect URI (for your Xero app):</strong><br>
-                    <code><?php echo (isset($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST']; ?>/portal/api/xero/callback</code>
+                    <strong>Redirect URI registered in your Xero app:</strong><br>
+                    <code><?php echo htmlspecialchars($_xero_redirect_uri); ?></code>
+                    <?php if (!getenv('XERO_REDIRECT_URI')): ?>
+                    <div class="mt-1 text-gray-400">To override, set the <code>XERO_REDIRECT_URI</code> environment variable.</div>
+                    <?php endif; ?>
                 </div>
                 <a href="/portal/api/xero/connect" class="inline-flex items-center gap-2 px-5 py-2.5 bg-[#13B5EA] hover:bg-[#0fa3d4] text-white rounded-md font-medium transition" data-testid="button-xero-connect">
                     <svg class="w-5 h-5" viewBox="0 0 512 512" fill="none"><circle cx="256" cy="256" r="256" fill="white" fill-opacity="0.3"/><path d="M256 151c-57.9 0-105 47.1-105 105s47.1 105 105 105 105-47.1 105-105-47.1-105-105-105zm0 172.5c-37.2 0-67.5-30.3-67.5-67.5s30.3-67.5 67.5-67.5 67.5 30.3 67.5 67.5-30.3 67.5-67.5 67.5z" fill="white"/></svg>

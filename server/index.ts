@@ -427,45 +427,82 @@ app.post("/portal/api/linkedin-save-url", async (req, res) => {
 // ── Xero OAuth ────────────────────────────────────────────────────────────────
 const XERO_CLIENT_ID     = process.env.XERO_CLIENT_ID || "";
 const XERO_CLIENT_SECRET = process.env.XERO_CLIENT_SECRET || "";
+// XERO_REDIRECT_URI must match exactly what is registered in your Xero developer app.
+// e.g. https://portal.bluemogul.us/api/xero/callback
+const XERO_REDIRECT_URI_ENV = process.env.XERO_REDIRECT_URI || "";
 const XERO_SCOPES = "openid profile email accounting.transactions accounting.contacts.read offline_access";
 
-app.get("/portal/api/xero/connect", (req, res) => {
+function getXeroRedirectUri(req: any): string {
+  if (XERO_REDIRECT_URI_ENV) return XERO_REDIRECT_URI_ENV;
+  // Auto-detect: strip /portal prefix from path so it matches portal.bluemogul.us/api/xero/callback
+  const host = (req.headers["x-forwarded-host"] || req.headers.host || "") as string;
+  const proto = (req.headers["x-forwarded-proto"] || req.protocol) as string;
+  return `${proto}://${host}/api/xero/callback`;
+}
+
+async function handleXeroConnect(req: any, res: any) {
   const session = req.session as any;
   if (!session?.portalUser?.is_admin) return res.status(403).send("Unauthorized");
-  if (!XERO_CLIENT_ID) return res.status(400).send("XERO_CLIENT_ID not configured");
-  const redirectUri = `${req.protocol}://${req.headers.host}/portal/api/xero/callback`;
+  if (!XERO_CLIENT_ID) return res.status(400).send("XERO_CLIENT_ID not configured. Add it to your environment variables.");
+  const redirectUri = getXeroRedirectUri(req);
   const state = Math.random().toString(36).slice(2);
   session.xeroState = state;
   const url = `https://login.xero.com/identity/connect/authorize?response_type=code&client_id=${XERO_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(XERO_SCOPES)}&state=${state}`;
   res.redirect(url);
-});
+}
 
-app.get("/portal/api/xero/callback", async (req, res) => {
+async function handleXeroCallback(req: any, res: any) {
   const session = req.session as any;
-  if (!session?.portalUser?.is_admin) return res.status(403).send("Unauthorized");
-  const { code, state } = req.query;
-  if (state !== session.xeroState) return res.status(400).send("Invalid state");
-  const redirectUri = `${req.protocol}://${req.headers.host}/portal/api/xero/callback`;
+  const { code, state, error: xeroError } = req.query;
+
+  if (xeroError) {
+    return res.redirect(`/portal/admin-xero.php?error=${encodeURIComponent(`Xero auth error: ${xeroError}`)}`);
+  }
+  // Allow state mismatch gracefully (can happen after session expiry or new tab)
+  if (state && session.xeroState && state !== session.xeroState) {
+    return res.redirect(`/portal/admin-xero.php?error=${encodeURIComponent("State mismatch — please try connecting again.")}`);
+  }
+  if (!code) {
+    return res.redirect(`/portal/admin-xero.php?error=${encodeURIComponent("No authorization code received from Xero.")}`);
+  }
+
+  const redirectUri = getXeroRedirectUri(req);
   try {
     const tokenResp = await fetch("https://identity.xero.com/connect/token", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + Buffer.from(`${XERO_CLIENT_ID}:${XERO_CLIENT_SECRET}`).toString("base64") },
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: "Basic " + Buffer.from(`${XERO_CLIENT_ID}:${XERO_CLIENT_SECRET}`).toString("base64"),
+      },
       body: new URLSearchParams({ grant_type: "authorization_code", code: String(code), redirect_uri: redirectUri }).toString(),
     });
     if (!tokenResp.ok) throw new Error(`Token exchange failed: ${await tokenResp.text()}`);
     const tokens: any = await tokenResp.json();
-    // Get tenant list
-    const tenantResp = await fetch("https://api.xero.com/connections", { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+
+    // Get tenant/org list
+    const tenantResp = await fetch("https://api.xero.com/connections", {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
     const tenants: any[] = await tenantResp.json();
     const tenantId = tenants[0]?.tenantId || "";
-    // Store in provider_settings
-    await webhookPool.query(`INSERT INTO provider_settings (provider_name, settings, updated_at) VALUES ('xero', $1, NOW()) ON CONFLICT (provider_name) DO UPDATE SET settings = $1, updated_at = NOW()`,
-      [JSON.stringify({ access_token: tokens.access_token, refresh_token: tokens.refresh_token, expires_at: Date.now() + tokens.expires_in * 1000, tenant_id: tenantId, tenants })]);
+
+    // Store tokens in provider_settings
+    await webhookPool.query(
+      `INSERT INTO provider_settings (provider_name, settings, updated_at) VALUES ('xero', $1, NOW())
+       ON CONFLICT (provider_name) DO UPDATE SET settings = $1, updated_at = NOW()`,
+      [JSON.stringify({ access_token: tokens.access_token, refresh_token: tokens.refresh_token, expires_at: Date.now() + tokens.expires_in * 1000, tenant_id: tenantId, tenants })]
+    );
     res.redirect("/portal/admin-xero.php?connected=1");
   } catch (e: any) {
     res.redirect(`/portal/admin-xero.php?error=${encodeURIComponent(e.message)}`);
   }
-});
+}
+
+// Register both with and without /portal prefix to match any redirect URI config
+app.get("/portal/api/xero/connect", handleXeroConnect);
+app.get("/api/xero/connect",        handleXeroConnect);
+app.get("/portal/api/xero/callback", handleXeroCallback);
+app.get("/api/xero/callback",        handleXeroCallback);
 
 app.post("/portal/api/xero/refresh", async (req, res) => {
   const session = req.session as any;
