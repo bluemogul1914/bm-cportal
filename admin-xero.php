@@ -25,9 +25,14 @@ $xero_client_id = getenv('XERO_CLIENT_ID') ?: '';
    prefer XERO_REDIRECT_URI env var, otherwise auto-build WITHOUT /portal/ prefix */
 $_xero_redirect_uri = getenv('XERO_REDIRECT_URI') ?: '';
 if (!$_xero_redirect_uri) {
-    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    // Detect proto: honour reverse-proxy headers first (Coolify/Nginx sets X-Forwarded-Proto)
+    $proto = $_SERVER['HTTP_X_FORWARDED_PROTO']
+          ?? ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : null)
+          ?? 'https'; // default to https for production deployments
     // Prefer X-Forwarded-Host so this works behind Nginx/Coolify
     $host  = $_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'portal.bluemogul.us';
+    // Strip port from host for clean URLs
+    $host  = explode(':', $host)[0] . (strpos($host, ':') !== false && !in_array(explode(':',$host)[1],['80','443']) ? ':'.explode(':',$host)[1] : '');
     $_xero_redirect_uri = "$proto://$host/api/xero/callback";
 }
 $connected_msg = $_GET['connected'] ?? '';

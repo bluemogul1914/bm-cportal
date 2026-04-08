@@ -1549,7 +1549,7 @@ $show_map = $has_location || $has_address;
             <?php
             $li_url  = $client['linkedin_url'] ?? '';
             $li_data = !empty($client['linkedin_data']) ? (is_string($client['linkedin_data']) ? json_decode($client['linkedin_data'], true) : $client['linkedin_data']) : null;
-            $proxycurl_configured = defined('PROXYCURL_API_KEY') && PROXYCURL_API_KEY !== '';
+            $proxycurl_configured = true; // Ollama AI scraping — no API key needed
             ?>
 
             <div class="space-y-5 max-w-3xl">
@@ -1685,15 +1685,16 @@ $show_map = $has_location || $has_address;
                         </div>
                         <?php endif; ?>
                         <div class="px-6 py-3 bg-gray-50 border-t border-gray-100 flex justify-between items-center text-xs text-gray-400">
-                            <span>Data cached from ProxyCurl</span>
+                            <span><i class="fas fa-robot mr-1"></i>Scraped &amp; extracted via Ollama AI</span>
                             <button onclick="liClearData()" class="text-red-500 hover:text-red-700 transition" data-testid="button-clear-linkedin-data"><i class="fas fa-trash-alt mr-1"></i>Clear cached data</button>
                         </div>
                     </div>
                     <?php else: ?>
                     <div class="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400">
                         <svg class="w-12 h-12 mx-auto mb-3 opacity-30" style="fill:#0A66C2" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-                        <p>No profile data yet.</p>
-                        <p class="text-xs mt-1">Set a LinkedIn URL above and click "Fetch Profile Data".</p>
+                        <p class="font-medium">No profile data yet.</p>
+                        <p class="text-xs mt-1">Paste the LinkedIn or website URL above, then click <strong>Fetch Profile Data</strong>.</p>
+                        <p class="text-xs mt-1 text-gray-300">Works on any public URL — LinkedIn, company website, etc. Powered by Ollama AI.</p>
                     </div>
                     <?php endif; ?>
                 </div>

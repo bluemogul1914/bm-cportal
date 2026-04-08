@@ -5,7 +5,92 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
     portal_redirect('/portal');
 }
 
-$user_name = $_SESSION['user_name'] ?? 'Admin';
+$user_id    = $_SESSION['user_id'];
+$user_name  = $_SESSION['user_name'] ?? 'Admin';
+$user_email = $_SESSION['user_email'] ?? '';
+$pdo_early  = getDB();
+
+/* ── Add Client (modal form POST) ──────────────────────────────────────── */
+$modal_error = '';
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'add_client') {
+    require_csrf();
+    $first_name    = trim($_POST['first_name'] ?? '');
+    $last_name     = trim($_POST['last_name']  ?? '');
+    $title_val     = trim($_POST['title']      ?? '');
+    $job_title     = trim($_POST['job_title']  ?? '');
+    $tags_raw      = trim($_POST['tags']       ?? '');
+    $name          = trim("$first_name $last_name");
+    if ($name === '') $name = trim($_POST['name'] ?? '');
+
+    $phones_json  = $_POST['phones_json']  ?? '[]';
+    $emails_json  = $_POST['emails_json']  ?? '[]';
+    $socials_json = $_POST['socials_json'] ?? '[]';
+    $phones_arr   = json_decode($phones_json,  true) ?: [];
+    $emails_arr   = json_decode($emails_json,  true) ?: [];
+    $socials_arr  = json_decode($socials_json, true) ?: [];
+
+    $email = '';
+    foreach ($emails_arr as $e) { if (!empty($e['value'])) { $email = $e['value']; break; } }
+    if (empty($email)) $email = trim($_POST['email_fallback'] ?? '');
+    $phone = '';
+    foreach ($phones_arr as $p) { if (!empty($p['value'])) { $phone = $p['value']; break; } }
+    $linkedin_url = '';
+    foreach ($socials_arr as $s) {
+        if (isset($s['type']) && strtolower($s['type']) === 'linkedin' && !empty($s['value'])) {
+            $linkedin_url = $s['value']; break;
+        }
+    }
+    $company        = trim($_POST['company'] ?? '');
+    $crm_company_id = intval($_POST['crm_company_id'] ?? 0) ?: null;
+    $address        = trim($_POST['address'] ?? '');
+    $city           = trim($_POST['city'] ?? '');
+    $state_val      = trim($_POST['state'] ?? '');
+    $zip            = trim($_POST['zip'] ?? '');
+    $notes          = trim($_POST['notes'] ?? '');
+    $credit_balance = floatval($_POST['credit_balance'] ?? 0);
+    $parent_id      = intval($_POST['parent_client_id'] ?? 0) ?: null;
+
+    $tags_arr = array_filter(array_map('trim', explode(',', $tags_raw)));
+    $tags_pg  = empty($tags_arr) ? null : '{' . implode(',', array_map(fn($t) => '"' . str_replace('"', '\\"', $t) . '"', $tags_arr)) . '}';
+
+    if (empty($name)) {
+        $modal_error = 'First name is required.';
+    } else {
+        try {
+            $stmt = $pdo_early->prepare("
+                INSERT INTO clients
+                  (name, first_name, last_name, title, job_title,
+                   email, phone, company, crm_company_id,
+                   address, city, state, zip,
+                   notes, credit_balance, parent_id,
+                   linkedin_url, phones, emails, social_links, tags,
+                   created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?,NOW(),NOW())
+                RETURNING id
+            ");
+            $stmt->execute([
+                $name, $first_name, $last_name, $title_val, $job_title,
+                $email, $phone, $company, $crm_company_id,
+                $address, $city, $state_val, $zip,
+                $notes, $credit_balance, $parent_id,
+                $linkedin_url ?: null,
+                $phones_json, $emails_json, $socials_json, $tags_pg,
+            ]);
+            $new_id = $stmt->fetchColumn();
+            $pdo_early->prepare("INSERT INTO activity_log (user_id,action,entity_type,entity_id,details,ip_address) VALUES (?,?,?,?,?,?)")
+                ->execute([$user_id,'client_created','client',$new_id,"Created client: $name",$_SERVER['REMOTE_ADDR']??'0.0.0.0']);
+            portal_redirect("/portal/admin-client-detail.php?id=$new_id");
+        } catch (PDOException $e) {
+            $modal_error = str_contains($e->getMessage(),'duplicate key')
+                ? 'A client with this email already exists.'
+                : 'Error: ' . $e->getMessage();
+        }
+    }
+}
+
+/* ── Companies & clients for modal pickers ─────────────────────────────── */
+try { $all_companies = $pdo_early->query("SELECT id,name FROM crm_companies ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e){ $all_companies=[]; }
+try { $all_clients   = $pdo_early->query("SELECT id,name,company FROM clients ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e){ $all_clients=[]; }
 
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $limit = 20;
@@ -103,7 +188,7 @@ try {
                             <h1 class="text-2xl font-semibold text-gray-900">Client Management</h1>
                             <p class="text-sm text-gray-600 mt-1">Manage all your clients and accounts</p>
                         </div>
-                        <button onclick="location.href='admin-client-add.php'" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition">
+                        <button onclick="document.getElementById('add-person-modal').classList.remove('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition" data-testid="button-add-client">
                             <i class="fas fa-plus mr-2"></i>Add New Client
                         </button>
                     </div>
@@ -308,20 +393,187 @@ try {
     <script>
         function deleteClient(id) {
             if (confirm('Are you sure you want to delete this client? This action cannot be undone.')) {
-                fetch('/api/clients.php?id=' + id, {
-                    method: 'DELETE'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        location.reload();
-                    } else {
-                        alert('Error deleting client');
-                    }
-                });
+                fetch('/api/clients.php?id=' + id, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(d => { if (d.success) location.reload(); else alert('Error deleting client'); });
             }
         }
     </script>
+
+<!-- ── New Person Modal ──────────────────────────────────────────────────── -->
+<div id="add-person-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl w-full max-w-xl shadow-2xl flex flex-col max-h-[92vh]">
+        <div class="flex items-center justify-between px-5 py-4 border-b flex-shrink-0">
+            <h3 class="text-lg font-semibold text-gray-900">New Person</h3>
+            <button onclick="document.getElementById('add-person-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600" data-testid="button-close-person-modal"><i class="fas fa-times"></i></button>
+        </div>
+
+        <form method="POST" id="personForm" class="overflow-y-auto">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="add_client">
+            <input type="hidden" name="phones_json"  id="p_phones_json"  value="[]">
+            <input type="hidden" name="emails_json"  id="p_emails_json"  value="[]">
+            <input type="hidden" name="socials_json" id="p_socials_json" value="[]">
+            <input type="hidden" name="email_fallback" id="p_email_fallback">
+
+            <?php if ($modal_error): ?>
+            <div class="mx-5 mt-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2 rounded-md"><?= htmlspecialchars($modal_error) ?></div>
+            <?php endif; ?>
+
+            <div class="p-5 space-y-4">
+                <!-- Name row -->
+                <div class="flex gap-2 items-start">
+                    <div style="width:80px;flex-shrink:0">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                        <select name="title" class="w-full border border-gray-300 rounded-md px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="select-person-title">
+                            <option value=""></option>
+                            <option>Mr</option><option>Mrs</option><option>Ms</option>
+                            <option>Dr</option><option>Prof</option><option>Rev</option>
+                        </select>
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">First Name <span class="text-red-500">*</span></label>
+                        <input type="text" name="first_name" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-person-first-name" autofocus>
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                        <input type="text" name="last_name" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-person-last-name">
+                    </div>
+                </div>
+
+                <!-- Job Title & Organisation -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
+                        <input type="text" name="job_title" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-person-job-title">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Organisation</label>
+                        <select name="crm_company_id" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="select-person-org">
+                            <option value="">— Find an organisation —</option>
+                            <?php foreach ($all_companies as $co): ?>
+                            <option value="<?= $co['id'] ?>"><?= htmlspecialchars($co['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <input type="text" name="company" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Or type company name" data-testid="input-person-company">
+                    </div>
+                </div>
+
+                <!-- Tags -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                    <div class="border border-gray-300 rounded-md px-3 py-2 min-h-[38px] flex flex-wrap gap-1 items-center cursor-text" id="pTagContainer" onclick="document.getElementById('pTagInput').focus()">
+                        <input id="pTagInput" class="outline-none text-sm flex-1 min-w-[80px] bg-transparent" placeholder="Type and press Enter…" data-testid="input-person-tags">
+                    </div>
+                    <input type="hidden" name="tags" id="pTagsHidden">
+                </div>
+
+                <!-- Contact Details -->
+                <div class="border-t border-gray-100 pt-4">
+                    <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Contact Details</div>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Phone Numbers</label>
+                            <div id="p-phones-container"></div>
+                            <span class="text-xs text-blue-600 cursor-pointer hover:underline" onclick="pAddRow('phones')" data-testid="button-person-add-phone">+ Add another phone number</span>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Email Addresses</label>
+                            <div id="p-emails-container"></div>
+                            <span class="text-xs text-blue-600 cursor-pointer hover:underline" onclick="pAddRow('emails')" data-testid="button-person-add-email">+ Add another email address</span>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Websites &amp; Social Networks</label>
+                            <div id="p-socials-container"></div>
+                            <span class="text-xs text-blue-600 cursor-pointer hover:underline" onclick="pAddRow('socials')" data-testid="button-person-add-social">+ Add another website address</span>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                            <input type="text" name="address" placeholder="Street address" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none mb-2" data-testid="input-person-address">
+                            <div class="grid grid-cols-3 gap-2">
+                                <input type="text" name="city"  placeholder="City"  class="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-person-city">
+                                <input type="text" name="state" placeholder="State" class="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-person-state">
+                                <input type="text" name="zip"   placeholder="ZIP"   class="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="input-person-zip">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                    <textarea name="notes" rows="2" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" data-testid="textarea-person-notes"></textarea>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 px-5 py-4 border-t bg-gray-50 rounded-b-xl flex-shrink-0">
+                <button type="button" onclick="document.getElementById('add-person-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800" data-testid="button-cancel-person">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium" data-testid="button-submit-person">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+/* ── Person modal: dynamic row helpers ────────────────────────────────── */
+const pRowConfig = {
+    phones:  { types:['Mobile','Work','Home','Other'],   placeholder:'Phone number',   jsonId:'p_phones_json',  containerId:'p-phones-container' },
+    emails:  { types:['Work','Personal','Other'],         placeholder:'Email address',  jsonId:'p_emails_json',  containerId:'p-emails-container' },
+    socials: { types:['Website','LinkedIn','Twitter / X','Facebook','Instagram','Other'], placeholder:'URL', jsonId:'p_socials_json', containerId:'p-socials-container' },
+};
+const pState = { phones:[], emails:[], socials:[] };
+
+function pSyncJson(type) {
+    document.getElementById(pRowConfig[type].jsonId).value = JSON.stringify(pState[type]);
+    if (type==='emails') {
+        const first = pState.emails.find(e=>e.value);
+        document.getElementById('p_email_fallback').value = first?.value||'';
+    }
+}
+
+function pAddRow(type, val='', selType='') {
+    const cfg = pRowConfig[type];
+    const idx = pState[type].length;
+    const entry = { value: val, type: selType||cfg.types[0] };
+    pState[type].push(entry);
+    const wrap = document.createElement('div');
+    wrap.className = 'flex gap-2 items-center mb-2';
+    wrap.innerHTML = `
+        <input type="text" value="${val}" placeholder="${cfg.placeholder}"
+            class="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            oninput="pState['${type}'][${idx}].value=this.value;pSyncJson('${type}')">
+        <select class="border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" style="width:115px"
+            onchange="pState['${type}'][${idx}].type=this.value;pSyncJson('${type}')">
+            ${cfg.types.map(t=>`<option${t===entry.type?' selected':''}>${t}</option>`).join('')}
+        </select>
+        <button type="button" class="text-gray-300 hover:text-red-500 text-lg leading-none"
+            onclick="this.parentElement.remove();pState['${type}'].splice(${idx},1);pSyncJson('${type}')">×</button>`;
+    document.getElementById(cfg.containerId).appendChild(wrap);
+    wrap.querySelector('input').focus();
+    pSyncJson(type);
+}
+
+/* Tags */
+const pTags = [];
+document.getElementById('pTagInput').addEventListener('keydown', e => {
+    if (e.key==='Enter'||e.key===',') {
+        e.preventDefault();
+        const v = e.target.value.trim().replace(/,$/,'');
+        if (!v||pTags.includes(v)) return;
+        pTags.push(v);
+        const chip = document.createElement('span');
+        chip.className = 'inline-flex items-center gap-1 bg-blue-50 text-blue-700 rounded-full px-2.5 py-0.5 text-xs';
+        chip.innerHTML = `${v} <button type="button" onclick="pTags.splice(pTags.indexOf('${v.replace(/'/g,"\\'")}'),1);this.parentElement.remove();document.getElementById('pTagsHidden').value=pTags.join(',')" class="text-blue-400 hover:text-blue-700 text-xs">✕</button>`;
+        document.getElementById('pTagContainer').insertBefore(chip, e.target);
+        e.target.value='';
+        document.getElementById('pTagsHidden').value = pTags.join(',');
+    }
+});
+
+/* Auto-open on error */
+<?php if ($modal_error): ?>
+document.getElementById('add-person-modal').classList.remove('hidden');
+<?php endif; ?>
+</script>
 
 </body>
 </html>
