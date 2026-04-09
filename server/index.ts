@@ -363,6 +363,14 @@ async function performScrapeLookup(params: {
 
   if (!targetUrl) return { success: false, error: "Provide a URL or search query." };
 
+  // Reject anything that isn't a real URL (e.g. user typed a name in the URL field)
+  if (!/^https?:\/\//i.test(targetUrl)) {
+    return {
+      success: false,
+      error: `"${targetUrl}" doesn't look like a URL. Paste a full LinkedIn profile URL (https://www.linkedin.com/in/…) or use Lookup by Name / Lookup by Email.`,
+    };
+  }
+
   const isLinkedIn = targetUrl.includes("linkedin.com");
   try {
     if (isLinkedIn && wsaiKey) {

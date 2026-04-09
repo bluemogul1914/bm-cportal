@@ -1764,6 +1764,14 @@ $show_map = $has_location || $has_address;
             function liFetch() {
                 const url = document.getElementById('li-url-input').value.trim();
                 if (!url) { liStatus('Paste a LinkedIn or website URL first.', 'error'); return; }
+                if (!/^https?:\/\//i.test(url)) {
+                    const el = document.getElementById('li-status');
+                    el.className = 'text-sm px-3 py-2 rounded-lg bg-amber-50 text-amber-800';
+                    const liSearch = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(url)}`;
+                    el.innerHTML = `⚠ That doesn't look like a URL. Use <strong>Lookup by Name</strong> to search, or paste a full profile URL (https://www.linkedin.com/in/…). <a href="${liSearch}" target="_blank" class="underline font-semibold">Search LinkedIn for "${url}" →</a>`;
+                    el.classList.remove('hidden');
+                    return;
+                }
                 liCall({ linkedin_url: url, entity_type: liEntityType, entity_id: liEntityId }, 'Scraping profile');
             }
 
