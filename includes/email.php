@@ -45,15 +45,36 @@ function getUserSmtpSettings(int $user_id): ?array {
 function getSmtpSettings() {
     try {
         $pdo = getDB();
+
+        // Primary: provider_settings table (saved by the SMTP Setup page in Leads)
+        try {
+            $st = $pdo->prepare("SELECT key_name,key_value FROM provider_settings WHERE provider='smtp'");
+            $st->execute();
+            $ps = $st->fetchAll(PDO::FETCH_KEY_PAIR);
+            if (!empty($ps['host']) && !empty($ps['username'])) {
+                return [
+                    'host'       => $ps['host'],
+                    'port'       => intval($ps['port'] ?? 587),
+                    'user'       => $ps['username'],
+                    'pass'       => $ps['password'] ?? '',
+                    'from_email' => $ps['from_email'] ?? 'noreply@bluemogul.biz',
+                    'from_name'  => $ps['from_name']  ?? 'Blue Mogul',
+                    'encryption' => $ps['encryption'] ?? 'tls',
+                ];
+            }
+        } catch (\Exception $e) {}
+
+        // Fallback: system_settings table (saved by the old Admin Settings page)
         $stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('smtp_host','smtp_port','smtp_user','smtp_pass','from_email','from_name','company_name')");
         $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
         return [
-            'host' => $settings['smtp_host'] ?? '',
-            'port' => intval($settings['smtp_port'] ?? 587),
-            'user' => $settings['smtp_user'] ?? '',
-            'pass' => $settings['smtp_pass'] ?? '',
+            'host'       => $settings['smtp_host'] ?? '',
+            'port'       => intval($settings['smtp_port'] ?? 587),
+            'user'       => $settings['smtp_user'] ?? '',
+            'pass'       => $settings['smtp_pass'] ?? '',
             'from_email' => $settings['from_email'] ?? 'noreply@bluemogul.biz',
-            'from_name' => $settings['from_name'] ?? ($settings['company_name'] ?? 'Blue Mogul'),
+            'from_name'  => $settings['from_name'] ?? ($settings['company_name'] ?? 'Blue Mogul'),
+            'encryption' => 'tls',
         ];
     } catch (\Exception $e) {
         return null;

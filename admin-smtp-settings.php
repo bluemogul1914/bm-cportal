@@ -44,49 +44,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($action === 'send_test_email') {
-            $to  = trim($_POST['test_email'] ?? '');
-            $host= $smtp['host'];
-            $port= (int)($smtp['port'] ?: 587);
-            $user= $smtp['username'];
-            $pass= $smtp['password'];
-            $from= $smtp['from_email'];
-            $fname=$smtp['from_name'];
-            if (!$to || !filter_var($to,FILTER_VALIDATE_EMAIL)) {
+            $to   = trim($_POST['test_email'] ?? '');
+            $host = $smtp['host'];
+            $port = (int)($smtp['port'] ?: 587);
+            $user = $smtp['username'];
+            $pass = $smtp['password'];
+            $from = $smtp['from_email'];
+            $fname= $smtp['from_name'];
+            $enc  = $smtp['encryption'] ?? 'tls';
+            if (!$to || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
                 $error_msg = 'Enter a valid test email address.';
             } elseif (!$host || !$user || !$pass) {
                 $error_msg = 'Save complete SMTP credentials before sending a test email.';
             } else {
-                // Try native PHP mail via configured SMTP (basic)
-                $headers  = "From: {$fname} <{$from}>\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n";
-                $subject  = "Blue Mogul SMTP Test";
-                $body     = "This is a test email sent from the Blue Mogul admin portal to verify your SMTP configuration is working correctly.\n\nSent: ".date('Y-m-d H:i:s');
-                // Use SMTP socket for basic test
-                try {
-                    $conn = @fsockopen(($smtp['encryption']==='ssl'?'ssl://':'').$host,$port,$errno,$errstr,10);
-                    if (!$conn) throw new Exception("Cannot connect: $errstr ($errno)");
-                    $recv = fgets($conn,512);
-                    if (substr($recv,0,3)!=='220') throw new Exception("Unexpected greeting: $recv");
-                    fputs($conn,"EHLO ".gethostname()."\r\n"); $recv=fgets($conn,512);
-                    // STARTTLS
-                    if ($smtp['encryption']==='tls') {
-                        fputs($conn,"STARTTLS\r\n"); $recv=fgets($conn,512);
-                        stream_socket_enable_crypto($conn,true,STREAM_CRYPTO_METHOD_TLS_CLIENT);
-                        fputs($conn,"EHLO ".gethostname()."\r\n"); $recv=fgets($conn,512);
+                // Helper: read all lines of a multi-line SMTP response (e.g. EHLO returns many 250- lines)
+                $readSmtpResponse = function($conn) {
+                    $buf = '';
+                    while ($line = fgets($conn, 512)) {
+                        $buf .= $line;
+                        // Final line has a space after the 3-digit code: "250 OK\r\n"
+                        if (strlen($line) >= 4 && $line[3] === ' ') break;
                     }
-                    fputs($conn,"AUTH LOGIN\r\n"); fgets($conn,512);
-                    fputs($conn,base64_encode($user)."\r\n"); fgets($conn,512);
-                    fputs($conn,base64_encode($pass)."\r\n"); $recv=fgets($conn,512);
-                    if (substr($recv,0,3)!=='235') throw new Exception("Auth failed: $recv");
-                    fputs($conn,"MAIL FROM:<{$from}>\r\n"); fgets($conn,512);
-                    fputs($conn,"RCPT TO:<{$to}>\r\n"); fgets($conn,512);
-                    fputs($conn,"DATA\r\n"); fgets($conn,512);
-                    fputs($conn,"From: {$fname} <{$from}>\r\nTo: {$to}\r\nSubject: {$subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n{$body}\r\n.\r\n");
-                    $recv=fgets($conn,512);
-                    fputs($conn,"QUIT\r\n"); fclose($conn);
-                    if (substr($recv,0,3)==='250') { $success_msg = "Test email sent to $to successfully!"; }
-                    else { $error_msg = "Send failed: $recv"; }
+                    return $buf;
+                };
+
+                try {
+                    $ctx = stream_context_create(['ssl' => ['verify_peer'=>false,'verify_peer_name'=>false,'allow_self_signed'=>true]]);
+                    if ($enc === 'ssl' || $port === 465) {
+                        $conn = @stream_socket_client("ssl://{$host}:{$port}", $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
+                    } else {
+                        $conn = @stream_socket_client("tcp://{$host}:{$port}", $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
+                    }
+                    if (!$conn) throw new Exception("Cannot connect: $errstr ($errno)");
+                    stream_set_timeout($conn, 10);
+
+                    $recv = $readSmtpResponse($conn);
+                    if (substr(trim($recv), 0, 3) !== '220') throw new Exception("Unexpected greeting: " . trim($recv));
+
+                    fputs($conn, "EHLO " . gethostname() . "\r\n");
+                    $ehlo = $readSmtpResponse($conn);
+
+                    // STARTTLS on port 587 (regardless of encryption setting)
+                    if ($port === 587 || $enc === 'tls') {
+                        if (stripos($ehlo, 'STARTTLS') === false) throw new Exception("Server does not offer STARTTLS");
+                        fputs($conn, "STARTTLS\r\n");
+                        $tlsResp = $readSmtpResponse($conn);
+                        if (substr(trim($tlsResp), 0, 3) !== '220') throw new Exception("STARTTLS rejected: " . trim($tlsResp));
+                        $ok = @stream_socket_enable_crypto($conn, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT);
+                        if (!$ok) throw new Exception("TLS handshake failed");
+                        fputs($conn, "EHLO " . gethostname() . "\r\n");
+                        $readSmtpResponse($conn); // consume post-TLS EHLO
+                    }
+
+                    fputs($conn, "AUTH LOGIN\r\n");
+                    $a1 = $readSmtpResponse($conn);
+                    if (substr(trim($a1), 0, 3) !== '334') throw new Exception("AUTH LOGIN not accepted: " . trim($a1));
+
+                    fputs($conn, base64_encode($user) . "\r\n");
+                    $a2 = $readSmtpResponse($conn);
+                    if (substr(trim($a2), 0, 3) !== '334') throw new Exception("Username rejected: " . trim($a2));
+
+                    fputs($conn, base64_encode($pass) . "\r\n");
+                    $a3 = $readSmtpResponse($conn);
+                    if (substr(trim($a3), 0, 3) !== '235') throw new Exception("Authentication failed — check your username/password. Server said: " . trim($a3));
+
+                    fputs($conn, "MAIL FROM:<{$from}>\r\n");
+                    $mf = $readSmtpResponse($conn);
+                    if (substr(trim($mf), 0, 3) !== '250') throw new Exception("MAIL FROM rejected: " . trim($mf));
+
+                    fputs($conn, "RCPT TO:<{$to}>\r\n");
+                    $rt = $readSmtpResponse($conn);
+                    if (substr(trim($rt), 0, 3) !== '250') throw new Exception("Recipient rejected: " . trim($rt));
+
+                    fputs($conn, "DATA\r\n");
+                    $dr = $readSmtpResponse($conn);
+                    if (substr(trim($dr), 0, 3) !== '354') throw new Exception("DATA rejected: " . trim($dr));
+
+                    $subject = "Blue Mogul Portal - SMTP Test";
+                    $body    = "This is a test email confirming your SMTP configuration is working.\r\n\r\nSent: " . date('Y-m-d H:i:s T');
+                    fputs($conn, "Date: " . date('r') . "\r\nFrom: {$fname} <{$from}>\r\nTo: {$to}\r\nSubject: {$subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n{$body}\r\n.\r\n");
+                    $sr = $readSmtpResponse($conn);
+                    fputs($conn, "QUIT\r\n");
+                    fclose($conn);
+
+                    if (substr(trim($sr), 0, 3) === '250') {
+                        $success_msg = "✓ Test email sent to {$to} successfully!";
+                    } else {
+                        $error_msg = "Send failed: " . trim($sr);
+                    }
                 } catch (Exception $ex) {
-                    $error_msg = "SMTP error: ".$ex->getMessage();
+                    $error_msg = "SMTP error: " . $ex->getMessage();
                 }
             }
         }
