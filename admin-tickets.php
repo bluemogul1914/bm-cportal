@@ -102,12 +102,20 @@ try {
         'high_priority' => (int)($db_stats['high_priority'] ?? 0),
     ];
 
-    $clients_list = $pdo->query("SELECT id, name, email, company FROM clients ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
+    error_log("admin-tickets query error: " . $e->getMessage());
     $tickets = [];
     $total_tickets = 0;
     $total_pages = 0;
-    $clients_list = [];
+}
+
+// Load clients list separately so the "Create Ticket" modal always works
+$clients_list = [];
+try {
+    $pdo = $pdo ?? getDB();
+    $clients_list = $pdo->query("SELECT id, name, email, company FROM clients ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("admin-tickets clients list error: " . $e->getMessage());
 }
 ?>
 <!DOCTYPE html>

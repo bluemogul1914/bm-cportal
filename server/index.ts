@@ -2343,12 +2343,21 @@ async function bootstrapPortalDatabase() {
         description TEXT,
         status VARCHAR(20) DEFAULT 'open',
         priority VARCHAR(20) DEFAULT 'medium',
-        assigned_to INTEGER,
+        ticket_group VARCHAR(50) DEFAULT 'general',
+        assigned_to VARCHAR(200),
         source VARCHAR(50) DEFAULT 'portal',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    // Migrate existing tickets table to add missing columns
+    await webhookPool.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_group VARCHAR(50) DEFAULT 'general'`);
+    await webhookPool.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'portal'`);
+    // Change assigned_to from INTEGER to VARCHAR if needed (ignore error if already VARCHAR)
+    try {
+      await webhookPool.query(`ALTER TABLE tickets ALTER COLUMN assigned_to TYPE VARCHAR(200) USING assigned_to::text`);
+    } catch (_) {}
+
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS ticket_comments (
         id SERIAL PRIMARY KEY,
@@ -2356,6 +2365,20 @@ async function bootstrapPortalDatabase() {
         user_id INTEGER,
         comment TEXT,
         is_internal BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS ticket_time_entries (
+        id SERIAL PRIMARY KEY,
+        ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
+        user_id INTEGER,
+        description TEXT,
+        duration_minutes INTEGER DEFAULT 0,
+        billable BOOLEAN DEFAULT TRUE,
+        hourly_rate DECIMAL(10,2) DEFAULT 0,
+        started_at TIMESTAMP,
+        ended_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
