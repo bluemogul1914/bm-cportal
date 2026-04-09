@@ -315,95 +315,131 @@ async function extractProfileWithAI(text: string, profileType: string): Promise<
   return extractJsonFromText(content);
 }
 
-app.post("/portal/api/scrape-lookup", async (req, res) => {
-  const session = req.session as any;
-  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
+// ── Shared scrape-and-enrich logic (called directly, no self-referential HTTP) ─
+function extractLinkedInUrlFromText(text: string): string {
+  // First try DDG redirect links: uddg=https%3A%2F%2Fwww.linkedin.com%2F...
+  const uddgMatch = text.match(/uddg=(https?%3A%2F%2F(?:www\.)?linkedin\.com%2F(?:in|company)%2F[^&\s"')\]>]+)/i);
+  if (uddgMatch) {
+    return decodeURIComponent(uddgMatch[1]).split("?")[0].replace(/\/$/, "");
+  }
+  // Then try a plain URL in text
+  const direct = text.match(/https?:\/\/(?:www\.)?linkedin\.com\/(?:in|company)\/[a-zA-Z0-9_-]{3,}[^\s"')\]>]*/i);
+  return direct ? direct[0].split("?")[0].replace(/\/$/, "") : "";
+}
 
-  const { url, search_query, entity_type, entity_id, profile_type } = req.body;
+async function performScrapeLookup(params: {
+  url?: string;
+  search_query?: string;
+  search_name?: string;  // raw name for helpful error link
+  entity_type?: string;
+  entity_id?: string;
+  profile_type?: string;
+}): Promise<{ success: boolean; profile?: any; error?: string; search_url?: string }> {
   const wsaiKey = process.env.WEBSCRAPING_AI_KEY || "";
+  let targetUrl = (params.url || "").trim();
+  let rawText   = "";
 
-  try {
-    let targetUrl = (url || "").trim();
-    let rawText   = "";
+  if (!targetUrl && params.search_query) {
+    // Try DuckDuckGo Lite (static HTML, no JS) via Jina Reader
+    let found = "";
+    const liteUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(params.search_query)}`;
+    try {
+      const liteText = await scrapeWithJina(liteUrl);
+      found = extractLinkedInUrlFromText(liteText);
+    } catch (_) {}
 
-    if (!targetUrl && search_query) {
-      // Use DuckDuckGo Instant Answer API to find a LinkedIn or company URL
-      const query = encodeURIComponent(search_query);
-      const ddgResp = await fetch(`https://api.duckduckgo.com/?q=${query}&format=json&no_redirect=1`, { signal: AbortSignal.timeout(8000) });
-      const ddgData: any = await ddgResp.json();
-      targetUrl = ddgData.AbstractURL || ddgData.Redirect || "";
-      if (!targetUrl && ddgData.RelatedTopics?.length) {
-        targetUrl = ddgData.RelatedTopics[0]?.FirstURL || "";
-      }
-      if (!targetUrl) {
-        return res.status(400).json({ error: "Could not find a URL for that query. Try pasting the URL directly." });
-      }
+    if (!found) {
+      // Build a manual search link the user can click to find the profile themselves
+      const searchHint = params.search_name || params.search_query || "";
+      const liSearchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(searchHint)}`;
+      return {
+        success: false,
+        error: `Could not automatically find a LinkedIn URL for "${searchHint}". Paste the profile URL in the field above and click Fetch Profile Data.`,
+        search_url: liSearchUrl,
+      };
     }
+    targetUrl = found;
+  }
 
-    if (!targetUrl) return res.status(400).json({ error: "Provide a url or search_query" });
+  if (!targetUrl) return { success: false, error: "Provide a URL or search query." };
 
-    // Choose scraping method
-    const isLinkedIn = targetUrl.includes("linkedin.com");
+  const isLinkedIn = targetUrl.includes("linkedin.com");
+  try {
     if (isLinkedIn && wsaiKey) {
       rawText = await scrapeWithWebScrapingAI(targetUrl, wsaiKey);
     } else {
       rawText = await scrapeWithJina(targetUrl);
     }
-
-    // Extract structured data with Ollama (self-hosted)
-    let profile: any = { raw_snippet: rawText.slice(0, 500), scraped_url: targetUrl };
-    if (rawText.length > 50) {
-      try {
-        const pType = profile_type || (targetUrl.includes("/company/") ? "company" : "person");
-        profile = await extractProfileWithAI(rawText, pType);
-        profile.scraped_url = targetUrl;
-        profile.model_used   = OLLAMA_MODEL;
-      } catch (e: any) {
-        profile.ai_error    = e.message;
-        profile.raw_snippet = rawText.slice(0, 800);
-      }
-    }
-
-    // Cache in DB if entity specified
-    if (entity_type && entity_id) {
-      const table = entity_type === "client" ? "clients" : "leads";
-      const urlToSave = (isLinkedIn ? targetUrl : null);
-      try {
-        await webhookPool.query(
-          `UPDATE ${table} SET ${isLinkedIn ? "linkedin_url = COALESCE($1, linkedin_url)," : ""} linkedin_data = $2, updated_at = NOW() WHERE id = $3`,
-          isLinkedIn ? [urlToSave, JSON.stringify(profile), parseInt(entity_id)] : [JSON.stringify(profile), parseInt(entity_id)]
-        );
-      } catch (e) {
-        // cache is best-effort
-        await webhookPool.query(
-          `UPDATE ${table} SET linkedin_data = $1, updated_at = NOW() WHERE id = $2`,
-          [JSON.stringify(profile), parseInt(entity_id)]
-        ).catch(() => {});
-      }
-    }
-
-    res.json({ success: true, profile });
   } catch (e: any) {
-    res.status(500).json({ error: e.message });
+    return { success: false, error: `Scrape failed: ${e.message}` };
+  }
+
+  // Extract structured data with Ollama
+  let profile: any = { raw_snippet: rawText.slice(0, 500), scraped_url: targetUrl };
+  if (rawText.length > 50) {
+    try {
+      const pType = params.profile_type || (targetUrl.includes("/company/") ? "company" : "person");
+      profile = await extractProfileWithAI(rawText, pType);
+      profile.scraped_url = targetUrl;
+      profile.model_used  = OLLAMA_MODEL;
+    } catch (e: any) {
+      profile.ai_error    = e.message;
+      profile.raw_snippet = rawText.slice(0, 800);
+    }
+  }
+
+  // Persist in DB
+  if (params.entity_type && params.entity_id) {
+    const table = params.entity_type === "client" ? "clients" : "leads";
+    const urlToSave = isLinkedIn ? targetUrl : null;
+    await webhookPool.query(
+      `UPDATE ${table} SET ${isLinkedIn ? "linkedin_url = COALESCE($1, linkedin_url)," : ""} linkedin_data = $2, updated_at = NOW() WHERE id = $3`,
+      isLinkedIn
+        ? [urlToSave, JSON.stringify(profile), parseInt(params.entity_id)]
+        : [JSON.stringify(profile), parseInt(params.entity_id)]
+    ).catch(() =>
+      webhookPool.query(
+        `UPDATE ${table} SET linkedin_data = $1, updated_at = NOW() WHERE id = $2`,
+        [JSON.stringify(profile), parseInt(params.entity_id)]
+      ).catch(() => {})
+    );
+  }
+
+  return { success: true, profile };
+}
+
+app.post("/portal/api/scrape-lookup", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
+  try {
+    const result = await performScrapeLookup(req.body);
+    res.status(result.success ? 200 : 400).json(result);
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 
-// Keep legacy endpoint as alias (backward compat for existing detail pages)
+// Legacy alias — called directly, no internal HTTP forwarding
 app.post("/portal/api/linkedin-lookup", async (req, res) => {
   const session = req.session as any;
   if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
   const { linkedin_url, entity_type, entity_id, search_name, search_email, profile_type } = req.body;
-  req.body.url = linkedin_url;
-  req.body.search_query = search_email
+  const search_query = search_email
     ? `site:linkedin.com/in ${search_email}`
-    : search_name ? `site:linkedin.com/in ${search_name}` : "";
-  req.body.profile_type = profile_type || "person";
-  // Forward to new handler
-  return fetch(`http://localhost:5000/portal/api/scrape-lookup`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: req.headers.cookie || "" },
-    body: JSON.stringify({ ...req.body, url: linkedin_url, entity_type, entity_id }),
-  }).then(r => r.json()).then(d => res.json(d)).catch((e: any) => res.status(500).json({ error: e.message }));
+    : search_name ? `site:linkedin.com/in "${search_name}"` : "";
+  try {
+    const result = await performScrapeLookup({
+      url: linkedin_url || "",
+      search_query,
+      search_name: search_name || search_email || "",
+      entity_type,
+      entity_id,
+      profile_type: profile_type || "person",
+    });
+    res.status(result.success ? 200 : 400).json(result);
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.post("/portal/api/linkedin-save-url", async (req, res) => {

@@ -1586,11 +1586,9 @@ $show_map = $has_location || $has_address;
                         <?php else: ?>
                         <!-- Fetch / Search Controls -->
                         <div class="flex flex-wrap gap-2 items-center">
-                            <?php if ($li_url): ?>
                             <button onclick="liFetch()" class="px-4 py-2 bg-[#0A66C2] hover:bg-[#0856A8] text-white text-sm rounded-lg transition flex items-center gap-2" data-testid="button-fetch-linkedin">
                                 <i class="fas fa-sync-alt"></i> Fetch Profile Data
                             </button>
-                            <?php endif; ?>
                             <button onclick="liSearchByEmail()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg border border-gray-300 transition" data-testid="button-search-linkedin-email">
                                 <i class="fas fa-envelope mr-1"></i>Lookup by Email
                             </button>
@@ -1726,41 +1724,55 @@ $show_map = $has_location || $has_address;
                 }).catch(()=>liStatus('Network error', 'error'));
             }
 
-            function liFetch() {
-                const url = document.getElementById('li-url-input').value.trim();
-                liStatus('Fetching from LinkedIn via ProxyCurl…');
+            let liAbort = null;
+            function liCall(payload, pendingMsg) {
+                if (liAbort) liAbort.abort();
+                liAbort = new AbortController();
+                liStatus(pendingMsg + ' (AI scraping — may take up to 60 s)…');
+                // Progress ticker so user knows it's working
+                let dots = 0;
+                const ticker = setInterval(() => {
+                    dots = (dots + 1) % 4;
+                    const el = document.getElementById('li-status');
+                    if (el) el.textContent = pendingMsg + ' ' + '.'.repeat(dots + 1);
+                }, 3000);
                 fetch('/portal/api/linkedin-lookup', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ linkedin_url: url, entity_type: liEntityType, entity_id: liEntityId })
-                }).then(r=>r.json()).then(d => {
-                    if (d.success) { liStatus('Profile fetched and saved!', 'ok'); setTimeout(()=>location.reload(), 1200); }
-                    else liStatus('Error: ' + d.error, 'error');
-                }).catch(()=>liStatus('Network error', 'error'));
+                    body: JSON.stringify(payload),
+                    signal: liAbort.signal,
+                }).then(async r => {
+                    clearInterval(ticker);
+                    const d = await r.json();
+                    if (d.success) {
+                        liStatus('Profile saved!', 'ok');
+                        setTimeout(()=>location.reload(), 1200);
+                    } else {
+                        const el = document.getElementById('li-status');
+                        el.className = 'text-sm px-3 py-2 rounded-lg bg-red-50 text-red-700';
+                        el.innerHTML = '⚠ ' + (d.error || 'Unknown error')
+                            + (d.search_url ? ` <a href="${d.search_url}" target="_blank" class="underline font-semibold ml-2">Search LinkedIn →</a>` : '');
+                        el.classList.remove('hidden');
+                    }
+                }).catch(e => {
+                    clearInterval(ticker);
+                    if (e.name === 'AbortError') return;
+                    liStatus('Request failed — check your network or try pasting the URL directly.', 'error');
+                });
+            }
+
+            function liFetch() {
+                const url = document.getElementById('li-url-input').value.trim();
+                if (!url) { liStatus('Paste a LinkedIn or website URL first.', 'error'); return; }
+                liCall({ linkedin_url: url, entity_type: liEntityType, entity_id: liEntityId }, 'Scraping profile');
             }
 
             function liSearchByEmail() {
-                liStatus('Searching LinkedIn by email…');
-                fetch('/portal/api/linkedin-lookup', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ search_email: liEntityEmail, entity_type: liEntityType, entity_id: liEntityId })
-                }).then(r=>r.json()).then(d => {
-                    if (d.success) { liStatus('Profile found and saved!', 'ok'); setTimeout(()=>location.reload(), 1200); }
-                    else liStatus('Error: ' + d.error, 'error');
-                }).catch(()=>liStatus('Network error', 'error'));
+                liCall({ search_email: liEntityEmail, entity_type: liEntityType, entity_id: liEntityId }, 'Searching by email');
             }
 
             function liSearchByName() {
-                liStatus('Searching LinkedIn by name…');
-                fetch('/portal/api/linkedin-lookup', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ search_name: liEntityName, entity_type: liEntityType, entity_id: liEntityId })
-                }).then(r=>r.json()).then(d => {
-                    if (d.success) { liStatus('Profile found and saved!', 'ok'); setTimeout(()=>location.reload(), 1200); }
-                    else liStatus('Error: ' + d.error, 'error');
-                }).catch(()=>liStatus('Network error', 'error'));
+                liCall({ search_name: liEntityName, entity_type: liEntityType, entity_id: liEntityId }, 'Searching by name');
             }
 
             function liClearData() {
