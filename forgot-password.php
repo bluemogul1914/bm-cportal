@@ -16,13 +16,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $user = $stmt->fetch();
         
         if ($user) {
-            $token = bin2hex(random_bytes(32));
-            $expiry = date('Y-m-d H:i:s', time() + 3600);
-            
+            $token  = bin2hex(random_bytes(32));
+            $expiry = date('Y-m-d H:i:s', time() + 172800); // 48 hours
+
             $db->prepare("UPDATE users SET remember_token = ?, remember_token_expires = ? WHERE id = ?")
                ->execute([hash('sha256', $token), $expiry, $user['id']]);
-            
-            $reset_link = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'portal.bluemogul.biz') . '/portal/reset-password.php?token=' . $token;
+
+            $reset_link = portal_base_url() . '/portal/reset-password.php?token=' . $token;
             
             require_once __DIR__ . '/includes/email.php';
             if (function_exists('send_email')) {
@@ -33,7 +33,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     <p style="text-align:center;margin:30px 0;">
                         <a href="' . $reset_link . '" style="background-color:#1a56db;color:#ffffff;padding:12px 30px;border-radius:6px;text-decoration:none;font-weight:600;">Reset Password</a>
                     </p>
-                    <p style="font-size:13px;color:#666;">This link expires in 1 hour. If you didn\'t request this, you can safely ignore this email.</p>'
+                    <p style="font-size:13px;color:#666;">This link expires in 48 hours. If you didn\'t request this, you can safely ignore this email.</p>'
                 );
                 send_email($user['email'], 'Password Reset - Blue Mogul Portal', $body);
             }

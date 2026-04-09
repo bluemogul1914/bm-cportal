@@ -181,8 +181,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $hashed = hash('sha256', $token);
             $pdo->prepare("UPDATE users SET remember_token = ?, remember_token_expires = NOW() + INTERVAL '72 hours' WHERE id = ?")->execute([$hashed, $uid]);
 
-            $scheme     = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
-            $base_url   = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'portal.bluemogul.biz');
+            $base_url   = portal_base_url();
             $reset_link = $base_url . '/portal/reset-password.php?token=' . $token;
 
             $body = '<p style="color:#374151;font-size:14px;line-height:1.6;">Hi ' . htmlspecialchars($target_name) . ',</p>

@@ -33,8 +33,32 @@ define('DB_PORT', '3306');
 // APPLICATION SETTINGS
 // ============================================
 define('SITE_NAME', 'Blue Mogul Client Portal');
-define('SITE_URL', 'https://' . (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : 'localhost'));
 define('ADMIN_EMAIL', 'contact@bluemogul.biz');
+
+/**
+ * Return the canonical portal base URL (no trailing slash).
+ * Priority:
+ *   1. APP_URL env var (set in Coolify for production)
+ *   2. HTTP_X_FORWARDED_HOST reverse-proxy header
+ *   3. HTTP_HOST from the request
+ *   4. Hard-coded production fallback
+ */
+function portal_base_url(): string {
+    $appUrl = getenv('APP_URL');
+    if ($appUrl) return rtrim($appUrl, '/');
+    $proto = (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'
+        || (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'))
+        ? 'https' : 'http';
+    // Take the first host if comma-separated (some proxies send "host1, host2")
+    $host = trim(explode(',', $_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'portal.bluemogul.us')[0]);
+    // Never let a Replit dev URL sneak into production emails
+    if (strpos($host, 'replit.app') !== false || strpos($host, 'repl.co') !== false) {
+        return 'https://portal.bluemogul.us';
+    }
+    return $proto . '://' . $host;
+}
+
+define('SITE_URL', portal_base_url());
 define('SUPPORT_PHONE', '346-309-5514');
 
 // Session settings
