@@ -268,9 +268,14 @@ async function scrapeWithJina(url: string): Promise<string> {
 }
 
 async function scrapeWithWebScrapingAI(url: string, key: string): Promise<string> {
-  const apiUrl = `https://api.webscraping.ai/text?url=${encodeURIComponent(url)}&api_key=${key}&js=false`;
-  const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(20000) });
-  if (!resp.ok) throw new Error(`WebScraping.AI returned ${resp.status}`);
+  // LinkedIn requires JS rendering; use js=true so the page actually loads
+  const js = url.includes("linkedin.com") ? "true" : "false";
+  const apiUrl = `https://api.webscraping.ai/text?url=${encodeURIComponent(url)}&api_key=${key}&js=${js}&timeout=15000`;
+  const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(25000) });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(`WebScraping.AI returned ${resp.status}${body ? `: ${body.slice(0, 120)}` : ""}`);
+  }
   return (await resp.text()).slice(0, 12000);
 }
 
@@ -372,6 +377,7 @@ async function performScrapeLookup(params: {
   }
 
   const isLinkedIn = targetUrl.includes("linkedin.com");
+  let scrapeError = "";
   try {
     if (isLinkedIn && wsaiKey) {
       rawText = await scrapeWithWebScrapingAI(targetUrl, wsaiKey);
@@ -379,7 +385,17 @@ async function performScrapeLookup(params: {
       rawText = await scrapeWithJina(targetUrl);
     }
   } catch (e: any) {
-    return { success: false, error: `Scrape failed: ${e.message}` };
+    scrapeError = e.message;
+  }
+
+  // If WebScrapingAI failed (or returned too little), fall back to Jina
+  if (scrapeError || rawText.length < 50) {
+    console.warn(`Primary scrape failed (${scrapeError}), falling back to Jina`);
+    try {
+      rawText = await scrapeWithJina(targetUrl);
+    } catch (e2: any) {
+      return { success: false, error: `Scrape failed: ${scrapeError || e2.message}` };
+    }
   }
 
   // Extract structured data with Ollama
