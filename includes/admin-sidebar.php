@@ -255,6 +255,50 @@
         </div>
 
         <div class="mt-8">
+            <p class="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Dealer Program</p>
+            <div class="space-y-1">
+                <?php
+                $dealer_pending_count = 0;
+                try {
+                    if (function_exists('getDB')) {
+                        $db_temp = getDB();
+                    } elseif (function_exists('get_db')) {
+                        $db_temp = get_db();
+                    } else {
+                        $db_temp = null;
+                    }
+                    if ($db_temp) {
+                        $dp = $db_temp->query("SELECT COUNT(*) FROM dealers WHERE status='pending'");
+                        $dealer_pending_count = (int)$dp->fetchColumn();
+                    }
+                } catch (Exception $e) {}
+                ?>
+                <a href="/portal/admin/admin-dealers.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-dealers.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-dealer-list">
+                    <i class="fas fa-handshake w-5"></i>
+                    <span>All Dealers</span>
+                    <?php if ($dealer_pending_count > 0): ?>
+                    <span class="ml-auto bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full"><?= $dealer_pending_count ?></span>
+                    <?php endif; ?>
+                </a>
+                <a href="/portal/admin/admin-dealer-payouts.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-dealer-payouts.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-dealer-payouts">
+                    <i class="fas fa-money-bill-wave w-5"></i>
+                    <span>Payout Queue</span>
+                    <?php
+                    $payout_pending_count = 0;
+                    try {
+                        if (isset($db_temp) && $db_temp) {
+                            $pp = $db_temp->query("SELECT COUNT(*) FROM commissions WHERE status='pending'");
+                            $payout_pending_count = (int)$pp->fetchColumn();
+                        }
+                    } catch (Exception $e) {}
+                    if ($payout_pending_count > 0): ?>
+                    <span class="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full"><?= min($payout_pending_count, 99) ?></span>
+                    <?php endif; ?>
+                </a>
+            </div>
+        </div>
+
+        <div class="mt-8">
             <p class="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">System</p>
             <div class="space-y-1">
                 <a href="admin-roles.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-roles.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-roles">

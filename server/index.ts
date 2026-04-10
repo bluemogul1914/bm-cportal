@@ -160,7 +160,8 @@ app.use("/assets", express.static(join(projectRoot, "assets")));
 const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-xero.php",
   "dealer-register.php", "dealer-dashboard.php", "dealer-orders.php", "dealer-commissions.php",
   "dealer-customers.php", "dealer-customer-detail.php", "dealer-smtp.php", "dealer-payouts.php",
-  "dealer-training.php", "dealer-profile.php", "admin-dealers.php", "admin-dealer-detail.php"];
+  "dealer-training.php", "dealer-profile.php", "dealer-spiffs.php",
+  "admin-dealers.php", "admin-dealer-detail.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -176,6 +177,10 @@ if ($_sessionData) {
     $_SESSION['user_name'] = $_sessionData['user_name'];
     $_SESSION['is_admin'] = $_sessionData['is_admin'];
     $_SESSION['user_role'] = $_sessionData['user_role'] ?? 'user';
+    $_SESSION['role'] = $_sessionData['role'] ?? $_sessionData['user_role'] ?? 'user';
+    if (!empty($_sessionData['dealer_id'])) {
+        $_SESSION['dealer_id'] = (int)$_sessionData['dealer_id'];
+    }
     $_SESSION['logged_in_at'] = $_sessionData['logged_in_at'];
     $_SESSION['last_login'] = $_sessionData['last_login'];
     $_SESSION['last_activity'] = $_sessionData['last_activity'];
@@ -619,6 +624,24 @@ app.get("/portal/api/xero/data", async (req, res) => {
 });
 // ── End Xero OAuth ────────────────────────────────────────────────────────────
 
+const ADMIN_DEALER_PHP_FILES = ["admin-dealers.php", "admin-dealer-detail.php", "admin-dealer-payouts.php"];
+
+app.get("/portal/admin/:file", (req, res) => {
+  const phpFile = req.params.file.endsWith(".php") ? req.params.file : `${req.params.file}.php`;
+  if (!ADMIN_DEALER_PHP_FILES.includes(phpFile)) return res.status(404).send("Not found");
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.is_admin) return res.status(403).send("Forbidden");
+  executePhpFile(join(projectRoot, "admin", phpFile), req, res);
+});
+
+app.post("/portal/admin/:file", (req, res) => {
+  const phpFile = req.params.file.endsWith(".php") ? req.params.file : `${req.params.file}.php`;
+  if (!ADMIN_DEALER_PHP_FILES.includes(phpFile)) return res.status(404).send("Not found");
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.is_admin) return res.status(403).send("Forbidden");
+  executePhpFile(join(projectRoot, "admin", phpFile), req, res);
+});
+
 app.get("/portal/:file", (req, res) => {
   const file = req.params.file;
   const phpFile = file.endsWith(".php") ? file : `${file}.php`;
@@ -798,6 +821,15 @@ async function handleLogin(req: Request, res: Response) {
       return res.json({ success: false, message: 'Your account has been deactivated. Please contact support.' });
     }
 
+    // Look up dealer_id if user has dealer role
+    let dealer_id: number | null = null;
+    if ((user.role || 'user') === 'dealer') {
+      const dResult = await webhookPool.query(
+        'SELECT id FROM dealers WHERE user_id = $1 LIMIT 1', [user.id]
+      ).catch(() => ({ rows: [] as any[] }));
+      if (dResult.rows.length) dealer_id = dResult.rows[0].id;
+    }
+
     // Set session
     const sessionData = {
       user_id: user.id,
@@ -805,6 +837,8 @@ async function handleLogin(req: Request, res: Response) {
       user_name: user.name,
       is_admin: Boolean(user.is_admin),
       user_role: user.role || 'user',
+      role: Boolean(user.is_admin) ? 'admin' : (user.role || 'user'),
+      dealer_id,
       logged_in_at: Math.floor(Date.now() / 1000),
       last_activity: Math.floor(Date.now() / 1000),
     };
@@ -3017,6 +3051,116 @@ async function bootstrapPortalDatabase() {
         from_email VARCHAR(200)
       )
     `);
+    // ── New dealer module schema (Splynx-style redesign) ──────────────────────
+    // dealer columns
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS dealer_code   VARCHAR(40)  UNIQUE`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS full_name     VARCHAR(200)`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS email         VARCHAR(200)`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS phone         VARCHAR(50)`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS company       VARCHAR(200)`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS tier          VARCHAR(20)  NOT NULL DEFAULT 'base'`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS activations_mtd INTEGER    NOT NULL DEFAULT 0`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS ach_routing   VARCHAR(20)`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS ach_account   VARCHAR(40)`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS notes         TEXT`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS updated_at    TIMESTAMP`).catch(()=>{});
+    // dealer_orders extended columns
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS order_ref       VARCHAR(40) UNIQUE`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS client_name     VARCHAR(200)`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS client_email    VARCHAR(200)`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS client_phone    VARCHAR(50)`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS service_address TEXT`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS product_line    VARCHAR(60)`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS plan_name       VARCHAR(200)`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS plan_price_cents INTEGER`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS spiff_cents     INTEGER  NOT NULL DEFAULT 0`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS tier_at_order   VARCHAR(20) DEFAULT 'base'`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS dealer_notes    TEXT`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS activated_at    TIMESTAMP`).catch(()=>{});
+    // New commissions table (integer cents)
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS commissions (
+        id             SERIAL PRIMARY KEY,
+        dealer_id      INTEGER NOT NULL REFERENCES dealers(id) ON DELETE CASCADE,
+        order_id       INTEGER REFERENCES dealer_orders(id) ON DELETE SET NULL,
+        amount_cents   INTEGER NOT NULL DEFAULT 0,
+        status         VARCHAR(20) NOT NULL DEFAULT 'pending',
+        notes          TEXT,
+        approved_at    TIMESTAMP,
+        paid_at        TIMESTAMP,
+        payout_id      INTEGER,
+        created_at     TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `).catch(()=>{});
+    // New dealer_payouts table (integer cents)
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS dealer_payouts (
+        id               SERIAL PRIMARY KEY,
+        dealer_id        INTEGER NOT NULL REFERENCES dealers(id) ON DELETE CASCADE,
+        amount_cents     INTEGER NOT NULL,
+        commission_count INTEGER NOT NULL DEFAULT 0,
+        status           VARCHAR(20) NOT NULL DEFAULT 'pending',
+        initiated_at     TIMESTAMP,
+        sent_at          TIMESTAMP,
+        created_at       TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `).catch(()=>{});
+    // Spiff schedule table
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS spiff_schedule (
+        id             SERIAL PRIMARY KEY,
+        product_line   VARCHAR(60) NOT NULL,
+        tier           VARCHAR(20) NOT NULL DEFAULT 'base',
+        spiff_cents    INTEGER NOT NULL,
+        effective_from DATE NOT NULL DEFAULT CURRENT_DATE,
+        active         BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at     TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `).catch(()=>{});
+    // Agent logs table
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS agent_logs (
+        id         SERIAL PRIMARY KEY,
+        agent_key  VARCHAR(80),
+        action     VARCHAR(80),
+        status     VARCHAR(30),
+        message    TEXT,
+        metadata   JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `).catch(()=>{});
+    // Seed default spiff schedule if empty
+    const spiffCount = await webhookPool.query("SELECT COUNT(*) FROM spiff_schedule").catch(()=>({rows:[{count:'1'}]}));
+    if (parseInt(spiffCount.rows[0].count, 10) === 0) {
+      const spiffs = [
+        ['frontier_fiber',  'base',   10000],
+        ['frontier_fiber',  'silver', 10000],
+        ['frontier_fiber',  'gold',   12000],
+        ['xfinity_prepaid', 'base',    3500],
+        ['xfinity_prepaid', 'silver',  3500],
+        ['xfinity_prepaid', 'gold',    4200],
+        ['verizon_prepaid', 'base',    3000],
+        ['verizon_prepaid', 'silver',  3000],
+        ['verizon_prepaid', 'gold',    3600],
+        ['black_wireless',  'base',    2000],
+        ['black_wireless',  'silver',  2000],
+        ['black_wireless',  'gold',    2400],
+        ['travelsim',       'base',    1500],
+        ['travelsim',       'silver',  1500],
+        ['travelsim',       'gold',    1800],
+        ['sling_tv',        'base',    1200],
+        ['sling_tv',        'silver',  1200],
+        ['sling_tv',        'gold',    1400],
+      ];
+      for (const [pl, t, cents] of spiffs) {
+        await webhookPool.query(
+          "INSERT INTO spiff_schedule (product_line, tier, spiff_cents) VALUES ($1,$2,$3)",
+          [pl, t, cents]
+        ).catch(()=>{});
+      }
+    }
+    // ── End new dealer module schema ───────────────────────────────────────────
+
     console.log("Portal database bootstrap complete");
   } catch (err) {
     console.error("Portal database bootstrap error:", err);

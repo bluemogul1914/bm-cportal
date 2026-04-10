@@ -1,206 +1,232 @@
 <?php
-require_once 'config.php';
-if (!isset($_SESSION['user_id']) || ($_SESSION['user_role'] !== 'dealer' && !($_SESSION['is_admin'] ?? false))) {
-    portal_redirect('/portal');
-}
-$user_name  = $_SESSION['user_name'] ?? 'Dealer';
-$user_email = $_SESSION['user_email'] ?? '';
-$user_id    = $_SESSION['user_id'];
-$pdo = getDB();
+$page_title = 'Payouts';
+require_once __DIR__ . '/includes/dealer-header.php';
+dealer_auth();
+$dealer = dealer_me();
+$pdo    = get_db();
 
-$dealer = $pdo->prepare("SELECT * FROM dealers WHERE user_id=?"); $dealer->execute([$user_id]); $dealer = $dealer->fetch(PDO::FETCH_ASSOC);
-if (!$dealer) portal_redirect('/portal/dealer-dashboard.php');
-$dealer_id = $dealer['id'];
+$success = $error = '';
 
-$success = ''; $error = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'request_payout') {
+    try {
+        $pdo->beginTransaction();
 
-// Update ACH
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_ach'])) {
-    $routing = preg_replace('/\D/','',$_POST['ach_routing']??'');
-    $account = preg_replace('/\D/','',$_POST['ach_account']??'');
-    $ach_name= trim($_POST['ach_name']??'');
-    $bank    = trim($_POST['bank_name']??'');
-    if (strlen($routing) !== 9) { $error = 'Routing number must be 9 digits.'; }
-    elseif (strlen($account) < 4) { $error = 'Account number is too short.'; }
-    else {
-        $pdo->prepare("UPDATE dealers SET ach_routing=?,ach_account=?,ach_name=?,bank_name=? WHERE id=?")
-            ->execute([$routing,$account,$ach_name,$bank,$dealer_id]);
-        $success = 'Bank info updated successfully.';
-        $dealer = $pdo->prepare("SELECT * FROM dealers WHERE id=?"); $dealer->execute([$dealer_id]); $dealer = $dealer->fetch(PDO::FETCH_ASSOC);
+        $avail = $pdo->prepare(
+            "SELECT id, amount_cents FROM commissions
+             WHERE dealer_id=? AND status='approved' FOR UPDATE"
+        );
+        $avail->execute([$dealer['id']]);
+        $rows = $avail->fetchAll();
+
+        if (empty($rows)) {
+            $pdo->rollBack();
+            $error = 'No approved commissions available for payout.';
+        } else {
+            $total = array_sum(array_column($rows, 'amount_cents'));
+            $ids   = array_column($rows, 'id');
+
+            $ins = $pdo->prepare(
+                "INSERT INTO dealer_payouts
+                   (dealer_id, amount_cents, commission_count, status, initiated_at)
+                 VALUES (?,?,?,'pending',NOW()) RETURNING id"
+            );
+            $ins->execute([$dealer['id'], $total, count($ids)]);
+            $payout_id = $ins->fetchColumn();
+
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $upd = $pdo->prepare(
+                "UPDATE commissions SET status='paid', paid_at=NOW(), payout_id=?
+                 WHERE id IN ($placeholders)"
+            );
+            $upd->execute(array_merge([$payout_id], $ids));
+
+            $pdo->commit();
+            unset($_SESSION['dealer_cache']);
+
+            header("Location: /portal/dealer-payouts.php?success=1&amount=" . urlencode(dollars($total)));
+            exit;
+        }
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        $error = 'Payout request failed. Please try again.';
     }
 }
 
-// Request payout
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout'])) {
-    $amt = (float)($_POST['amount'] ?? 0);
-    $notes = trim($_POST['notes'] ?? '');
-    $s = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM dealer_commissions WHERE dealer_id=? AND status='approved'"); $s->execute([$dealer_id]); $available = (float)$s->fetchColumn();
-    if ($amt <= 0)         { $error = 'Please enter a valid amount.'; }
-    elseif ($amt > $available) { $error = "Requested amount exceeds available balance ($" . number_format($available,2) . ")."; }
-    elseif (!$dealer['ach_routing']) { $error = 'Please add your bank / ACH info first.'; }
-    else {
-        $pdo->prepare("INSERT INTO dealer_payout_requests (dealer_id,amount,status,notes) VALUES (?,?,'pending',?)")
-            ->execute([$dealer_id,$amt,$notes]);
-        $success = 'Payout request submitted! Funds will be sent via ACH within 1-2 business days.';
+if (isset($_GET['success'])) {
+    $success = 'Payout of $' . htmlspecialchars($_GET['amount'] ?? '0.00') . ' requested. Funds sent to your bank by end of next business day.';
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_bank') {
+    $routing = preg_replace('/\D/', '', $_POST['ach_routing'] ?? '');
+    $account = preg_replace('/\D/', '', $_POST['ach_account'] ?? '');
+    if (strlen($routing) === 9 && strlen($account) >= 4) {
+        $pdo->prepare(
+            "UPDATE dealers SET ach_routing=?, ach_account=?, updated_at=NOW() WHERE id=?"
+        )->execute([$routing, $account, $dealer['id']]);
+        unset($_SESSION['dealer_cache']);
+        $success_bank = 'Bank info updated.';
+        $dealer = dealer_me();
+    } else {
+        $error_bank = 'Please enter a valid 9-digit routing number and account number.';
     }
 }
 
-// Stats
-$s=$pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM dealer_commissions WHERE dealer_id=? AND status='approved'"); $s->execute([$dealer_id]); $available=(float)$s->fetchColumn();
-$s=$pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM dealer_payout_requests WHERE dealer_id=? AND status='pending'"); $s->execute([$dealer_id]); $pending_payout=(float)$s->fetchColumn();
-$s=$pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM dealer_payout_requests WHERE dealer_id=? AND status='paid'"); $s->execute([$dealer_id]); $total_paid=(float)$s->fetchColumn();
+$avail_stmt = $pdo->prepare(
+    "SELECT COALESCE(SUM(amount_cents),0) AS cents, COUNT(*) AS cnt
+     FROM commissions WHERE dealer_id=? AND status='approved'"
+);
+$avail_stmt->execute([$dealer['id']]);
+$avail = $avail_stmt->fetch();
 
-// Next Friday
-$next_friday = new DateTime(); $next_friday->modify('next Friday');
-$next_friday_str = $next_friday->format('l, M j');
+$hist = $pdo->prepare(
+    "SELECT id, amount_cents, commission_count, status, initiated_at, sent_at, created_at
+     FROM dealer_payouts WHERE dealer_id=?
+     ORDER BY created_at DESC"
+);
+$hist->execute([$dealer['id']]);
+$payouts = $hist->fetchAll();
 
-// Payout history
-$hist = $pdo->prepare("SELECT * FROM dealer_payout_requests WHERE dealer_id=? ORDER BY created_at DESC LIMIT 20"); $hist->execute([$dealer_id]); $payouts = $hist->fetchAll(PDO::FETCH_ASSOC);
+$lifetime = $pdo->prepare(
+    "SELECT COALESCE(SUM(amount_cents),0) AS total FROM dealer_payouts
+     WHERE dealer_id=? AND status IN ('processing','sent')"
+);
+$lifetime->execute([$dealer['id']]);
+$lifetime_total = $lifetime->fetchColumn();
 
-$show_payout = isset($_GET['new']) || $error;
+$has_bank = !empty($dealer['ach_routing']);
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Payouts & ACH — Blue Mogul Partner</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/css/admin.css">
-<script>tailwind.config={theme:{extend:{colors:{primary:'#1a56db',secondary:'#0d1b3e'},fontFamily:{sans:['Inter','sans-serif']}}}}</script>
-</head>
-<body class="bg-gray-50 font-sans">
-<div class="flex h-screen overflow-hidden">
-<?php include 'includes/dealer-sidebar.php'; ?>
-<div class="flex-1 overflow-y-auto">
 
-<header class="bg-white border-b border-gray-200 sticky top-0 z-10">
-    <div class="px-6 py-4">
-        <p class="text-xs text-gray-400">Partner Portal /</p>
-        <h1 class="text-2xl font-semibold text-gray-900"><i class="fas fa-money-bill-wave text-emerald-500 mr-2"></i>Payouts & ACH</h1>
+  <div class="topbar">
+    <div>
+      <div class="topbar-title">Payouts</div>
+      <div class="topbar-sub">ACH payouts every Friday — or request early</div>
     </div>
-</header>
-
-<div class="p-6 space-y-6">
-
-<?php if ($success): ?><div class="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3 text-green-800" data-testid="alert-success"><i class="fas fa-check-circle text-green-500 text-lg"></i><?= htmlspecialchars($success) ?></div><?php endif; ?>
-<?php if ($error): ?><div class="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm" data-testid="alert-error"><i class="fas fa-exclamation-circle mr-1"></i><?= htmlspecialchars($error) ?></div><?php endif; ?>
-
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-    <!-- Left: Balance + Payout Request -->
-    <div class="space-y-5">
-
-        <!-- Balance card -->
-        <div class="bg-gradient-to-br from-emerald-600 to-green-700 rounded-2xl p-6 text-white">
-            <p class="text-green-200 text-sm font-medium mb-1">Available for Payout</p>
-            <p class="text-4xl font-bold" data-testid="text-available-balance">$<?= number_format($available, 2) ?></p>
-            <p class="text-green-200 text-sm mt-2"><i class="fas fa-calendar-alt mr-1"></i>Next auto-payout: <?= $next_friday_str ?></p>
-            <?php if ($pending_payout > 0): ?>
-            <p class="text-yellow-200 text-xs mt-1"><i class="fas fa-clock mr-1"></i>$<?= number_format($pending_payout,2) ?> payout in progress</p>
-            <?php endif; ?>
-            <button onclick="document.getElementById('payout-form').classList.toggle('hidden')" class="mt-4 bg-white text-green-700 font-semibold px-5 py-2 rounded-xl text-sm hover:bg-green-50 transition flex items-center gap-2" data-testid="button-request-early-payout">
-                <i class="fas fa-bolt"></i> Request Early Payout
-            </button>
-        </div>
-
-        <!-- Early payout form -->
-        <div id="payout-form" class="<?= $show_payout ? '' : 'hidden' ?>">
-        <div class="bg-white rounded-xl border border-gray-200 p-5">
-            <h3 class="font-semibold text-gray-900 mb-4"><i class="fas fa-money-bill-transfer text-emerald-500 mr-2"></i>Request Payout</h3>
-            <form method="post" class="space-y-4">
-                <input type="hidden" name="request_payout" value="1">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Amount ($) *</label>
-                    <input type="number" name="amount" step="0.01" min="1" max="<?= $available ?>" value="<?= number_format($available,2,'.','') ?>"
-                           class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500" data-testid="input-payout-amount" required>
-                    <p class="text-xs text-gray-400 mt-1">Max: $<?= number_format($available,2) ?></p>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
-                    <input type="text" name="notes" class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500" placeholder="e.g. urgent" data-testid="input-payout-notes">
-                </div>
-                <div class="flex gap-3">
-                    <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-5 py-2.5 rounded-xl transition text-sm" data-testid="button-submit-payout">Submit Request</button>
-                    <button type="button" onclick="document.getElementById('payout-form').classList.add('hidden')" class="border border-gray-300 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-xl transition text-sm">Cancel</button>
-                </div>
-            </form>
-        </div>
-        </div>
-
-        <!-- ACH Bank Info -->
-        <div class="bg-white rounded-xl border border-gray-200 p-5">
-            <h3 class="font-semibold text-gray-900 mb-4"><i class="fas fa-university text-blue-500 mr-2"></i>ACH Bank Info</h3>
-            <form method="post" class="space-y-4">
-                <input type="hidden" name="update_ach" value="1">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Account Holder Name</label>
-                    <input type="text" name="ach_name" value="<?= htmlspecialchars($dealer['ach_name']??'') ?>"
-                           class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500" placeholder="Name on bank account" data-testid="input-ach-name">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
-                    <input type="text" name="bank_name" value="<?= htmlspecialchars($dealer['bank_name']??'') ?>"
-                           class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500" placeholder="e.g. Chase, Wells Fargo" data-testid="input-bank-name">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Routing Number (9 digits) *</label>
-                    <input type="text" name="ach_routing" value="<?= htmlspecialchars($dealer['ach_routing']??'') ?>" maxlength="9"
-                           class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 font-mono" placeholder="123456789" data-testid="input-ach-routing">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Account Number *</label>
-                    <input type="text" name="ach_account" value="<?= htmlspecialchars($dealer['ach_account']??'') ?>"
-                           class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 font-mono" placeholder="Account number" data-testid="input-ach-account">
-                </div>
-                <div class="bg-blue-50 rounded-xl p-3 text-xs text-blue-700">
-                    <i class="fas fa-lock mr-1"></i>Your banking info is encrypted and only used for ACH payouts.
-                </div>
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl transition text-sm" data-testid="button-update-ach">Update Bank Info</button>
-            </form>
-        </div>
+    <div class="topbar-right">
+      <?= tier_badge($dealer['tier']) ?>
     </div>
+  </div>
 
-    <!-- Right: Payout History -->
-    <div class="bg-white rounded-xl border border-gray-200">
-        <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h3 class="font-semibold text-gray-900">Payout History</h3>
-            <span class="text-sm text-gray-500">Total paid: <strong class="text-gray-800">$<?= number_format($total_paid,2) ?></strong></span>
-        </div>
-        <?php if ($payouts): ?>
-        <div class="divide-y divide-gray-50">
-            <?php foreach ($payouts as $p): ?>
-            <?php
-                $pbadge = match($p['status']) {
-                    'paid'     => 'bg-green-100 text-green-800',
-                    'approved' => 'bg-blue-100 text-blue-800',
-                    'rejected' => 'bg-red-100 text-red-800',
-                    default    => 'bg-yellow-100 text-yellow-800',
-                };
-            ?>
-            <div class="px-5 py-4 flex items-center justify-between" data-testid="row-payout-<?= $p['id'] ?>">
-                <div>
-                    <p class="text-sm font-medium text-gray-900"><?= date('M j, Y', strtotime($p['created_at'])) ?></p>
-                    <?php if ($p['notes']): ?><p class="text-xs text-gray-400"><?= htmlspecialchars($p['notes']) ?></p><?php endif; ?>
-                </div>
-                <div class="text-right flex items-center gap-3">
-                    <p class="font-bold text-gray-900">$<?= number_format($p['amount'],2) ?></p>
-                    <span class="text-xs px-2.5 py-1 rounded-full font-semibold <?= $pbadge ?>"><?= ucfirst($p['status']) ?></span>
-                </div>
+  <div class="page-body">
+
+    <?php if ($success): ?>
+    <div class="alert alert-success"><?= $success ?></div>
+    <?php endif; ?>
+    <?php if ($error): ?>
+    <div class="alert" style="background:var(--red-bg);border-color:var(--red);color:var(--red-text);"><?= htmlspecialchars($error) ?></div>
+    <?php endif; ?>
+
+    <div class="two-col" style="align-items:start;">
+
+      <div>
+        <div class="card" style="text-align:center;padding:28px 24px;">
+          <div style="font-size:12px;color:var(--text-lt);font-weight:500;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Available for payout</div>
+          <div style="font-size:40px;font-weight:700;color:<?= $avail['cents'] > 0 ? 'var(--green)' : 'var(--text-lt)' ?>;">
+            $<?= dollars($avail['cents']) ?>
+          </div>
+          <div style="font-size:12px;color:var(--text-lt);margin-top:4px;margin-bottom:20px;">
+            From <?= $avail['cnt'] ?> approved commission<?= $avail['cnt'] != 1 ? 's' : '' ?>
+          </div>
+
+          <?php if ((int)$avail['cents'] > 0): ?>
+            <?php if (!$has_bank): ?>
+            <div class="alert alert-warning" style="text-align:left;margin-bottom:14px;">
+              Add your bank details below before requesting a payout.
             </div>
-            <?php endforeach; ?>
+            <?php else: ?>
+            <form method="POST">
+              <input type="hidden" name="action" value="request_payout">
+              <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
+                Request payout — $<?= dollars($avail['cents']) ?>
+              </button>
+            </form>
+            <?php endif; ?>
+          <?php else: ?>
+            <div style="font-size:13px;color:var(--text-lt);">No approved commissions yet.</div>
+          <?php endif; ?>
+
+          <div style="margin-top:12px;font-size:11px;color:var(--text-lt);">
+            Auto-payout runs every <strong>Friday at 9 AM CT</strong>
+          </div>
         </div>
+
+        <div class="stat-card" style="margin-bottom:16px;">
+          <div class="stat-label">Lifetime paid out</div>
+          <div class="stat-value">$<?= dollars($lifetime_total) ?></div>
+          <div class="stat-sub"><?= count($payouts) ?> payout<?= count($payouts) != 1 ? 's' : '' ?> total</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" style="margin-bottom:14px;">Payout method (ACH)</div>
+
+          <?php if (isset($success_bank)): ?>
+          <div class="alert alert-success" style="margin-bottom:12px;"><?= $success_bank ?></div>
+          <?php endif; ?>
+          <?php if (isset($error_bank)): ?>
+          <div class="alert" style="background:var(--red-bg);border-color:var(--red);color:var(--red-text);margin-bottom:12px;"><?= $error_bank ?></div>
+          <?php endif; ?>
+
+          <form method="POST">
+            <input type="hidden" name="action" value="update_bank">
+            <div class="form-group">
+              <label class="form-label">Routing number (9 digits)</label>
+              <input type="text" name="ach_routing" class="form-control"
+                     placeholder="021000021" maxlength="9"
+                     value="<?= $has_bank ? str_repeat('•', 5) . substr($dealer['ach_routing'], -4) : '' ?>">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Account number</label>
+              <input type="text" name="ach_account" class="form-control"
+                     placeholder="Account number"
+                     value="<?= !empty($dealer['ach_account']) ? str_repeat('•', 6) . substr($dealer['ach_account'], -4) : '' ?>">
+            </div>
+            <button type="submit" class="btn btn-outline btn-sm">
+              <?= $has_bank ? 'Update bank info' : 'Save bank info' ?>
+            </button>
+          </form>
+          <?php if ($has_bank): ?>
+          <div style="margin-top:10px;font-size:11px;color:var(--text-lt);">
+            Bank on file ending in <?= substr($dealer['ach_account'] ?? '????', -4) ?>.
+            Enter new numbers above to update.
+          </div>
+          <?php endif; ?>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Payout history</span>
+        </div>
+
+        <?php if (empty($payouts)): ?>
+          <p style="font-size:13px;color:var(--text-lt);padding:12px 0;">No payouts yet. Build up approved commissions by activating clients!</p>
         <?php else: ?>
-        <div class="px-5 py-16 text-center text-gray-400">
-            <i class="fas fa-money-bill-wave text-4xl mb-3 block"></i>
-            <p class="text-sm">No payouts yet. Build up commissions and request your first payout!</p>
-        </div>
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Activations</th><th>Amount</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            <?php foreach ($payouts as $p): ?>
+            <tr>
+              <td style="font-size:12px;">
+                <?= date('M j, Y', strtotime($p['created_at'])) ?>
+              </td>
+              <td style="font-size:12px;color:var(--text-m);">
+                <?= $p['commission_count'] ?> activation<?= $p['commission_count'] != 1 ? 's' : '' ?>
+              </td>
+              <td style="font-weight:600;color:<?= $p['status']==='sent'?'var(--teal)':'var(--text)' ?>;">
+                $<?= dollars($p['amount_cents']) ?>
+              </td>
+              <td><?= status_badge($p['status']) ?></td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
         <?php endif; ?>
+      </div>
+
     </div>
-</div>
-</div>
-</div>
+  </div>
+
 </div>
 </body>
 </html>
