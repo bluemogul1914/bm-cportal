@@ -1040,6 +1040,35 @@ const ticketUploader = makeUploader(ticketsUploadDir, [".pdf", ".gif", ".jpeg", 
 const avatarUploader = makeUploader(avatarsUploadDir, [".jpg", ".jpeg", ".gif", ".png"]);
 const articleUploader = makeUploader(articlesUploadDir, [".pdf"]);
 
+app.post("/api/tickets/create", async (req, res) => {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
+  const csrfToken = req.body.csrf_token;
+  const sessionCsrf = (req.session as any)?.csrfToken;
+  if (!csrfToken || csrfToken !== sessionCsrf) return res.status(403).json({ error: "CSRF validation failed" });
+  const { subject, description, priority, ticket_group } = req.body;
+  if (!subject || !subject.trim()) return res.status(400).json({ error: "Subject is required" });
+  const validGroup = ['general','sales','billing','support'].includes(ticket_group) ? ticket_group : 'general';
+  const validPriority = ['low','medium','high','urgent'].includes(priority) ? priority : 'medium';
+  try {
+    const clientResult = await webhookPool.query("SELECT id FROM clients WHERE user_id = $1", [sess.user_id]);
+    const clientId = clientResult.rows[0]?.id || sess.user_id;
+    const result = await webhookPool.query(
+      "INSERT INTO tickets (client_id, subject, description, status, priority, ticket_group, source, created_at, updated_at) VALUES ($1,$2,$3,'open',$4,$5,'portal',NOW(),NOW()) RETURNING id",
+      [clientId, subject.trim(), (description||'').trim(), validPriority, validGroup]
+    );
+    const newId = result.rows[0].id;
+    await webhookPool.query(
+      "INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES ($1,'ticket_created','ticket',$2,$3,$4)",
+      [sess.user_id, newId, 'Created ticket: ' + subject.trim(), req.ip || '0.0.0.0']
+    ).catch(()=>{});
+    res.json({ success: true, ticket_id: newId });
+  } catch (e: any) {
+    console.error("Ticket create API error:", e.message);
+    res.status(500).json({ error: "Failed to create ticket" });
+  }
+});
+
 app.post("/api/upload/ticket-attachment", ticketUploader.single("attachment"), async (req, res) => {
   const sess = (req.session as any)?.portalUser;
   if (!sess?.user_id) return res.status(401).json({ error: "Not authenticated" });
@@ -1227,7 +1256,7 @@ app.post("/api/crm/deals", async (req, res) => {
   if (!title) return res.status(400).json({ error: "title required" });
   try {
     const result = await webhookPool.query(
-      "INSERT INTO crm_deals (title, lead_id, client_id, stage, value, probability, expected_close, assigned_to, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
+      "INSERT INTO crm_deals (title, lead_id, client_id, stage, value, probability, expected_close_date, assigned_to, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
       [title, lead_id || null, client_id || null, stage || "prospecting", value || 0, probability || 0, expected_close || null, assigned_to || null, notes || null, sess.user_id]
     );
     res.json({ success: true, deal: result.rows[0] });
@@ -3162,6 +3191,26 @@ async function bootstrapPortalDatabase() {
       }
     }
     // ── End new dealer module schema ───────────────────────────────────────────
+
+    // ── CRM Deals ──────────────────────────────────────────────────────────────
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS crm_deals (
+        id                SERIAL PRIMARY KEY,
+        title             TEXT NOT NULL,
+        lead_id           INTEGER REFERENCES crm_leads(id) ON DELETE SET NULL,
+        client_id         INTEGER REFERENCES clients(id)   ON DELETE SET NULL,
+        stage             TEXT NOT NULL DEFAULT 'prospecting',
+        value             NUMERIC(12,2) DEFAULT 0,
+        probability       INTEGER DEFAULT 0,
+        expected_close_date DATE,
+        assigned_to       TEXT,
+        notes             TEXT,
+        created_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at        TIMESTAMPTZ DEFAULT NOW(),
+        updated_at        TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(()=>{});
+    // ── End CRM Deals ──────────────────────────────────────────────────────────
 
     console.log("Portal database bootstrap complete");
   } catch (err) {

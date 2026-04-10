@@ -232,20 +232,19 @@ try {
 <div id="create-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-lg shadow-xl max-w-lg w-full">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-gray-900">Create New Ticket</h2>
-            <button onclick="document.getElementById('create-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600" data-testid="button-close-modal"><i class="fas fa-times"></i></button>
+            <h2 class="text-lg font-semibold text-gray-900" id="modal-title">Create New Ticket</h2>
+            <button onclick="closeTicketModal()" class="text-gray-400 hover:text-gray-600" data-testid="button-close-modal"><i class="fas fa-times"></i></button>
         </div>
-        <form method="POST" action="tickets.php" class="p-6 space-y-4">
-            <?= csrf_field() ?>
-            <input type="hidden" name="action" value="create_ticket">
+
+        <div id="modal-create-step" class="p-6 space-y-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
-                <input type="text" name="subject" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" placeholder="Brief description of your issue" data-testid="input-subject">
+                <input type="text" id="new-ticket-subject" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" placeholder="Brief description of your issue" data-testid="input-subject">
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                    <select name="ticket_group" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-group">
+                    <select id="new-ticket-group" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-group">
                         <option value="general">General</option>
                         <option value="sales">Sales</option>
                         <option value="billing">Billing</option>
@@ -254,7 +253,7 @@ try {
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                    <select name="priority" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-priority">
+                    <select id="new-ticket-priority" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-priority">
                         <option value="low">Low</option>
                         <option value="medium" selected>Medium</option>
                         <option value="high">High</option>
@@ -264,19 +263,125 @@ try {
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea name="description" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" placeholder="Describe your issue in detail..." data-testid="textarea-description"></textarea>
+                <textarea id="new-ticket-description" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" placeholder="Describe your issue in detail..." data-testid="textarea-description"></textarea>
             </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Attachment <span class="text-gray-400 font-normal">(optional)</span></label>
+                <input type="file" id="new-ticket-file" accept=".pdf,.gif,.jpeg,.jpg,.txt,.png" class="w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:border file:border-gray-300 file:rounded file:text-xs file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100" data-testid="input-ticket-file">
+                <p class="text-xs text-gray-400 mt-1">PDF, PNG, JPG, GIF, TXT — max 10 MB</p>
+            </div>
+            <div id="modal-error" class="hidden bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded"></div>
             <div class="flex justify-end gap-3 pt-2">
-                <button type="button" onclick="document.getElementById('create-modal').classList.add('hidden')" class="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md text-sm font-medium transition" data-testid="button-cancel">Cancel</button>
-                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition" data-testid="button-submit-ticket">Create Ticket</button>
+                <button type="button" onclick="closeTicketModal()" class="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md text-sm font-medium transition" data-testid="button-cancel">Cancel</button>
+                <button type="button" onclick="submitTicket()" id="btn-submit-ticket" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition" data-testid="button-submit-ticket">Create Ticket</button>
             </div>
-        </form>
+        </div>
+
+        <div id="modal-success-step" class="hidden p-6">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-check text-green-600"></i>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-900">Ticket Created!</p>
+                    <p class="text-sm text-gray-500">Your ticket has been submitted successfully.</p>
+                </div>
+            </div>
+            <div id="modal-upload-section" class="hidden bg-gray-50 rounded-lg p-4 mb-4">
+                <p class="text-sm font-medium text-gray-700 mb-2"><i class="fas fa-paperclip mr-1 text-blue-500"></i>Uploading your attachment...</p>
+                <div id="modal-upload-progress" class="w-full bg-gray-200 rounded-full h-1.5 mb-1">
+                    <div id="modal-upload-bar" class="bg-blue-600 h-1.5 rounded-full transition-all" style="width:0%"></div>
+                </div>
+                <p id="modal-upload-status" class="text-xs text-gray-500"></p>
+            </div>
+            <div class="flex justify-end gap-3">
+                <a id="modal-view-ticket" href="#" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition" data-testid="link-view-ticket">View Ticket</a>
+                <button type="button" onclick="location.reload()" class="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md text-sm font-medium transition">Done</button>
+            </div>
+        </div>
     </div>
 </div>
 <script>
+var _csrfToken = '<?= csrf_token() ?>';
+
+function closeTicketModal() {
+    document.getElementById('create-modal').classList.add('hidden');
+}
 document.getElementById('create-modal').addEventListener('click', function(e) {
-    if (e.target === this) this.classList.add('hidden');
+    if (e.target === this) closeTicketModal();
 });
+
+async function submitTicket() {
+    var subject = document.getElementById('new-ticket-subject').value.trim();
+    var description = document.getElementById('new-ticket-description').value.trim();
+    var priority = document.getElementById('new-ticket-priority').value;
+    var ticket_group = document.getElementById('new-ticket-group').value;
+    var fileInput = document.getElementById('new-ticket-file');
+    var errDiv = document.getElementById('modal-error');
+    var btn = document.getElementById('btn-submit-ticket');
+
+    if (!subject) {
+        errDiv.textContent = 'Subject is required.';
+        errDiv.classList.remove('hidden');
+        return;
+    }
+    errDiv.classList.add('hidden');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+
+    try {
+        var resp = await fetch('/api/tickets/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subject, description, priority, ticket_group, csrf_token: _csrfToken })
+        });
+        var data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Failed to create ticket');
+
+        var ticketId = data.ticket_id;
+        document.getElementById('modal-view-ticket').href = 'ticket-detail.php?id=' + ticketId;
+        document.getElementById('modal-create-step').classList.add('hidden');
+        document.getElementById('modal-success-step').classList.remove('hidden');
+        document.getElementById('modal-title').textContent = 'Ticket #' + ticketId;
+
+        if (fileInput.files.length > 0) {
+            var uploadSection = document.getElementById('modal-upload-section');
+            uploadSection.classList.remove('hidden');
+            var bar = document.getElementById('modal-upload-bar');
+            var statusEl = document.getElementById('modal-upload-status');
+
+            var fd = new FormData();
+            fd.append('attachment', fileInput.files[0]);
+            fd.append('ticket_id', ticketId);
+
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/upload/ticket-attachment', true);
+            xhr.upload.addEventListener('progress', function(evt) {
+                if (evt.lengthComputable) bar.style.width = Math.round((evt.loaded/evt.total)*100) + '%';
+            });
+            xhr.onload = function() {
+                try {
+                    var r = JSON.parse(xhr.responseText);
+                    if (r.success) {
+                        statusEl.textContent = '✓ File attached successfully.';
+                        bar.style.width = '100%';
+                        bar.classList.replace('bg-blue-600','bg-green-500');
+                    } else {
+                        statusEl.textContent = 'Upload failed: ' + (r.error || 'unknown error');
+                    }
+                } catch(e) { statusEl.textContent = 'Upload failed.'; }
+            };
+            xhr.onerror = function() { statusEl.textContent = 'Upload failed.'; };
+            xhr.send(fd);
+        }
+    } catch (e) {
+        errDiv.textContent = e.message || 'Failed to create ticket.';
+        errDiv.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Create Ticket';
+    }
+}
+
 async function uploadTicketAttachment(ticketId) {
     const input = document.getElementById('ticket-attach-file');
     const status = document.getElementById('attach-status');

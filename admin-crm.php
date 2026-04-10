@@ -99,9 +99,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $close_date = $_POST['deal_close_date'] ?? null;
         $notes = trim($_POST['deal_notes'] ?? '');
         if ($title) {
-            $pdo->prepare("INSERT INTO crm_deals (title, lead_id, client_id, stage, value, expected_close_date, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-                ->execute([$title, $lead_id, $client_id, $stage, $value, $close_date ?: null, $notes, $_SESSION['user_id']]);
-            $success_msg = "Deal '$title' created.";
+            try {
+                $pdo->prepare("INSERT INTO crm_deals (title, lead_id, client_id, stage, value, expected_close_date, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$title, $lead_id, $client_id, $stage, $value, $close_date ?: null, $notes, $_SESSION['user_id']]);
+                $success_msg = "Deal '$title' created.";
+            } catch (Exception $e) { $error_msg = 'Failed to create deal: ' . $e->getMessage(); }
         } else { $error_msg = 'Deal title is required.'; }
         $tab = 'deals';
     }
@@ -110,14 +112,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $deal_id = intval($_POST['deal_id'] ?? 0);
         $stage = $_POST['stage'] ?? 'prospecting';
         if ($deal_id) {
-            $pdo->prepare("UPDATE crm_deals SET stage = ?, updated_at = NOW() WHERE id = ?")->execute([$stage, $deal_id]);
+            try {
+                $pdo->prepare("UPDATE crm_deals SET stage = ?, updated_at = NOW() WHERE id = ?")->execute([$stage, $deal_id]);
+            } catch (Exception $e) { $error_msg = 'Failed to update deal stage.'; }
         }
         $tab = 'deals';
     }
 
     if ($action === 'delete_deal') {
         $deal_id = intval($_POST['deal_id'] ?? 0);
-        if ($deal_id) { $pdo->prepare("DELETE FROM crm_deals WHERE id = ?")->execute([$deal_id]); }
+        if ($deal_id) {
+            try { $pdo->prepare("DELETE FROM crm_deals WHERE id = ?")->execute([$deal_id]); }
+            catch (Exception $e) { $error_msg = 'Failed to delete deal.'; }
+        }
         $tab = 'deals';
     }
 
