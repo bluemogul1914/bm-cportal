@@ -32,16 +32,16 @@ $filter_prod   = $_GET['product'] ?? '';
 $page = max(1,(int)($_GET['page']??1)); $per=20;
 $where = ["dc.dealer_id=?"]; $params = [$dealer_id];
 if ($filter_status) { $where[]="dc.status=?"; $params[]=$filter_status; }
-if ($filter_prod)   { $where[]="do.product_line=?"; $params[]=$filter_prod; }
+if ($filter_prod)   { $where[]="dord.product_line=?"; $params[]=$filter_prod; }
 $wsql = implode(' AND ',$where);
-$t=$pdo->prepare("SELECT COUNT(*) FROM dealer_commissions dc LEFT JOIN dealer_orders do ON dc.order_id=do.id WHERE $wsql");
+$t=$pdo->prepare("SELECT COUNT(*) FROM dealer_commissions dc LEFT JOIN dealer_orders dord ON dc.order_id=dord.id WHERE $wsql");
 $t->execute($params); $total=(int)$t->fetchColumn();
 $total_pages=max(1,ceil($total/$per)); $offset=($page-1)*$per;
-$c=$pdo->prepare("SELECT dc.*,do.product_line,do.customer_name,do.customer_email FROM dealer_commissions dc LEFT JOIN dealer_orders do ON dc.order_id=do.id WHERE $wsql ORDER BY dc.created_at DESC LIMIT $per OFFSET $offset");
+$c=$pdo->prepare("SELECT dc.*,dord.product_line,dord.customer_name,dord.customer_email FROM dealer_commissions dc LEFT JOIN dealer_orders dord ON dc.order_id=dord.id WHERE $wsql ORDER BY dc.created_at DESC LIMIT $per OFFSET $offset");
 $c->execute($params); $commissions=$c->fetchAll(PDO::FETCH_ASSOC);
 
 // Distinct products for filter
-$prods_q=$pdo->prepare("SELECT DISTINCT do.product_line FROM dealer_commissions dc LEFT JOIN dealer_orders do ON dc.order_id=do.id WHERE dc.dealer_id=? AND do.product_line IS NOT NULL");
+$prods_q=$pdo->prepare("SELECT DISTINCT dord.product_line FROM dealer_commissions dc LEFT JOIN dealer_orders dord ON dc.order_id=dord.id WHERE dc.dealer_id=? AND dord.product_line IS NOT NULL");
 $prods_q->execute([$dealer_id]); $prod_options=$prods_q->fetchAll(PDO::FETCH_COLUMN);
 
 $status_cfg = [

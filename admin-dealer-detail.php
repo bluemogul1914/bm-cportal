@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Load data
 $orders=$pdo->prepare("SELECT * FROM dealer_orders WHERE dealer_id=? ORDER BY created_at DESC LIMIT 20"); $orders->execute([$did]); $orders=$orders->fetchAll(PDO::FETCH_ASSOC);
-$commissions=$pdo->prepare("SELECT dc.*,do.product_line,do.customer_name FROM dealer_commissions dc LEFT JOIN dealer_orders do ON dc.order_id=do.id WHERE dc.dealer_id=? ORDER BY dc.created_at DESC LIMIT 20"); $commissions->execute([$did]); $commissions=$commissions->fetchAll(PDO::FETCH_ASSOC);
+$commissions=$pdo->prepare("SELECT dc.*,dord.product_line,dord.customer_name FROM dealer_commissions dc LEFT JOIN dealer_orders dord ON dc.order_id=dord.id WHERE dc.dealer_id=? ORDER BY dc.created_at DESC LIMIT 20"); $commissions->execute([$did]); $commissions=$commissions->fetchAll(PDO::FETCH_ASSOC);
 $payouts=$pdo->prepare("SELECT * FROM dealer_payout_requests WHERE dealer_id=? ORDER BY created_at DESC LIMIT 10"); $payouts->execute([$did]); $payouts=$payouts->fetchAll(PDO::FETCH_ASSOC);
 $smtp=$pdo->prepare("SELECT * FROM dealer_smtp_settings WHERE dealer_id=?"); $smtp->execute([$did]); $smtp=$smtp->fetch(PDO::FETCH_ASSOC) ?: [];
 

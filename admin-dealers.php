@@ -58,7 +58,7 @@ $s=$pdo->query("SELECT COUNT(*) FROM dealer_commissions WHERE status='pending'")
 $s=$pdo->query("SELECT COALESCE(SUM(amount),0) FROM dealer_payout_requests WHERE status='pending'"); $pending_payouts=(float)$s->fetchColumn();
 
 // Pending items for admin action
-$pending_comm = $pdo->query("SELECT dc.*,d.company_name,d.referral_code,u.name as dealer_name,do.product_line,do.customer_name FROM dealer_commissions dc JOIN dealers d ON dc.dealer_id=d.id JOIN users u ON d.user_id=u.id LEFT JOIN dealer_orders do ON dc.order_id=do.id WHERE dc.status='pending' ORDER BY dc.created_at DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
+$pending_comm = $pdo->query("SELECT dc.*,d.company_name,d.referral_code,u.name as dealer_name,dord.product_line,dord.customer_name FROM dealer_commissions dc JOIN dealers d ON dc.dealer_id=d.id JOIN users u ON d.user_id=u.id LEFT JOIN dealer_orders dord ON dc.order_id=dord.id WHERE dc.status='pending' ORDER BY dc.created_at DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
 $pending_pay  = $pdo->query("SELECT dpr.*,d.company_name,d.referral_code,u.name as dealer_name,d.ach_routing,d.ach_account,d.bank_name FROM dealer_payout_requests dpr JOIN dealers d ON dpr.dealer_id=d.id JOIN users u ON d.user_id=u.id WHERE dpr.status='pending' ORDER BY dpr.created_at DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
 
 $status_badge = ['active'=>'bg-green-100 text-green-800','pending'=>'bg-yellow-100 text-yellow-800','suspended'=>'bg-red-100 text-red-800'];
