@@ -109,6 +109,11 @@
                 <span>Knowledge Base</span>
             </a>
 
+            <a href="admin-dealers.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-dealers.php','admin-dealer-detail.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-dealers">
+                <i class="fas fa-handshake w-5"></i>
+                <span>Dealers</span>
+            </a>
+
             <a href="admin-messages.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-messages.php','admin-message-compose.php','admin-message-templates.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-messages">
                 <i class="fas fa-envelope w-5"></i>
                 <span>Messages</span>

@@ -2931,6 +2931,7 @@ async function bootstrapPortalDatabase() {
     `);
 
     // ── Dealer / Partner Portal ───────────────────────────────────
+    await webhookPool.query(`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS tier VARCHAR(20) DEFAULT 'base'`).catch(() => {});
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS dealers (
         id SERIAL PRIMARY KEY,
