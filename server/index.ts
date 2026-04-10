@@ -3077,6 +3077,8 @@ async function bootstrapPortalDatabase() {
     await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS tier_at_order   VARCHAR(20) DEFAULT 'base'`).catch(()=>{});
     await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS dealer_notes    TEXT`).catch(()=>{});
     await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS activated_at    TIMESTAMP`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS ticket_id      INTEGER`).catch(()=>{});
+    await webhookPool.query(`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS invoice_id     INTEGER`).catch(()=>{});
     // New commissions table (integer cents)
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS commissions (

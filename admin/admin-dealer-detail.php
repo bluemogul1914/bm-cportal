@@ -110,7 +110,7 @@ $orders_stmt = $pdo->prepare(
      FROM dealer_orders o
      LEFT JOIN commissions c ON c.order_id=o.id
      WHERE o.dealer_id=?
-     ORDER BY o.created_at DESC LIMIT 30"
+     ORDER BY o.created_at DESC LIMIT 30 "
 );
 $orders_stmt->execute([$id]);
 $orders = $orders_stmt->fetchAll();
@@ -339,11 +339,11 @@ $current_page = basename(__FILE__);
       </div>
       <table>
         <thead>
-          <tr><th>Date</th><th>Ref</th><th>Client</th><th>Product</th><th>Commission</th><th>Status</th></tr>
+          <tr><th>Date</th><th>Ref</th><th>Client</th><th>Product</th><th>Commission</th><th>Ticket</th><th>Invoice</th><th>Status</th></tr>
         </thead>
         <tbody>
           <?php if (empty($orders)): ?>
-          <tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-lt);">No orders.</td></tr>
+          <tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-lt);">No orders.</td></tr>
           <?php endif; ?>
           <?php foreach ($orders as $o): ?>
           <tr>
@@ -353,6 +353,20 @@ $current_page = basename(__FILE__);
             <td style="font-size:12px;"><?= $product_labels[$o['product_line'] ?? ''] ?? htmlspecialchars($o['product_line'] ?? '—') ?></td>
             <td style="font-weight:600;color:<?= $o['comm_status']==='paid'?'var(--teal)':'var(--green)' ?>;">
               <?= $o['comm_cents'] ? '$'.dollars($o['comm_cents']) : '—' ?>
+            </td>
+            <td>
+              <?php if (!empty($o['ticket_id'])): ?>
+              <a href="/portal/admin-tickets.php?id=<?= $o['ticket_id'] ?>" class="badge badge-blue" style="text-decoration:none;" target="_blank">#<?= $o['ticket_id'] ?></a>
+              <?php else: ?>
+              <span style="color:var(--text-lt);font-size:11px;">—</span>
+              <?php endif; ?>
+            </td>
+            <td>
+              <?php if (!empty($o['invoice_id'])): ?>
+              <a href="/portal/admin-invoice-detail.php?id=<?= $o['invoice_id'] ?>" class="badge badge-teal" style="text-decoration:none;" target="_blank">#<?= $o['invoice_id'] ?></a>
+              <?php else: ?>
+              <span style="color:var(--text-lt);font-size:11px;">—</span>
+              <?php endif; ?>
             </td>
             <td><?= status_badge($o['status'] ?? 'submitted') ?></td>
           </tr>
