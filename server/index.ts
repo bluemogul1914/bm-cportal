@@ -634,12 +634,64 @@ app.get("/portal/admin/:file", (req, res) => {
   executePhpFile(join(projectRoot, "admin", phpFile), req, res);
 });
 
+function executePhpPost(filePath: string, req: Request, res: Response) {
+  const sessionCode = buildSessionPhpCode(req);
+  const formParts: string[] = [];
+  for (const [key, value] of Object.entries(req.body || {})) {
+    if (Array.isArray(value)) {
+      for (const v of value) {
+        formParts.push(`${encodeURIComponent(key + '[]')}=${encodeURIComponent(String(v))}`);
+      }
+    } else if (value !== null && typeof value === 'object') {
+      for (const [subKey, subVal] of Object.entries(value as Record<string, unknown>)) {
+        formParts.push(`${encodeURIComponent(`${key}[${subKey}]`)}=${encodeURIComponent(String(subVal))}`);
+      }
+    } else {
+      formParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+    }
+  }
+  const postData = formParts.join("&");
+  const safeQ = (s: string) => s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const phpSelf = '/' + filePath.replace(/\\/g, '/').split('/').pop();
+  const phpCode = `<?php
+error_reporting(E_ERROR | E_PARSE);
+$_SERVER['PHP_SELF'] = '${phpSelf.replace(/'/g, "\\'")}';
+$_SERVER['SCRIPT_NAME'] = '${phpSelf.replace(/'/g, "\\'")}';
+session_start();
+${sessionCode}
+$_SERVER['REQUEST_METHOD'] = 'POST';
+parse_str('${postData}', $_POST);
+$_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
+$_GET = [];
+${Object.entries(req.query || {}).map(([k, v]) => `$_GET['${safeQ(k)}'] = '${safeQ(String(v))}';`).join("\n")}
+require '${filePath.replace(/'/g, "\\'")}';
+`;
+  const tmpFile = join(tmpdir(), `portal_${randomUUID()}.php`);
+  writeFile(tmpFile, phpCode).then(() => {
+    execFile("php", [tmpFile], {
+      timeout: 60000,
+      maxBuffer: 10 * 1024 * 1024,
+      cwd: projectRoot,
+      env: { ...process.env },
+    }, (error, stdout, stderr) => {
+      unlink(tmpFile).catch(() => {});
+      if (error) {
+        const errMsg = stderr || error.message || 'Unknown PHP error';
+        console.error(`PHP POST error (${phpSelf}):`, errMsg);
+        return res.status(500).send(`<html><body style="font-family:Inter,sans-serif;padding:40px"><h2 style="color:#991b1b">Server Error</h2><pre>${errMsg.replace(/</g,'&lt;').substring(0,500)}</pre><a href="javascript:history.back()">Go Back</a></body></html>`);
+      }
+      stdout = extractCsrfToken(stdout, req);
+      try { const json = JSON.parse(stdout); res.json(json); } catch { handlePhpResponse(stdout, req, res); }
+    });
+  });
+}
+
 app.post("/portal/admin/:file", (req, res) => {
   const phpFile = req.params.file.endsWith(".php") ? req.params.file : `${req.params.file}.php`;
   if (!ADMIN_DEALER_PHP_FILES.includes(phpFile)) return res.status(404).send("Not found");
   const sess = (req.session as any)?.portalUser;
   if (!sess?.is_admin) return res.status(403).send("Forbidden");
-  executePhpFile(join(projectRoot, "admin", phpFile), req, res);
+  executePhpPost(join(projectRoot, "admin", phpFile), req, res);
 });
 
 app.get("/portal/:file", (req, res) => {
