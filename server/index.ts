@@ -157,7 +157,10 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-xero.php"];
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-xero.php",
+  "dealer-register.php", "dealer-dashboard.php", "dealer-orders.php", "dealer-commissions.php",
+  "dealer-customers.php", "dealer-customer-detail.php", "dealer-smtp.php", "dealer-payouts.php",
+  "dealer-training.php", "dealer-profile.php", "admin-dealers.php", "admin-dealer-detail.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -2927,6 +2930,92 @@ async function bootstrapPortalDatabase() {
       ON CONFLICT (slug) DO NOTHING;
     `);
 
+    // ── Dealer / Partner Portal ───────────────────────────────────
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS dealers (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        company_name VARCHAR(200),
+        referral_code VARCHAR(20) UNIQUE NOT NULL,
+        commission_rate DECIMAL(5,2) DEFAULT 10.00,
+        ach_routing VARCHAR(20),
+        ach_account VARCHAR(30),
+        ach_name VARCHAR(200),
+        bank_name VARCHAR(200),
+        status VARCHAR(20) DEFAULT 'active',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS dealer_orders (
+        id SERIAL PRIMARY KEY,
+        dealer_id INTEGER REFERENCES dealers(id) ON DELETE CASCADE,
+        product_line VARCHAR(100),
+        customer_name VARCHAR(200),
+        customer_email VARCHAR(200),
+        customer_phone VARCHAR(50),
+        customer_address TEXT,
+        details TEXT,
+        status VARCHAR(30) DEFAULT 'pending',
+        commission_amount DECIMAL(10,2) DEFAULT 0,
+        admin_notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS dealer_commissions (
+        id SERIAL PRIMARY KEY,
+        dealer_id INTEGER REFERENCES dealers(id) ON DELETE CASCADE,
+        order_id INTEGER REFERENCES dealer_orders(id) ON DELETE SET NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        notes TEXT,
+        approved_at TIMESTAMP,
+        paid_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS dealer_customers (
+        id SERIAL PRIMARY KEY,
+        dealer_id INTEGER REFERENCES dealers(id) ON DELETE CASCADE,
+        type VARCHAR(20) DEFAULT 'lead',
+        name VARCHAR(200),
+        email VARCHAR(200),
+        phone VARCHAR(50),
+        company VARCHAR(200),
+        address TEXT,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS dealer_payout_requests (
+        id SERIAL PRIMARY KEY,
+        dealer_id INTEGER REFERENCES dealers(id) ON DELETE CASCADE,
+        amount DECIMAL(10,2) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        notes TEXT,
+        admin_notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS dealer_smtp_settings (
+        id SERIAL PRIMARY KEY,
+        dealer_id INTEGER REFERENCES dealers(id) ON DELETE CASCADE UNIQUE,
+        host VARCHAR(200),
+        port INTEGER DEFAULT 587,
+        username VARCHAR(200),
+        password TEXT,
+        encryption VARCHAR(20) DEFAULT 'tls',
+        from_name VARCHAR(200),
+        from_email VARCHAR(200)
+      )
+    `);
     console.log("Portal database bootstrap complete");
   } catch (err) {
     console.error("Portal database bootstrap error:", err);
