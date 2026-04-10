@@ -204,7 +204,7 @@ $current_page = basename(__FILE__);
     <div class="two-col">
       <div class="card">
         <div class="card-title" style="margin-bottom:14px;">Edit profile</div>
-        <form method="POST">
+        <form method="POST" action="/portal/admin/admin-dealer-detail.php?id=<?= $id ?>">
           <input type="hidden" name="action" value="update_dealer">
           <div class="form-grid-2">
             <div class="form-group">
@@ -260,7 +260,7 @@ $current_page = basename(__FILE__);
       <div>
         <div class="card">
           <div class="card-title" style="margin-bottom:12px;">Add manual commission</div>
-          <form method="POST">
+          <form method="POST" action="/portal/admin/admin-dealer-detail.php?id=<?= $id ?>">
             <input type="hidden" name="action" value="add_commission">
             <div class="form-group">
               <label class="form-label">Amount ($)</label>
@@ -317,7 +317,7 @@ $current_page = basename(__FILE__);
             <td><?= status_badge($c['status']) ?></td>
             <td>
               <?php if ($c['status'] === 'pending'): ?>
-              <form method="POST" style="display:inline;">
+              <form method="POST" action="/portal/admin/admin-dealer-detail.php?id=<?= $id ?>" style="display:inline;">
                 <input type="hidden" name="action"        value="approve_commission">
                 <input type="hidden" name="commission_id" value="<?= $c['id'] ?>">
                 <button type="submit" class="btn btn-primary btn-sm">Approve</button>
@@ -398,7 +398,7 @@ $current_page = basename(__FILE__);
             <td><?= status_badge($p['status']) ?></td>
             <td>
               <?php if (in_array($p['status'], ['pending','processing'])): ?>
-              <form method="POST" style="display:inline;">
+              <form method="POST" action="/portal/admin/admin-dealer-detail.php?id=<?= $id ?>" style="display:inline;">
                 <input type="hidden" name="action"    value="mark_paid">
                 <input type="hidden" name="payout_id" value="<?= $p['id'] ?>">
                 <button type="submit" class="btn btn-primary btn-sm">Mark sent</button>

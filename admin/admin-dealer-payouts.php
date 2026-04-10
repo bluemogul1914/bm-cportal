@@ -151,7 +151,7 @@ $current_page = basename(__FILE__);
     </div>
     <div class="topbar-right">
       <?php if ((int)$approved_ready['total'] > 0): ?>
-      <form method="POST" onsubmit="return confirm('Run payout for all dealers with approved commissions?');">
+      <form method="POST" action="/portal/admin/admin-dealer-payouts.php" onsubmit="return confirm('Run payout for all dealers with approved commissions?');">
         <input type="hidden" name="action" value="run_payout">
         <button type="submit" class="btn btn-primary">
           Run payout — $<?= dollars($approved_ready['total']) ?> to <?= $approved_ready['dealer_count'] ?> dealer<?= $approved_ready['dealer_count']!=1?'s':'' ?>
@@ -190,7 +190,7 @@ $current_page = basename(__FILE__);
     <div class="card" style="padding:0;margin-bottom:16px;">
       <div style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
         <span class="card-title">Pending commission review (<?= count($pending_comms) ?>)</span>
-        <form method="POST">
+        <form method="POST" action="/portal/admin/admin-dealer-payouts.php">
           <input type="hidden" name="action" value="approve_all">
           <button type="submit" class="btn btn-primary btn-sm"
                   onclick="return confirm('Approve all <?= count($pending_comms) ?> pending commissions?');">
@@ -218,7 +218,7 @@ $current_page = basename(__FILE__);
             <td style="font-size:12px;"><?= $product_labels[$c['product_line'] ?? ''] ?? htmlspecialchars($c['product_line'] ?? '—') ?></td>
             <td style="font-weight:600;color:var(--amber);">$<?= dollars($c['amount_cents']) ?></td>
             <td>
-              <form method="POST" style="display:inline;">
+              <form method="POST" action="/portal/admin/admin-dealer-payouts.php" style="display:inline;">
                 <input type="hidden" name="action"        value="approve_commission">
                 <input type="hidden" name="commission_id" value="<?= $c['id'] ?>">
                 <button type="submit" class="btn btn-primary btn-sm">Approve</button>
@@ -254,7 +254,7 @@ $current_page = basename(__FILE__);
             <td style="text-align:center;"><?= $p['commission_count'] ?></td>
             <td><?= status_badge($p['status']) ?></td>
             <td>
-              <form method="POST" style="display:inline;">
+              <form method="POST" action="/portal/admin/admin-dealer-payouts.php" style="display:inline;">
                 <input type="hidden" name="action"    value="mark_paid">
                 <input type="hidden" name="payout_id" value="<?= $p['id'] ?>">
                 <button type="submit" class="btn btn-primary btn-sm">Mark sent</button>

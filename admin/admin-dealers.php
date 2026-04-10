@@ -112,7 +112,7 @@ $current_page = basename(__FILE__);
     <?php if ($error):   ?><div class="alert" style="background:var(--red-bg);border-color:var(--red);color:var(--red-text);"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
     <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap;">
-      <form method="GET" style="display:flex;gap:8px;flex:1;min-width:200px;">
+      <form method="GET" action="/portal/admin/admin-dealers.php" style="display:flex;gap:8px;flex:1;min-width:200px;">
         <input type="text" name="q" class="form-control" placeholder="Search name, email, code…"
                value="<?= htmlspecialchars($search) ?>" style="max-width:280px;">
         <?php if ($filter): ?><input type="hidden" name="status" value="<?= htmlspecialchars($filter) ?>"><br><?php endif; ?>
@@ -165,7 +165,7 @@ $current_page = basename(__FILE__);
                 <a href="/portal/admin/admin-dealer-detail.php?id=<?= $d['id'] ?>"
                    class="btn btn-outline btn-sm">Detail</a>
                 <?php if ($d['status'] === 'pending'): ?>
-                <form method="POST" style="display:inline;">
+                <form method="POST" action="/portal/admin/admin-dealers.php" style="display:inline;">
                   <input type="hidden" name="action"    value="update_dealer">
                   <input type="hidden" name="dealer_id" value="<?= $d['id'] ?>">
                   <input type="hidden" name="status"    value="active">
