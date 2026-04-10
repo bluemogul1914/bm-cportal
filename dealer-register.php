@@ -42,11 +42,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $dealer_code = 'DLR-' . str_pad(random_int(10000,99999),5,'0',STR_PAD_LEFT);
                 $ins = $pdo->prepare(
-                    "INSERT INTO dealers (dealer_code, full_name, email, phone, company, notes, status, tier)
-                     VALUES (?,?,?,?,?,?,'pending','base')"
+                    "INSERT INTO dealers (dealer_code, referral_code, full_name, email, phone, company, notes, status, tier)
+                     VALUES (?,?,?,?,?,?,?,'pending','base')"
                 );
                 $ins->execute([
-                    $dealer_code, $full_name, $email,
+                    $dealer_code, $dealer_code, $full_name, $email,
                     $phone ?: null, $company ?: null,
                     $markets ? "Markets: $markets" : null
                 ]);

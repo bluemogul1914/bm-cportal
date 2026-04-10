@@ -146,7 +146,7 @@ $current_page = basename(__FILE__);
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous">
-  <script src="https://cdn.tailwindcss.com?v=3" defer></script>
+  <script src="https://cdn.tailwindcss.com?v=3"></script>
   <style>
     <?php include __DIR__ . '/../includes/admin-styles.css.php'; ?>
   </style>
@@ -403,5 +403,21 @@ $current_page = basename(__FILE__);
   </div>
 </div>
 
+<script>
+function toggleClients(){
+  const sub=document.getElementById('clients-subnav'),ch=document.getElementById('clients-chevron');
+  if(!sub)return;sub.classList.toggle('hidden');if(ch)ch.style.transform=sub.classList.contains('hidden')?'':'rotate(180deg)';
+}
+function toggleLeads(){
+  const sub=document.getElementById('leads-subnav'),ch=document.getElementById('leads-chevron');
+  if(!sub)return;sub.classList.toggle('hidden');if(ch)ch.style.transform=sub.classList.contains('hidden')?'':'rotate(180deg)';
+}
+document.addEventListener('DOMContentLoaded',function(){
+  ['clients','leads'].forEach(function(n){
+    const sub=document.getElementById(n+'-subnav'),ch=document.getElementById(n+'-chevron');
+    if(sub&&ch)ch.style.transform=sub.classList.contains('hidden')?'':'rotate(180deg)';
+  });
+});
+</script>
 </body>
 </html>
