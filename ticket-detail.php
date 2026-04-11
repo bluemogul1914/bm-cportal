@@ -33,7 +33,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                 $client_id = $client ? $client['id'] : $user_id;
 
                 $pdo->prepare("INSERT INTO ticket_comments (ticket_id, user_id, comment, is_internal, created_at) VALUES (?, ?, ?, false, NOW())")->execute([$ticket_id, $user_id, $comment]);
-                $pdo->prepare("UPDATE tickets SET updated_at = NOW() WHERE id = ? AND client_id = ?")->execute([$ticket_id, $client_id]);
+                $pdo->prepare("UPDATE tickets SET updated_at = NOW() WHERE id = ?")->execute([$ticket_id]);
                 $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
                     ->execute([$user_id, 'comment_added', 'ticket', $ticket_id, 'Reply on ticket #' . $ticket_id, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
                 $success_msg = 'Reply added successfully.';
@@ -51,8 +51,9 @@ try {
     $client = $stmt->fetch(PDO::FETCH_ASSOC);
     $client_id = $client ? $client['id'] : $user_id;
 
-    $stmt = $pdo->prepare("SELECT * FROM tickets WHERE id = ? AND client_id = ?");
-    $stmt->execute([$ticket_id, $client_id]);
+    // Try matching by client_id first, fall back to checking if this user created the ticket
+    $stmt = $pdo->prepare("SELECT * FROM tickets WHERE id = ? AND (client_id = ? OR client_id = ?)");
+    $stmt->execute([$ticket_id, $client_id, $user_id]);
     $ticket = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$ticket) {
         portal_redirect('/portal/tickets.php');

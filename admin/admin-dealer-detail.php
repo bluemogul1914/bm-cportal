@@ -11,15 +11,14 @@ $is_admin = (!empty($_SESSION['role']) && $_SESSION['role'] === 'admin')
          || (!empty($_SESSION['is_admin']) && $_SESSION['is_admin'] === 1);
 
 if (!$is_admin) {
-    header('Location: /portal/index.php?session_expired=1');
-    exit;
+    echo "__REDIRECT__:/portal/index.php?session_expired=1\n"; exit;
 }
 
 require_once __DIR__ . '/../includes/dealer-functions.php';
 $pdo = get_db();
 
 $id = (int)($_GET['id'] ?? 0);
-if (!$id) { header('Location: /portal/admin/admin-dealers.php'); exit; }
+if (!$id) { echo "__REDIRECT__:/portal/admin/admin-dealers.php\n"; exit; }
 
 $dealer = $pdo->prepare(
     "SELECT d.*, COALESCE(d.full_name, u.name) AS full_name, COALESCE(d.email, u.email) AS email
@@ -37,7 +36,7 @@ $stmt = $pdo->prepare(
 $stmt->execute([$id]);
 $dealer = $stmt->fetch();
 
-if (!$dealer) { header('Location: /portal/admin/admin-dealers.php?error=not_found'); exit; }
+if (!$dealer) { echo "__REDIRECT__:/portal/admin/admin-dealers.php?error=not_found\n"; exit; }
 
 $success = $error = '';
 
@@ -86,6 +85,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pid = (int)$_POST['payout_id'];
         $pdo->prepare("UPDATE dealer_payouts SET status='sent',sent_at=NOW() WHERE id=? AND dealer_id=?")->execute([$pid,$id]);
         $success = "Payout marked as sent.";
+    }
+
+    if ($action === 'create_order') {
+        $client_name    = trim($_POST['client_name']    ?? '');
+        $client_email   = trim($_POST['client_email']   ?? '');
+        $client_phone   = trim($_POST['client_phone']   ?? '');
+        $service_addr   = trim($_POST['service_address'] ?? '');
+        $product_line   = trim($_POST['product_line']   ?? '');
+        $plan_name      = trim($_POST['plan_name']      ?? '');
+        $plan_price     = (float)($_POST['plan_price']  ?? 0);
+        $comm_amount    = (float)($_POST['commission']   ?? 0);
+        $dealer_notes   = trim($_POST['dealer_notes']   ?? '');
+        if ($client_name && $product_line) {
+            $order_ref = 'ORD-' . strtoupper(substr(md5(uniqid()), 0, 8));
+            $ord = $pdo->prepare(
+                "INSERT INTO dealer_orders
+                 (dealer_id, order_ref, client_name, client_email, client_phone, service_address,
+                  product_line, plan_name, plan_price_cents, spiff_cents, dealer_notes, status, created_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,'submitted',NOW()) RETURNING id"
+            );
+            $ord->execute([$id, $order_ref, $client_name, $client_email ?: null, $client_phone ?: null,
+                $service_addr ?: null, $product_line, $plan_name ?: null,
+                (int)round($plan_price * 100), (int)round($comm_amount * 100), $dealer_notes ?: null]);
+            $new_oid = $ord->fetchColumn();
+            if ($comm_amount > 0) {
+                $pdo->prepare(
+                    "INSERT INTO commissions (dealer_id, order_id, amount_cents, status, notes, created_at)
+                     VALUES (?,?,?,'pending',?,NOW())"
+                )->execute([$id, $new_oid, (int)round($comm_amount * 100), "Order $order_ref"]);
+            }
+            $success = "Order $order_ref created successfully.";
+        } else {
+            $error = "Client name and product are required.";
+        }
     }
 }
 
@@ -333,6 +366,59 @@ $current_page = basename(__FILE__);
     </div>
 
     <?php elseif ($tab === 'orders'): ?>
+
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-title" style="margin-bottom:14px;">Create Order for this Dealer</div>
+      <form method="POST" action="/portal/admin/admin-dealer-detail.php?id=<?= $id ?>&tab=orders">
+        <input type="hidden" name="action" value="create_order">
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">Client Full Name *</label>
+            <input type="text" name="client_name" class="form-input" placeholder="First Last" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Client Email</label>
+            <input type="email" name="client_email" class="form-input" placeholder="client@email.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Client Phone</label>
+            <input type="text" name="client_phone" class="form-input" placeholder="(555) 000-0000">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Service Address</label>
+            <input type="text" name="service_address" class="form-input" placeholder="123 Main St, City, TX 77001">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Product Line *</label>
+            <select name="product_line" class="form-input" required>
+              <option value="">— Select product —</option>
+              <?php foreach ($product_labels as $val => $label): ?>
+              <option value="<?= $val ?>"><?= htmlspecialchars($label) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Plan / Package Name</label>
+            <input type="text" name="plan_name" class="form-input" placeholder="e.g. Fiber 500 Mbps">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Plan Price ($)</label>
+            <input type="number" name="plan_price" class="form-input" step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Commission / Spiff ($)</label>
+            <input type="number" name="commission" class="form-input" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:10px;">
+          <label class="form-label">Notes</label>
+          <input type="text" name="dealer_notes" class="form-input" placeholder="Optional notes about this order">
+        </div>
+        <div style="margin-top:14px;">
+          <button type="submit" class="btn btn-primary">Create Order</button>
+        </div>
+      </form>
+    </div>
 
     <div class="card" style="padding:0;">
       <div style="padding:12px 20px;border-bottom:1px solid var(--border);">

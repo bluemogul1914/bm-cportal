@@ -11,6 +11,9 @@ $is_admin = true;
 
 $uptime_kuma_url = defined('UPTIME_KUMA_URL') ? UPTIME_KUMA_URL : (getenv('UPTIME_KUMA_URL') ?: '');
 $grafana_url = defined('GRAFANA_URL') ? GRAFANA_URL : (getenv('GRAFANA_URL') ?: '');
+// Embeddable URLs — status page (Kuma) and specific dashboard (Grafana)
+$uptime_kuma_embed_url = defined('UPTIME_KUMA_EMBED_URL') ? UPTIME_KUMA_EMBED_URL : (getenv('UPTIME_KUMA_EMBED_URL') ?: $uptime_kuma_url);
+$grafana_embed_url = defined('GRAFANA_EMBED_URL') ? GRAFANA_EMBED_URL : (getenv('GRAFANA_EMBED_URL') ?: $grafana_url);
 
 $kuma_configured = !empty($uptime_kuma_url);
 $grafana_configured = !empty($grafana_url);
@@ -269,6 +272,85 @@ $grafana_health = check_service_health($grafana_url);
                 </div>
             </div>
             <?php endif; ?>
+
+            <?php if ($kuma_configured): ?>
+            <div class="bg-white rounded-lg border border-gray-200 mb-6 overflow-hidden" id="kuma-iframe-wrap">
+                <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <h3 class="font-semibold text-gray-900"><i class="fas fa-signal text-green-500 mr-2"></i>Uptime Kuma — Embedded View</h3>
+                    <div class="flex items-center gap-3">
+                        <span id="kuma-iframe-status" class="text-xs text-gray-400">Loading…</span>
+                        <a href="<?= htmlspecialchars($uptime_kuma_url) ?>" target="_blank" class="text-xs text-blue-600 hover:underline">Open in new tab</a>
+                    </div>
+                </div>
+                <div id="kuma-iframe-blocked" class="hidden p-6 bg-yellow-50 border-b border-yellow-200">
+                    <p class="text-sm text-yellow-800 font-medium mb-2"><i class="fas fa-exclamation-triangle mr-2"></i>Iframe blocked by browser security policy</p>
+                    <p class="text-sm text-yellow-700 mb-3">To embed Uptime Kuma directly in this portal, either:</p>
+                    <ul class="text-sm text-yellow-700 space-y-1 mb-3 ml-4 list-disc">
+                        <li>Set <code class="bg-yellow-100 px-1 rounded">UPTIME_KUMA_EMBED_URL</code> to your <strong>public status page</strong> URL (e.g., <code class="bg-yellow-100 px-1 rounded">https://status.yourdomain.com/status/your-page</code>) — these are embeddable by default</li>
+                        <li>Or configure Uptime Kuma to allow iframe embedding from your portal domain</li>
+                    </ul>
+                </div>
+                <div id="kuma-iframe-container" style="height:600px;">
+                    <iframe id="kuma-iframe" src="<?= htmlspecialchars($uptime_kuma_embed_url) ?>" width="100%" height="100%" style="border:none;display:block;" onload="iframeLoaded('kuma')" onerror="iframeBlocked('kuma')"></iframe>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($grafana_configured): ?>
+            <div class="bg-white rounded-lg border border-gray-200 mb-6 overflow-hidden" id="grafana-iframe-wrap">
+                <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <h3 class="font-semibold text-gray-900"><i class="fas fa-chart-area text-orange-500 mr-2"></i>Grafana — Embedded Dashboard</h3>
+                    <div class="flex items-center gap-3">
+                        <span id="grafana-iframe-status" class="text-xs text-gray-400">Loading…</span>
+                        <a href="<?= htmlspecialchars($grafana_url) ?>" target="_blank" class="text-xs text-blue-600 hover:underline">Open in new tab</a>
+                    </div>
+                </div>
+                <div id="grafana-iframe-blocked" class="hidden p-6 bg-yellow-50 border-b border-yellow-200">
+                    <p class="text-sm text-yellow-800 font-medium mb-2"><i class="fas fa-exclamation-triangle mr-2"></i>Iframe blocked by browser security policy</p>
+                    <p class="text-sm text-yellow-700 mb-3">To embed Grafana directly:</p>
+                    <ul class="text-sm text-yellow-700 space-y-1 mb-3 ml-4 list-disc">
+                        <li>Add <code class="bg-yellow-100 px-1 rounded">allow_embedding = true</code> to your <code class="bg-yellow-100 px-1 rounded">grafana.ini</code> under <code class="bg-yellow-100 px-1 rounded">[security]</code></li>
+                        <li>Set <code class="bg-yellow-100 px-1 rounded">GRAFANA_EMBED_URL</code> to a specific public dashboard URL</li>
+                        <li>Or enable anonymous access for a read-only dashboard view</li>
+                    </ul>
+                </div>
+                <div id="grafana-iframe-container" style="height:600px;">
+                    <iframe id="grafana-iframe" src="<?= htmlspecialchars($grafana_embed_url) ?>" width="100%" height="100%" style="border:none;display:block;" onload="iframeLoaded('grafana')" onerror="iframeBlocked('grafana')"></iframe>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <script>
+            function iframeLoaded(name) {
+                try {
+                    var frame = document.getElementById(name + '-iframe');
+                    var doc = frame.contentDocument || frame.contentWindow.document;
+                    if (!doc || doc.body === null || doc.body.innerHTML === '') {
+                        iframeBlocked(name);
+                    } else {
+                        document.getElementById(name + '-iframe-status').textContent = 'Loaded';
+                        document.getElementById(name + '-iframe-status').className = 'text-xs text-green-600';
+                    }
+                } catch(e) {
+                    iframeBlocked(name);
+                }
+            }
+            function iframeBlocked(name) {
+                document.getElementById(name + '-iframe-status').textContent = 'Blocked — see instructions below';
+                document.getElementById(name + '-iframe-status').className = 'text-xs text-yellow-600';
+                document.getElementById(name + '-iframe-blocked').classList.remove('hidden');
+                document.getElementById(name + '-iframe-container').style.height = '80px';
+                document.getElementById(name + '-iframe-container').innerHTML = '<div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px;">Unable to load embedded view. Use the link above to open in a new tab.</div>';
+            }
+            setTimeout(function() {
+                <?php if ($kuma_configured): ?>
+                try { iframeLoaded('kuma'); } catch(e) {}
+                <?php endif; ?>
+                <?php if ($grafana_configured): ?>
+                try { iframeLoaded('grafana'); } catch(e) {}
+                <?php endif; ?>
+            }, 3000);
+            </script>
 
             <div class="bg-white rounded-lg border border-gray-200">
                 <div class="px-6 py-4 border-b border-gray-200">

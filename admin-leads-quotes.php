@@ -5,6 +5,52 @@ $pdo = getDB();
 require_once 'includes/leads-db-bootstrap.php';
 try { leads_bootstrap($pdo); } catch (Exception $e) {}
 
+$convert_msg = '';
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'convert_invoice') {
+    $qid = (int)($_POST['quote_id'] ?? 0);
+    if ($qid > 0) {
+        try {
+            $q = $pdo->prepare("SELECT q.*, l.full_name as lead_name, l.email as lead_email FROM lead_quotes q LEFT JOIN leads l ON q.lead_id=l.id WHERE q.id=?");
+            $q->execute([$qid]);
+            $quote = $q->fetch(PDO::FETCH_ASSOC);
+            if ($quote) {
+                $lead_items = json_decode($quote['items'] ?? '[]', true);
+                $inv_items = [];
+                if (is_array($lead_items)) {
+                    foreach ($lead_items as $li) {
+                        $inv_items[] = [
+                            'description' => $li['description'] ?? $li['name'] ?? 'Service',
+                            'quantity'    => (float)($li['quantity'] ?? $li['qty'] ?? 1),
+                            'rate'        => (float)($li['unit_price'] ?? $li['rate'] ?? $li['price'] ?? 0),
+                            'amount'      => (float)($li['total'] ?? $li['amount'] ?? 0),
+                        ];
+                    }
+                }
+                if (empty($inv_items)) {
+                    $inv_items = [['description' => 'Service — ' . ($quote['lead_name'] ?? 'Quote ' . $quote['quote_number']), 'quantity' => 1, 'rate' => (float)$quote['total'], 'amount' => (float)$quote['total']]];
+                }
+                $client_id_lookup = $pdo->prepare("SELECT id FROM clients WHERE LOWER(email)=LOWER(?) LIMIT 1");
+                $client_id_lookup->execute([$quote['lead_email'] ?? '']);
+                $client_row = $client_id_lookup->fetch(PDO::FETCH_ASSOC);
+                $client_id = $client_row ? $client_row['id'] : 1;
+                $inv_num = 'INV-' . strtoupper(substr(md5(uniqid()), 0, 6));
+                $due = date('Y-m-d', strtotime('+30 days'));
+                $tax = (float)($quote['tax_amount'] ?? 0);
+                $subtotal = (float)($quote['total_without_tax'] ?? $quote['total'] ?? 0);
+                $total = (float)($quote['total'] ?? 0);
+                $notes = 'Converted from Quote ' . ($quote['quote_number'] ?? "#$qid") . ($quote['lead_name'] ? ' — Lead: ' . $quote['lead_name'] : '');
+                $ins = $pdo->prepare("INSERT INTO invoices (client_id, invoice_number, amount, tax, total, status, due_date, notes, items, created_at) VALUES (?,?,?,?,?,'unpaid',?,?,?::jsonb,NOW()) RETURNING id");
+                $ins->execute([$client_id, $inv_num, $subtotal, $tax, $total, $due, $notes, json_encode($inv_items)]);
+                $new_inv_id = $ins->fetchColumn();
+                $pdo->prepare("UPDATE lead_quotes SET status='accepted' WHERE id=?")->execute([$qid]);
+                portal_redirect("/portal/admin-invoice-detail.php?id=$new_inv_id");
+            }
+        } catch (Exception $e) {
+            $convert_msg = 'Error: ' . $e->getMessage();
+        }
+    }
+}
+
 $from = $_GET['from'] ?? date('Y-m-01');
 $to   = $_GET['to']   ?? date('Y-m-t');
 $stat_filter = $_GET['status'] ?? '';
@@ -111,7 +157,19 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
                     <td class="px-4 py-3 text-gray-500"><?= $q['document_date'] ?></td>
                     <td class="px-4 py-3 text-right font-semibold text-gray-900">$<?= number_format((float)($q['total']??0),2) ?></td>
                     <td class="px-4 py-3 text-gray-400"><?= $q['valid_until'] ?></td>
-                    <td class="px-4 py-3" onclick="event.stopPropagation()"><button class="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded px-2 py-0.5">···</button></td>
+                    <td class="px-4 py-3" onclick="event.stopPropagation()">
+                      <?php if (in_array($q['status'], ['new','sent','on_review'])): ?>
+                      <form method="POST" action="/portal/admin-leads-quotes.php" style="display:inline;">
+                        <input type="hidden" name="action" value="convert_invoice">
+                        <input type="hidden" name="quote_id" value="<?= $q['id'] ?>">
+                        <button type="submit" class="text-xs text-green-600 hover:text-green-800 border border-green-300 rounded px-2 py-0.5 font-medium" title="Convert to Invoice" onclick="return confirm('Convert this quote to an invoice?')">→ Invoice</button>
+                      </form>
+                      <?php elseif ($q['status'] === 'accepted'): ?>
+                      <span class="text-xs text-green-500 font-medium">Invoiced</span>
+                      <?php else: ?>
+                      <span class="text-xs text-gray-300">—</span>
+                      <?php endif; ?>
+                    </td>
                 </tr>
                 <?php endforeach; ?>
                 <?php endif; ?>

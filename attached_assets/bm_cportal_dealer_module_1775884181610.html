@@ -1,0 +1,312 @@
+
+<h2 class="sr-only">Blue Mogul dealer portal module mockup with dashboard, order submission, commission tracker, and payout management tabs</h2>
+
+<style>
+  .bm-wrap { font-family: var(--font-sans); padding: 0; }
+  .bm-header { background: #0a1628; color: #fff; padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0; }
+  .bm-logo { font-size: 15px; font-weight: 500; letter-spacing: 0.04em; color: #4a9eff; }
+  .bm-badge { font-size: 11px; background: #1e3a5f; color: #7ab8ff; padding: 3px 10px; border-radius: 20px; }
+  .bm-nav { background: #0d1f3c; display: flex; gap: 2px; padding: 0 18px; }
+  .bm-tab { font-size: 12px; padding: 9px 14px; color: #6b8bb5; cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s; }
+  .bm-tab.active { color: #4a9eff; border-bottom-color: #4a9eff; }
+  .bm-tab:hover:not(.active) { color: #a8c4e0; }
+  .bm-body { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-top: none; border-radius: 0 0 var(--border-radius-lg) var(--border-radius-lg); padding: 18px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+  .stat { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 12px 14px; }
+  .stat-label { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 4px; }
+  .stat-val { font-size: 22px; font-weight: 500; color: var(--color-text-primary); }
+  .stat-sub { font-size: 11px; color: var(--color-text-tertiary); margin-top: 2px; }
+  .stat-up { color: #2a7d4f; }
+  .section-title { font-size: 13px; font-weight: 500; color: var(--color-text-primary); margin: 0 0 10px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 14px; }
+  .order-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 0.5px solid var(--color-border-tertiary); }
+  .order-row:last-child { border-bottom: none; }
+  .order-name { font-size: 13px; color: var(--color-text-primary); }
+  .order-meta { font-size: 11px; color: var(--color-text-secondary); margin-top: 2px; }
+  .pill { font-size: 10px; padding: 2px 8px; border-radius: 20px; font-weight: 500; }
+  .pill-green { background: #e6f4ec; color: #1a6b3c; }
+  .pill-amber { background: #fef3e2; color: #7a4f0d; }
+  .pill-blue { background: #e6f1fb; color: #0c447c; }
+  .pill-gray { background: var(--color-background-secondary); color: var(--color-text-secondary); }
+  .spiff { font-size: 13px; font-weight: 500; color: #2a7d4f; }
+  .form-row { margin-bottom: 12px; }
+  .form-label { font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px; display: block; }
+  .form-input { width: 100%; box-sizing: border-box; font-size: 13px; padding: 7px 10px; border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md); background: var(--color-background-primary); color: var(--color-text-primary); font-family: var(--font-sans); }
+  .form-select { width: 100%; box-sizing: border-box; font-size: 13px; padding: 7px 10px; border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md); background: var(--color-background-primary); color: var(--color-text-primary); font-family: var(--font-sans); }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btn-primary { background: #1a56a0; color: #fff; border: none; border-radius: var(--border-radius-md); padding: 8px 18px; font-size: 13px; cursor: pointer; font-family: var(--font-sans); }
+  .btn-outline { background: transparent; color: var(--color-text-secondary); border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md); padding: 8px 16px; font-size: 13px; cursor: pointer; font-family: var(--font-sans); }
+  .spiff-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .spiff-table th { text-align: left; color: var(--color-text-secondary); font-weight: 500; padding: 6px 8px; border-bottom: 0.5px solid var(--color-border-tertiary); font-size: 11px; }
+  .spiff-table td { padding: 8px 8px; border-bottom: 0.5px solid var(--color-border-tertiary); color: var(--color-text-primary); vertical-align: middle; }
+  .spiff-table tr:last-child td { border-bottom: none; }
+  .commission-bar { height: 4px; background: var(--color-background-secondary); border-radius: 2px; margin-top: 4px; }
+  .commission-fill { height: 4px; background: #1a56a0; border-radius: 2px; }
+  .payout-block { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 14px; margin-bottom: 12px; }
+  .payout-amount { font-size: 28px; font-weight: 500; color: var(--color-text-primary); }
+  .payout-label { font-size: 12px; color: var(--color-text-secondary); }
+  .dealer-id { font-size: 11px; color: #4a9eff; background: #0d1f3c; padding: 2px 8px; border-radius: 4px; font-family: var(--font-mono); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .progress-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .progress-label { font-size: 12px; color: var(--color-text-secondary); min-width: 120px; }
+  .progress-track { flex: 1; height: 6px; background: var(--color-background-secondary); border-radius: 3px; }
+  .progress-fill { height: 6px; border-radius: 3px; }
+  .notice { background: #e6f1fb; border: 0.5px solid #b5d4f4; border-radius: var(--border-radius-md); padding: 10px 14px; font-size: 12px; color: #0c447c; margin-bottom: 14px; }
+</style>
+
+<div class="bm-wrap">
+  <div class="bm-header">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span class="bm-logo">BLUEMOGUL</span>
+      <span style="font-size:11px;color:#4a7ab5;">Dealer Portal</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span class="dealer-id">DLR-00142</span>
+      <div style="width:28px;height:28px;border-radius:50%;background:#1e3a5f;display:flex;align-items:center;justify-content:center;font-size:11px;color:#7ab8ff;font-weight:500;">RJ</div>
+    </div>
+  </div>
+  <div class="bm-nav">
+    <div class="bm-tab active" onclick="switchTab('dashboard',this)">Dashboard</div>
+    <div class="bm-tab" onclick="switchTab('orders',this)">Submit order</div>
+    <div class="bm-tab" onclick="switchTab('commissions',this)">Commissions</div>
+    <div class="bm-tab" onclick="switchTab('payouts',this)">Payouts</div>
+    <div class="bm-tab" onclick="switchTab('products',this)">Products & spiffs</div>
+  </div>
+  <div class="bm-body">
+
+    <div id="tab-dashboard" class="tab-content active">
+      <div class="stat-grid">
+        <div class="stat">
+          <div class="stat-label">This month</div>
+          <div class="stat-val">$340</div>
+          <div class="stat-sub stat-up">+3 activations</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Pending payout</div>
+          <div class="stat-val">$215</div>
+          <div class="stat-sub">Pays out Friday</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Total earned</div>
+          <div class="stat-val">$1,480</div>
+          <div class="stat-sub">Since Feb 2025</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Bonus tier</div>
+          <div class="stat-val" style="font-size:16px;color:#1a56a0;">Silver</div>
+          <div class="stat-sub">7 more → Gold</div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="section-title">Recent orders</div>
+          <div class="order-row">
+            <div>
+              <div class="order-name">Maria T. — Xfinity Prepaid</div>
+              <div class="order-meta">Apr 9 · Houston, TX</div>
+            </div>
+            <div style="text-align:right">
+              <div class="spiff">+$35</div>
+              <span class="pill pill-green">Paid</span>
+            </div>
+          </div>
+          <div class="order-row">
+            <div>
+              <div class="order-name">James R. — Frontier Fiber</div>
+              <div class="order-meta">Apr 7 · Baton Rouge, LA</div>
+            </div>
+            <div style="text-align:right">
+              <div class="spiff">+$100</div>
+              <span class="pill pill-amber">Pending</span>
+            </div>
+          </div>
+          <div class="order-row">
+            <div>
+              <div class="order-name">Keisha M. — Verizon Prepaid</div>
+              <div class="order-meta">Apr 6 · Charlotte, NC</div>
+            </div>
+            <div style="text-align:right">
+              <div class="spiff">+$30</div>
+              <span class="pill pill-green">Paid</span>
+            </div>
+          </div>
+          <div class="order-row">
+            <div>
+              <div class="order-name">Carlos V. — TravelSim eSIM</div>
+              <div class="order-meta">Apr 5 · Dallas, TX</div>
+            </div>
+            <div style="text-align:right">
+              <div class="spiff">+$15</div>
+              <span class="pill pill-blue">Processing</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">Bonus tier progress</div>
+          <div style="margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+              <span style="font-size:12px;color:var(--color-text-secondary);">Silver → Gold (10 activations/mo)</span>
+              <span style="font-size:12px;font-weight:500;">3/10</span>
+            </div>
+            <div class="commission-bar"><div class="commission-fill" style="width:30%"></div></div>
+          </div>
+          <div class="progress-row">
+            <span class="progress-label">Frontier Fiber</span>
+            <div class="progress-track"><div class="progress-fill" style="width:40%;background:#1a56a0;"></div></div>
+            <span style="font-size:12px;color:var(--color-text-secondary);min-width:24px;text-align:right;">2</span>
+          </div>
+          <div class="progress-row">
+            <span class="progress-label">Xfinity Prepaid</span>
+            <div class="progress-track"><div class="progress-fill" style="width:20%;background:#2a7d4f;"></div></div>
+            <span style="font-size:12px;color:var(--color-text-secondary);min-width:24px;text-align:right;">1</span>
+          </div>
+          <div class="progress-row">
+            <span class="progress-label">Wireless</span>
+            <div class="progress-track"><div class="progress-fill" style="width:0%;background:#c67a14;"></div></div>
+            <span style="font-size:12px;color:var(--color-text-secondary);min-width:24px;text-align:right;">0</span>
+          </div>
+          <div style="margin-top:14px;padding-top:12px;border-top:0.5px solid var(--color-border-tertiary);">
+            <div style="font-size:12px;color:var(--color-text-secondary);">Gold tier unlocks</div>
+            <div style="font-size:13px;color:var(--color-text-primary);margin-top:4px;">+20% spiff on all activations</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-orders" class="tab-content">
+      <div class="notice">All services are prepaid. Client must pay before activation. Commission releases within 24 hrs of confirmed activation.</div>
+      <div class="two-col">
+        <div>
+          <div class="section-title">Client info</div>
+          <div class="form-row"><label class="form-label">Full name</label><input class="form-input" type="text" placeholder="First Last"></div>
+          <div class="form-row"><label class="form-label">Email address</label><input class="form-input" type="text" placeholder="client@email.com"></div>
+          <div class="form-row"><label class="form-label">Phone</label><input class="form-input" type="text" placeholder="(713) 000-0000"></div>
+          <div class="form-row"><label class="form-label">Service address</label><input class="form-input" type="text" placeholder="Street, City, State, ZIP"></div>
+        </div>
+        <div>
+          <div class="section-title">Service selection</div>
+          <div class="form-row">
+            <label class="form-label">Product line</label>
+            <select class="form-select">
+              <option>Frontier Fiber — $100 spiff</option>
+              <option>Xfinity Prepaid Internet — $35 spiff</option>
+              <option>Verizon Prepaid Wireless — $30 spiff</option>
+              <option>Black Wireless — $20 spiff</option>
+              <option>TravelSim / eSIM — $15 spiff</option>
+              <option>Sling TV — $12 spiff</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Plan / speed tier</label>
+            <select class="form-select">
+              <option>500 Mbps — $55/mo</option>
+              <option>1 Gig — $75/mo</option>
+              <option>2 Gig — $95/mo</option>
+            </select>
+          </div>
+          <div class="form-row"><label class="form-label">Dealer notes (optional)</label><input class="form-input" type="text" placeholder="e.g. client needs same-day setup"></div>
+          <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:12px;">
+            <div style="font-size:11px;color:var(--color-text-secondary);">Your commission on this order</div>
+            <div style="font-size:20px;font-weight:500;color:#2a7d4f;">$100.00</div>
+            <div style="font-size:11px;color:var(--color-text-tertiary);">Paid after confirmed activation</div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-primary">Submit order</button>
+            <button class="btn-outline">Save draft</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-commissions" class="tab-content">
+      <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);">
+        <div class="stat"><div class="stat-label">Approved</div><div class="stat-val" style="color:#2a7d4f;">$215</div><div class="stat-sub">3 orders</div></div>
+        <div class="stat"><div class="stat-label">Pending review</div><div class="stat-val" style="color:#b87a0d;">$100</div><div class="stat-sub">1 order</div></div>
+        <div class="stat"><div class="stat-label">All-time paid</div><div class="stat-val">$1,265</div><div class="stat-sub">22 activations</div></div>
+      </div>
+      <div class="card">
+        <div class="section-title">Commission log</div>
+        <table class="spiff-table">
+          <thead><tr><th>Client</th><th>Product</th><th>Date</th><th>Spiff</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>Maria T.</td><td>Xfinity Prepaid</td><td>Apr 9</td><td style="color:#2a7d4f;font-weight:500;">$35</td><td><span class="pill pill-green">Paid</span></td></tr>
+            <tr><td>Keisha M.</td><td>Verizon Prepaid</td><td>Apr 6</td><td style="color:#2a7d4f;font-weight:500;">$30</td><td><span class="pill pill-green">Paid</span></td></tr>
+            <tr><td>James R.</td><td>Frontier Fiber</td><td>Apr 7</td><td style="color:#b87a0d;font-weight:500;">$100</td><td><span class="pill pill-amber">Pending</span></td></tr>
+            <tr><td>Carlos V.</td><td>TravelSim</td><td>Apr 5</td><td style="color:#2a7d4f;font-weight:500;">$15</td><td><span class="pill pill-blue">Processing</span></td></tr>
+            <tr><td>Devon S.</td><td>Black Wireless</td><td>Mar 28</td><td style="color:#2a7d4f;font-weight:500;">$20</td><td><span class="pill pill-green">Paid</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="tab-payouts" class="tab-content">
+      <div class="two-col">
+        <div>
+          <div class="payout-block">
+            <div class="payout-label">Available for payout</div>
+            <div class="payout-amount">$215.00</div>
+            <div style="font-size:12px;color:var(--color-text-secondary);margin-top:4px;">Next auto-payout: Friday, Apr 12</div>
+            <button class="btn-primary" style="margin-top:12px;">Request early payout</button>
+          </div>
+          <div class="card">
+            <div class="section-title">Payout method</div>
+            <div class="form-row"><label class="form-label">Bank (ACH)</label><input class="form-input" type="text" placeholder="Routing number"></div>
+            <div class="form-row"><input class="form-input" type="text" placeholder="Account number"></div>
+            <button class="btn-outline" style="margin-top:4px;">Update bank info</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="section-title">Payout history</div>
+          <div class="order-row">
+            <div><div class="order-name">Apr 5, 2025</div><div class="order-meta">4 activations</div></div>
+            <div style="text-align:right"><div class="spiff">$180.00</div><span class="pill pill-green">Sent</span></div>
+          </div>
+          <div class="order-row">
+            <div><div class="order-name">Mar 22, 2025</div><div class="order-meta">3 activations</div></div>
+            <div style="text-align:right"><div class="spiff">$145.00</div><span class="pill pill-green">Sent</span></div>
+          </div>
+          <div class="order-row">
+            <div><div class="order-name">Mar 8, 2025</div><div class="order-meta">5 activations</div></div>
+            <div style="text-align:right"><div class="spiff">$240.00</div><span class="pill pill-green">Sent</span></div>
+          </div>
+          <div class="order-row">
+            <div><div class="order-name">Feb 22, 2025</div><div class="order-meta">2 activations</div></div>
+            <div style="text-align:right"><div class="spiff">$65.00</div><span class="pill pill-green">Sent</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-products" class="tab-content">
+      <div class="notice">Spiff amounts shown are base tier. Gold tier dealers receive +20% on all activations.</div>
+      <div class="card">
+        <table class="spiff-table">
+          <thead><tr><th>Service</th><th>Markets</th><th>Base spiff</th><th>Gold spiff</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Frontier Fiber</strong></td><td>TX, LA, NC</td><td style="color:#2a7d4f;font-weight:500;">$100</td><td style="color:#c67a14;font-weight:500;">$120</td><td style="color:var(--color-text-secondary);">Per install, prepaid monthly</td></tr>
+            <tr><td><strong>Xfinity Prepaid</strong></td><td>Xfinity markets</td><td style="color:#2a7d4f;font-weight:500;">$35</td><td style="color:#c67a14;font-weight:500;">$42</td><td style="color:var(--color-text-secondary);">No credit check required</td></tr>
+            <tr><td><strong>Verizon Prepaid</strong></td><td>Nationwide</td><td style="color:#2a7d4f;font-weight:500;">$30</td><td style="color:#c67a14;font-weight:500;">$36</td><td style="color:var(--color-text-secondary);">Per activation</td></tr>
+            <tr><td><strong>Black Wireless</strong></td><td>Nationwide</td><td style="color:#2a7d4f;font-weight:500;">$20</td><td style="color:#c67a14;font-weight:500;">$24</td><td style="color:var(--color-text-secondary);">Per activation</td></tr>
+            <tr><td><strong>TravelSim / eSIM</strong></td><td>Worldwide</td><td style="color:#2a7d4f;font-weight:500;">$15</td><td style="color:#c67a14;font-weight:500;">$18</td><td style="color:var(--color-text-secondary);">Digital fulfillment</td></tr>
+            <tr><td><strong>Sling TV</strong></td><td>Nationwide</td><td style="color:#2a7d4f;font-weight:500;">$12</td><td style="color:#c67a14;font-weight:500;">$14</td><td style="color:var(--color-text-secondary);">Per new subscriber</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px;font-size:12px;color:var(--color-text-secondary);">Spiff schedule updated monthly. Commissions release within 24 hrs of confirmed prepaid activation. Payouts via ACH every Friday.</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function switchTab(name, el) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.bm-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  el.classList.add('active');
+}
+</script>
