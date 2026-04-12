@@ -152,7 +152,7 @@ $avatar_path = $user_data['avatar_path'] ?? '';
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900"><?php echo htmlspecialchars($user_name); ?></h2>
                         <p class="text-sm text-gray-500"><?php echo htmlspecialchars($user_email); ?></p>
-                        <p class="text-xs text-gray-400 mt-0.5">Member since <?php echo $user_data ? date('M Y', strtotime($user_data['created_at'])) : 'N/A'; ?></p>
+                        <p class="text-xs text-gray-400 mt-0.5">Member since <?php echo ($user_data && !empty($user_data['created_at'])) ? date('M Y', strtotime($user_data['created_at'])) : 'N/A'; ?></p>
                         <p id="avatar-status" class="text-xs mt-1"></p>
                     </div>
                 </div>

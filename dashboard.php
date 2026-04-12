@@ -30,6 +30,16 @@ try {
     $stmt->execute([$user_id]);
     $services_count = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
 
+    $voip_count = 0;
+    try {
+        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM client_voip_accounts WHERE client_id = ? AND status = 'active'");
+        $stmt->execute([$user_id]);
+        $voip_count = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
+    } catch (PDOException $e) {
+        // table may not exist
+    }
+    $services_count += $voip_count;
+
     $stmt = $pdo->prepare("SELECT * FROM tickets WHERE client_id = ? AND status != 'closed' ORDER BY created_at DESC LIMIT 5");
     $stmt->execute([$user_id]);
     $recent_tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);

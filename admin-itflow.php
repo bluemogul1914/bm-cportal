@@ -124,7 +124,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && $itflow_connected) {
                         $synced++;
                     } else {
                         $temp_pass = password_hash(bin2hex(random_bytes(8)), PASSWORD_DEFAULT);
-                        $db->prepare("INSERT INTO users (email, password, name, is_admin) VALUES (?, ?, ?, false)")
+                        $db->prepare("INSERT INTO users (email, password, name, is_admin, created_at) VALUES (?, ?, ?, false, NOW())")
                            ->execute([$email, $temp_pass, $name ?: $email]);
                         $user_id = $db->lastInsertId();
 

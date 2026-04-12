@@ -154,7 +154,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             } else {
                 $is_admin_role = in_array($new_role_val, ['super-admin', 'admin', 'sales', 'it-support', 'billing', 'wholesaler', 'dealer']);
                 $hashed = password_hash($new_password, PASSWORD_DEFAULT);
-                $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role, is_admin, status) VALUES (?, ?, ?, ?, ?, 'active')");
+                $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role, is_admin, status, created_at) VALUES (?, ?, ?, ?, ?, 'active', NOW())");
                 $stmt->execute([$new_name, $new_email, $hashed, $new_role_val, $is_admin_role ? true : false]);
                 $success_msg = "User '{$new_name}' created successfully with role '{$new_role_val}'.";
 

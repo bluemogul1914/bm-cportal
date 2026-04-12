@@ -170,7 +170,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
             if (!$uid) {
                 $temp_pass = password_hash(bin2hex(random_bytes(16)), PASSWORD_BCRYPT);
-                $ins = $pdo->prepare("INSERT INTO users (email, password, name, is_admin, role, status) VALUES (?, ?, ?, 'f', 'client', 'active') RETURNING id");
+                $ins = $pdo->prepare("INSERT INTO users (email, password, name, is_admin, role, status, created_at) VALUES (?, ?, ?, 'f', 'client', 'active', NOW()) RETURNING id");
                 $ins->execute([$target_email, $temp_pass, $target_name]);
                 $uid = $ins->fetchColumn();
                 $pdo->prepare("UPDATE clients SET user_id = ? WHERE id = ?")->execute([$uid, $client_id]);

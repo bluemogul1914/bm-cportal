@@ -314,7 +314,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $lead = $lead->fetch(PDO::FETCH_ASSOC);
             if ($lead) {
                 $temp_pass = password_hash(bin2hex(random_bytes(8)), PASSWORD_BCRYPT);
-                $pdo->prepare("INSERT INTO users (email, password, name, is_admin, role, status) VALUES (?, ?, ?, false, 'client', 'active') ON CONFLICT (email) DO NOTHING")
+                $pdo->prepare("INSERT INTO users (email, password, name, is_admin, role, status, created_at) VALUES (?, ?, ?, false, 'client', 'active', NOW()) ON CONFLICT (email) DO NOTHING")
                     ->execute([$lead['email'] ?: $lead['name'] . '@pending.local', $temp_pass, $lead['name']]);
                 $user = $pdo->prepare("SELECT id FROM users WHERE email = ?");
                 $user->execute([$lead['email'] ?: $lead['name'] . '@pending.local']);

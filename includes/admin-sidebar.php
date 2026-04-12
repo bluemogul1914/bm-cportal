@@ -336,14 +336,26 @@
                     Online
                 </span>
             </div>
+            <?php
+            try {
+                $sidebar_pdo = getDB();
+                $mrr_row = $sidebar_pdo->query("SELECT COALESCE(SUM(p.price), 0) as mrr FROM subscriptions s JOIN products p ON s.product_id = p.id WHERE s.status = 'active'")->fetch(PDO::FETCH_ASSOC);
+                $sidebar_mrr = $mrr_row['mrr'] ?? 0;
+                $clients_row = $sidebar_pdo->query("SELECT COUNT(*) as cnt FROM clients WHERE status = 'active'")->fetch(PDO::FETCH_ASSOC);
+                $sidebar_clients = $clients_row['cnt'] ?? 0;
+            } catch (PDOException $e) {
+                $sidebar_mrr = 0;
+                $sidebar_clients = 0;
+            }
+            ?>
             <div class="space-y-1 text-xs text-gray-400">
                 <div class="flex justify-between">
                     <span>MRR</span>
-                    <span class="font-semibold text-white">$29,895</span>
+                    <span class="font-semibold text-white">$<?php echo number_format($sidebar_mrr, 0); ?></span>
                 </div>
                 <div class="flex justify-between">
                     <span>Clients</span>
-                    <span class="font-semibold text-white">48</span>
+                    <span class="font-semibold text-white"><?php echo (int)$sidebar_clients; ?></span>
                 </div>
             </div>
         </div>
