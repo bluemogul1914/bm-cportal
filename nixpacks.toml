@@ -6,7 +6,7 @@ PORT = "3000"
 nixPkgs = ["nodejs_20", "php83", "php83Packages.pgsql", "php83Packages.curl"]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm ci --include=dev"]
 
 [phases.build]
 cmds = ["npm run build"]
