@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seed } from "./seed";
 import { runMigrations } from "stripe-replit-sync";
+import { runPortalMigrations } from "./migrations";
 import { getStripeSync } from "./stripeClient";
 import { WebhookHandlers } from "./webhookHandlers";
 import { execFile } from "child_process";
@@ -161,7 +162,8 @@ const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashb
   "dealer-register.php", "dealer-dashboard.php", "dealer-orders.php", "dealer-commissions.php",
   "dealer-customers.php", "dealer-customer-detail.php", "dealer-smtp.php", "dealer-payouts.php",
   "dealer-training.php", "dealer-profile.php", "dealer-spiffs.php",
-  "admin-dealers.php", "admin-dealer-detail.php"];
+  "admin-dealers.php", "admin-dealer-detail.php",
+  "admin-client-contacts.php", "admin-client-assets.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -692,6 +694,54 @@ app.post("/portal/admin/:file", (req, res) => {
   const sess = (req.session as any)?.portalUser;
   if (!sess?.is_admin) return res.status(403).send("Forbidden");
   executePhpPost(join(projectRoot, "admin", phpFile), req, res);
+});
+
+// ── Phase 1 clean-URL aliases ─────────────────────────────────────────────
+app.get("/admin/tickets", (req, res) => {
+  if (!req.query.view) req.query.view = "kanban";
+  executePhpFile(join(projectRoot, "admin-tickets.php"), req, res);
+});
+
+app.post("/admin/tickets", (req, res) => {
+  executePhpPost(join(projectRoot, "admin-tickets.php"), req, res);
+});
+
+app.get("/admin/tickets/:id", (req, res) => {
+  req.query.id = req.params.id;
+  executePhpFile(join(projectRoot, "admin-ticket-detail.php"), req, res);
+});
+
+app.get("/client/tickets", (req, res) => {
+  executePhpFile(join(projectRoot, "tickets.php"), req, res);
+});
+
+app.get("/client/tickets/new", (req, res) => {
+  req.query.action = "new";
+  executePhpFile(join(projectRoot, "tickets.php"), req, res);
+});
+
+app.post("/client/tickets", (req, res) => {
+  executePhpPost(join(projectRoot, "tickets.php"), req, res);
+});
+
+app.get("/admin/clients/:id/contacts", (req, res) => {
+  req.query.id = req.params.id;
+  executePhpFile(join(projectRoot, "admin-client-contacts.php"), req, res);
+});
+
+app.post("/admin/clients/:id/contacts", (req, res) => {
+  req.query.id = req.params.id;
+  executePhpPost(join(projectRoot, "admin-client-contacts.php"), req, res);
+});
+
+app.get("/admin/clients/:id/assets", (req, res) => {
+  req.query.id = req.params.id;
+  executePhpFile(join(projectRoot, "admin-client-assets.php"), req, res);
+});
+
+app.post("/admin/clients/:id/assets", (req, res) => {
+  req.query.id = req.params.id;
+  executePhpPost(join(projectRoot, "admin-client-assets.php"), req, res);
 });
 
 app.get("/portal/:file", (req, res) => {
@@ -3272,6 +3322,7 @@ async function bootstrapPortalDatabase() {
 
 (async () => {
   await bootstrapPortalDatabase();
+  await runPortalMigrations();
   await seed().catch((err) => console.error("Seed failed:", err));
   await initStripe();
   await registerRoutes(httpServer, app);

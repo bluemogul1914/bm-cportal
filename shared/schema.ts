@@ -122,6 +122,9 @@ export const invoices = pgTable("invoices", {
   paidDate: date("paid_date"),
   stripeInvoiceId: varchar("stripe_invoice_id", { length: 255 }),
   items: jsonb("items").default([]),
+  lineItems: jsonb("line_items"),
+  paidAt: timestamp("paid_at"),
+  stripePaymentId: varchar("stripe_payment_id", { length: 200 }),
   notes: text("notes"),
   footer: text("footer"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -144,6 +147,10 @@ export const tickets = pgTable("tickets", {
   priority: varchar("priority", { length: 20 }).default("medium"),
   assignedTo: varchar("assigned_to", { length: 100 }),
   source: varchar("source", { length: 50 }).default("portal"),
+  resolutionNotes: text("resolution_notes"),
+  closedAt: timestamp("closed_at"),
+  slaDueAt: timestamp("sla_due_at"),
+  aiDraftResponse: text("ai_draft_response"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -349,3 +356,46 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
 
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
+
+export const contacts = pgTable("contacts", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  role: varchar("role", { length: 100 }),
+  isPrimary: boolean("is_primary").default(false),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertContactSchema = createInsertSchema(contacts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertContact = z.infer<typeof insertContactSchema>;
+export type Contact = typeof contacts.$inferSelect;
+
+export const assets = pgTable("assets", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  type: varchar("type", { length: 100 }),
+  serialNumber: varchar("serial_number", { length: 100 }),
+  os: varchar("os", { length: 100 }),
+  ipAddress: varchar("ip_address", { length: 50 }),
+  managed: boolean("managed").default(false),
+  rmmAgentId: varchar("rmm_agent_id", { length: 255 }),
+  planTier: varchar("plan_tier", { length: 50 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAssetSchema = createInsertSchema(assets).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAsset = z.infer<typeof insertAssetSchema>;
+export type Asset = typeof assets.$inferSelect;

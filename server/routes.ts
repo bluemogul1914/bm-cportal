@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertSnippetSchema } from "@shared/schema";
+import { insertSnippetSchema, insertContactSchema, insertAssetSchema, contacts, assets, tickets, invoices, clients } from "@shared/schema";
 import { execFile } from "child_process";
 import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
@@ -9,7 +9,7 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { db } from "./db";
-import { sql } from "drizzle-orm";
+import { sql, eq, and } from "drizzle-orm";
 
 const DISABLED_FUNCTIONS = [
   "exec", "shell_exec", "system", "passthru", "popen", "proc_open",
@@ -257,6 +257,162 @@ export async function registerRoutes(
       console.error("Checkout session error:", error);
       res.status(500).json({ error: "Failed to create checkout session" });
     }
+  });
+
+  // ── Webhook auth middleware ───────────────────────────────────────────────
+  function requireWebhookToken(req: any, res: any, next: any) {
+    const token = req.headers["x-webhook-token"];
+    const secret = process.env.SESSION_SECRET || "bluemogul-portal-secret";
+    if (!token || token !== secret) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    next();
+  }
+
+  // ── SLA helper ────────────────────────────────────────────────────────────
+  function computeSlaDueAt(priority: string): Date {
+    const now = new Date();
+    const hoursMap: Record<string, number> = {
+      critical: 1,
+      high: 4,
+      medium: 24,
+      low: 72,
+    };
+    const hours = hoursMap[priority] ?? 24;
+    now.setHours(now.getHours() + hours);
+    return now;
+  }
+
+  // ── POST /api/webhook/add-asset ───────────────────────────────────────────
+  app.post("/api/webhook/add-asset", requireWebhookToken, async (req, res) => {
+    const parsed = insertAssetSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.message });
+    }
+    const [asset] = await db.insert(assets).values(parsed.data).returning();
+    res.status(201).json(asset);
+  });
+
+  // ── Admin tickets ─────────────────────────────────────────────────────────
+  app.get("/api/admin/tickets", async (req, res) => {
+    const rows = await db.execute(
+      sql`SELECT t.*, c.name as client_name FROM tickets t LEFT JOIN clients c ON t.client_id = c.id ORDER BY t.created_at DESC`
+    );
+    const byStatus: Record<string, any[]> = { open: [], in_progress: [], resolved: [] };
+    for (const row of rows.rows as any[]) {
+      const s = row.status === "closed" ? "resolved" : (row.status as string);
+      if (!byStatus[s]) byStatus[s] = [];
+      byStatus[s].push(row);
+    }
+    res.json(byStatus);
+  });
+
+  app.post("/api/admin/tickets", async (req, res) => {
+    const { clientId, subject, description, priority = "medium", assignedTo, source = "admin" } = req.body;
+    if (!subject) return res.status(400).json({ error: "subject is required" });
+    const slaDueAt = computeSlaDueAt(priority);
+    const [ticket] = await db.execute(
+      sql`INSERT INTO tickets (client_id, subject, description, status, priority, assigned_to, source, sla_due_at, created_at, updated_at)
+          VALUES (${clientId ?? null}, ${subject}, ${description ?? null}, 'open', ${priority}, ${assignedTo ?? null}, ${source}, ${slaDueAt.toISOString()}, NOW(), NOW())
+          RETURNING *`
+    );
+    res.status(201).json((ticket as any).rows?.[0] ?? ticket);
+  });
+
+  app.get("/api/admin/tickets/:id", async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+    const result = await db.execute(
+      sql`SELECT t.*, c.name as client_name FROM tickets t LEFT JOIN clients c ON t.client_id = c.id WHERE t.id = ${id}`
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Ticket not found" });
+    res.json(result.rows[0]);
+  });
+
+  // ── Client tickets ────────────────────────────────────────────────────────
+  app.get("/api/client/tickets", async (req, res) => {
+    const clientId = (req as any).session?.portalUser?.client_id;
+    if (!clientId) return res.status(401).json({ error: "Not authenticated" });
+    const result = await db.execute(
+      sql`SELECT * FROM tickets WHERE client_id = ${clientId} ORDER BY created_at DESC`
+    );
+    res.json(result.rows);
+  });
+
+  app.post("/api/client/tickets", async (req, res) => {
+    const clientId = (req as any).session?.portalUser?.client_id;
+    if (!clientId) return res.status(401).json({ error: "Not authenticated" });
+    const { subject, description, priority = "medium" } = req.body;
+    if (!subject) return res.status(400).json({ error: "subject is required" });
+    const slaDueAt = computeSlaDueAt(priority);
+    const result = await db.execute(
+      sql`INSERT INTO tickets (client_id, subject, description, status, priority, source, sla_due_at, created_at, updated_at)
+          VALUES (${clientId}, ${subject}, ${description ?? null}, 'open', ${priority}, 'portal', ${slaDueAt.toISOString()}, NOW(), NOW())
+          RETURNING *`
+    );
+    res.status(201).json(result.rows[0]);
+  });
+
+  // ── Admin contacts ────────────────────────────────────────────────────────
+  app.get("/api/admin/clients/:id/contacts", async (req, res) => {
+    const clientId = parseInt(req.params.id);
+    if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
+    const result = await db.select().from(contacts).where(eq(contacts.clientId, clientId));
+    res.json(result);
+  });
+
+  app.post("/api/admin/clients/:id/contacts", async (req, res) => {
+    const clientId = parseInt(req.params.id);
+    if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
+    const parsed = insertContactSchema.safeParse({ ...req.body, clientId });
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+    const [contact] = await db.insert(contacts).values(parsed.data).returning();
+    res.status(201).json(contact);
+  });
+
+  // ── Admin assets ──────────────────────────────────────────────────────────
+  app.get("/api/admin/clients/:id/assets", async (req, res) => {
+    const clientId = parseInt(req.params.id);
+    if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
+    const result = await db.select().from(assets).where(eq(assets.clientId, clientId));
+    res.json(result);
+  });
+
+  app.post("/api/admin/clients/:id/assets", async (req, res) => {
+    const clientId = parseInt(req.params.id);
+    if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
+    const parsed = insertAssetSchema.safeParse({ ...req.body, clientId });
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+    const [asset] = await db.insert(assets).values(parsed.data).returning();
+    res.status(201).json(asset);
+  });
+
+  // ── Admin invoices ────────────────────────────────────────────────────────
+  app.get("/api/admin/invoices", async (_req, res) => {
+    const result = await db.execute(
+      sql`SELECT i.*, c.name as client_name FROM invoices i LEFT JOIN clients c ON i.client_id = c.id ORDER BY i.created_at DESC`
+    );
+    res.json(result.rows);
+  });
+
+  app.get("/api/admin/invoices/:id", async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+    const result = await db.execute(
+      sql`SELECT i.*, c.name as client_name, c.email as client_email, c.address as client_address FROM invoices i LEFT JOIN clients c ON i.client_id = c.id WHERE i.id = ${id}`
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Invoice not found" });
+    res.json(result.rows[0]);
+  });
+
+  // ── Client invoices ───────────────────────────────────────────────────────
+  app.get("/api/client/invoices", async (req, res) => {
+    const clientId = (req as any).session?.portalUser?.client_id;
+    if (!clientId) return res.status(401).json({ error: "Not authenticated" });
+    const result = await db.execute(
+      sql`SELECT * FROM invoices WHERE client_id = ${clientId} ORDER BY created_at DESC`
+    );
+    res.json(result.rows);
   });
 
   return httpServer;

@@ -57,6 +57,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     }
 }
 
+$view = in_array($_GET['view'] ?? '', ['kanban', 'list']) ? $_GET['view'] : 'list';
+
 $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $limit = 20;
 $offset = ($page - 1) * $limit;
@@ -66,6 +68,21 @@ $priority_filter = $_GET['priority'] ?? '';
 $source_filter = $_GET['source'] ?? '';
 $group_filter = $_GET['group'] ?? '';
 $agent_filter = $_GET['agent'] ?? '';
+
+// Kanban data (fetched separately from paginated list)
+$kanban_columns = ['open' => [], 'in_progress' => [], 'resolved' => []];
+if ($view === 'kanban') {
+    try {
+        $pdo_kb = getDB();
+        $kb_stmt = $pdo_kb->query("SELECT t.*, c.name as client_name FROM tickets t LEFT JOIN clients c ON t.client_id = c.id ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, t.created_at DESC LIMIT 200");
+        foreach ($kb_stmt->fetchAll(PDO::FETCH_ASSOC) as $kt) {
+            $col = ($kt['status'] === 'closed') ? 'resolved' : ($kt['status'] === 'in_progress' ? 'in_progress' : 'open');
+            $kanban_columns[$col][] = $kt;
+        }
+    } catch (PDOException $e) {
+        error_log("Kanban query error: " . $e->getMessage());
+    }
+}
 
 try {
     $pdo = getDB();
@@ -151,6 +168,10 @@ try {
                         <p class="text-sm text-gray-600 mt-1">Support ticket tracking and resolution</p>
                     </div>
                     <div class="flex items-center gap-3">
+                        <div class="flex rounded-md border border-gray-300 overflow-hidden" data-testid="view-toggle">
+                            <a href="?view=list<?php echo $search ? '&search='.urlencode($search) : ''; ?>" class="px-3 py-2 text-sm font-medium <?php echo $view !== 'kanban' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'; ?>"><i class="fas fa-list mr-1"></i>List</a>
+                            <a href="?view=kanban" class="px-3 py-2 text-sm font-medium <?php echo $view === 'kanban' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'; ?>" data-testid="button-kanban-view"><i class="fas fa-columns mr-1"></i>Kanban</a>
+                        </div>
                         <button onclick="document.getElementById('create-modal').classList.remove('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition" data-testid="button-create-ticket">
                             <i class="fas fa-plus mr-2"></i>Create Ticket
                         </button>
@@ -237,6 +258,80 @@ try {
                     <?php endif; ?>
                 </form>
             </div>
+
+            <?php if ($view === 'kanban'): ?>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6" data-testid="kanban-board">
+                <?php
+                $kanban_defs = [
+                    'open'        => ['label' => 'Open',        'color' => 'blue',   'dot' => 'bg-blue-500'],
+                    'in_progress' => ['label' => 'In Progress', 'color' => 'yellow', 'dot' => 'bg-yellow-500'],
+                    'resolved'    => ['label' => 'Resolved',    'color' => 'green',  'dot' => 'bg-green-500'],
+                ];
+                foreach ($kanban_defs as $col_key => $col_def):
+                    $col_tickets = $kanban_columns[$col_key] ?? [];
+                ?>
+                <div class="bg-gray-50 rounded-lg border border-gray-200" data-testid="kanban-column-<?php echo $col_key; ?>">
+                    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white rounded-t-lg">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full <?php echo $col_def['dot']; ?>"></span>
+                            <span class="font-semibold text-gray-800 text-sm"><?php echo $col_def['label']; ?></span>
+                            <span class="ml-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium"><?php echo count($col_tickets); ?></span>
+                        </div>
+                    </div>
+                    <div class="p-3 space-y-3 min-h-[200px]">
+                        <?php if (empty($col_tickets)): ?>
+                            <p class="text-center text-gray-400 text-xs py-8">No tickets</p>
+                        <?php else: foreach ($col_tickets as $kt):
+                            $kt_id = $kt['id'];
+                            $kt_priority = $kt['priority'] ?? 'medium';
+                            $priority_colors = ['urgent' => 'bg-red-100 text-red-700', 'high' => 'bg-orange-100 text-orange-700', 'medium' => 'bg-yellow-100 text-yellow-700', 'low' => 'bg-gray-100 text-gray-600'];
+                            $sla_warning = '';
+                            if (!empty($kt['sla_due_at'])) {
+                                $sla_ts = strtotime($kt['sla_due_at']);
+                                if ($sla_ts && $sla_ts < time()) $sla_warning = 'border-l-4 border-red-400';
+                                elseif ($sla_ts && $sla_ts < time() + 3600) $sla_warning = 'border-l-4 border-orange-400';
+                            }
+                        ?>
+                            <div class="bg-white rounded-lg p-3 shadow-sm border border-gray-100 <?php echo $sla_warning; ?>" data-testid="kanban-card-<?php echo $kt_id; ?>">
+                                <div class="flex items-start justify-between mb-2">
+                                    <span class="px-1.5 py-0.5 rounded text-xs font-medium <?php echo $priority_colors[$kt_priority] ?? 'bg-gray-100 text-gray-600'; ?>"><?php echo ucfirst($kt_priority); ?></span>
+                                    <span class="text-xs text-gray-400">#<?php echo $kt_id; ?></span>
+                                </div>
+                                <a href="admin-ticket-detail.php?id=<?php echo $kt_id; ?>" class="block text-sm font-medium text-gray-900 hover:text-blue-600 mb-1 line-clamp-2"><?php echo htmlspecialchars($kt['subject'] ?? ''); ?></a>
+                                <p class="text-xs text-gray-500 mb-2"><?php echo htmlspecialchars($kt['client_name'] ?? 'Unknown client'); ?></p>
+                                <?php if (!empty($kt['sla_due_at'])): ?>
+                                <p class="text-xs text-gray-400"><i class="fas fa-clock mr-1"></i>SLA: <?php echo date('M j H:i', strtotime($kt['sla_due_at'])); ?></p>
+                                <?php endif; ?>
+                                <?php if (!empty($kt['assigned_to'])): ?>
+                                <p class="text-xs text-gray-400 mt-1"><i class="fas fa-user-tag mr-1"></i><?php echo htmlspecialchars($kt['assigned_to']); ?></p>
+                                <?php endif; ?>
+                                <div class="mt-2 pt-2 border-t border-gray-100 flex gap-2">
+                                    <?php if ($col_key !== 'in_progress'): ?>
+                                    <form method="POST" class="inline">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="update_status">
+                                        <input type="hidden" name="ticket_id" value="<?php echo $kt_id; ?>">
+                                        <input type="hidden" name="status" value="in_progress">
+                                        <button type="submit" class="text-xs text-yellow-600 hover:text-yellow-800 font-medium">→ In Progress</button>
+                                    </form>
+                                    <?php endif; ?>
+                                    <?php if ($col_key !== 'resolved'): ?>
+                                    <form method="POST" class="inline">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="update_status">
+                                        <input type="hidden" name="ticket_id" value="<?php echo $kt_id; ?>">
+                                        <input type="hidden" name="status" value="closed">
+                                        <button type="submit" class="text-xs text-green-600 hover:text-green-800 font-medium">✓ Resolve</button>
+                                    </form>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        <?php endforeach; endif; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php else: ?>
 
             <div class="space-y-4">
                 <?php if (empty($tickets)): ?>
@@ -383,6 +478,7 @@ try {
                     <?php endif; ?>
                 </div>
             <?php endif; ?>
+            <?php endif; /* end list/kanban if */ ?>
         </div>
     </div>
 </div>
