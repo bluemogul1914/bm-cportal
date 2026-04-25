@@ -68,6 +68,27 @@ try {
     $stmt = $pdo->query("SELECT * FROM clients ORDER BY created_at DESC LIMIT 10");
     $recent_clients = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Marketing overview metrics (Phase 5 & 6)
+    $mkt_active_sequences = 0;
+    $mkt_sent_month = 0;
+    $mkt_social_week = 0;
+    $mkt_leads = 0;
+    $mkt_blog_posts = 0;
+    $mkt_unsubscribe_rate = 0;
+    try {
+        $r = $pdo->query("SELECT COUNT(DISTINCT sequence_name) FROM email_sequences")->fetchColumn();
+        $mkt_active_sequences = intval($r);
+        $r = $pdo->query("SELECT COUNT(*) FROM email_sequences WHERE sent_at >= date_trunc('month', CURRENT_DATE)")->fetchColumn();
+        $mkt_sent_month = intval($r);
+        $r = $pdo->query("SELECT COUNT(*) FROM social_posts WHERE posted_at >= CURRENT_DATE - INTERVAL '7 days'")->fetchColumn();
+        $mkt_social_week = intval($r);
+        $r = $pdo->query("SELECT COUNT(*) FROM blog_posts")->fetchColumn();
+        $mkt_blog_posts = intval($r);
+        $total_seq = intval($pdo->query("SELECT COUNT(*) FROM email_sequences")->fetchColumn());
+        $unsub = intval($pdo->query("SELECT COUNT(*) FROM email_sequences WHERE replied = true")->fetchColumn());
+        $mkt_unsubscribe_rate = $total_seq > 0 ? round($unsub / $total_seq * 100, 1) : 0;
+    } catch (PDOException $e) {}
+
     $stmt = $pdo->query("
         SELECT COUNT(*) as count 
         FROM clients 
@@ -221,6 +242,46 @@ try {
                         <p class="text-sm text-gray-900 font-semibold mt-2">$<?php echo number_format($unpaid_invoices_total, 2); ?></p>
                     </div>
 
+                </div>
+
+                <!-- Marketing Overview (Phase 5 & 6) -->
+                <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-base font-semibold text-gray-900">Marketing Overview</h2>
+                        <div class="flex gap-2">
+                            <a href="/admin/marketing/campaigns" class="text-xs text-blue-600 hover:underline">Campaigns</a>
+                            <span class="text-gray-300">|</span>
+                            <a href="/admin/marketing/social" class="text-xs text-blue-600 hover:underline">Social</a>
+                            <span class="text-gray-300">|</span>
+                            <a href="/admin/marketing/blog" class="text-xs text-blue-600 hover:underline">Blog</a>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                        <div class="text-center p-3 bg-blue-50 rounded-lg">
+                            <p class="text-2xl font-bold text-blue-700"><?php echo $mkt_active_sequences; ?></p>
+                            <p class="text-xs text-gray-500 mt-1">Active Sequences</p>
+                        </div>
+                        <div class="text-center p-3 bg-purple-50 rounded-lg">
+                            <p class="text-2xl font-bold text-purple-700"><?php echo number_format($mkt_sent_month); ?></p>
+                            <p class="text-xs text-gray-500 mt-1">Sent This Month</p>
+                        </div>
+                        <div class="text-center p-3 bg-green-50 rounded-lg">
+                            <p class="text-2xl font-bold text-green-700"><?php echo $mkt_social_week; ?></p>
+                            <p class="text-xs text-gray-500 mt-1">Social Posts/Week</p>
+                        </div>
+                        <div class="text-center p-3 bg-yellow-50 rounded-lg">
+                            <p class="text-2xl font-bold text-yellow-700"><?php echo $mkt_leads; ?></p>
+                            <p class="text-xs text-gray-500 mt-1">Leads in Pipeline</p>
+                        </div>
+                        <div class="text-center p-3 bg-indigo-50 rounded-lg">
+                            <p class="text-2xl font-bold text-indigo-700"><?php echo $mkt_blog_posts; ?></p>
+                            <p class="text-xs text-gray-500 mt-1">Blog Posts</p>
+                        </div>
+                        <div class="text-center p-3 bg-red-50 rounded-lg">
+                            <p class="text-2xl font-bold text-red-600"><?php echo $mkt_unsubscribe_rate; ?>%</p>
+                            <p class="text-xs text-gray-500 mt-1">Unsubscribe Rate</p>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

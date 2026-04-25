@@ -415,5 +415,122 @@ export async function registerRoutes(
     res.json(result.rows);
   });
 
+  // ── Phase 5: Email Marketing ──────────────────────────────────────────────
+
+  // POST /api/webhook/log-email-sequence — HERALD logs each sent step
+  app.post("/api/webhook/log-email-sequence", requireWebhookToken, async (req, res) => {
+    const { lead_id, client_id, sequence_name, step_number, tracking_id, bounced } = req.body;
+    if (!sequence_name) return res.status(400).json({ error: "sequence_name required" });
+    const result = await db.execute(sql`
+      INSERT INTO email_sequences (lead_id, client_id, sequence_name, step_number, tracking_id, bounced, sent_at, created_at)
+      VALUES (${lead_id ?? null}, ${client_id ?? null}, ${sequence_name}, ${step_number ?? 1}, ${tracking_id ?? null}, ${bounced ?? false}, NOW(), NOW())
+      RETURNING *
+    `);
+    res.status(201).json(result.rows[0]);
+  });
+
+  // GET /api/webhook/tracking-pixel/:trackingId — 1x1 px open tracking
+  app.get("/api/webhook/tracking-pixel/:trackingId", async (req, res) => {
+    const { trackingId } = req.params;
+    await db.execute(sql`UPDATE email_sequences SET opened = true WHERE tracking_id = ${trackingId}`);
+    const pixel = Buffer.from(
+      "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+      "base64"
+    );
+    res.set("Content-Type", "image/gif").set("Cache-Control", "no-store").send(pixel);
+  });
+
+  // GET /api/webhook/redirect/:trackingId — click redirect + tracking
+  app.get("/api/webhook/redirect/:trackingId", async (req, res) => {
+    const { trackingId } = req.params;
+    const { url } = req.query;
+    await db.execute(sql`UPDATE email_sequences SET clicked = true WHERE tracking_id = ${trackingId}`);
+    res.redirect((url as string) || "https://portal.bluemogul.us");
+  });
+
+  // POST /unsubscribe/:token — unsubscribe handler
+  app.post("/unsubscribe/:token", async (req, res) => {
+    const { token } = req.params;
+    await db.execute(sql`
+      UPDATE email_sequences SET replied = true WHERE tracking_id = ${token}
+    `);
+    res.json({ success: true, message: "You have been unsubscribed." });
+  });
+
+  app.get("/unsubscribe/:token", async (req, res) => {
+    const { token } = req.params;
+    await db.execute(sql`
+      UPDATE email_sequences SET replied = true WHERE tracking_id = ${token}
+    `);
+    res.send(`<!DOCTYPE html><html><head><title>Unsubscribed</title></head><body style="font-family:sans-serif;padding:40px;text-align:center"><h2>You have been unsubscribed.</h2><p>You will no longer receive emails from Blue Mogul.</p></body></html>`);
+  });
+
+  // GET /api/admin/email-templates
+  app.get("/api/admin/email-templates", async (_req, res) => {
+    const result = await db.execute(sql`SELECT * FROM email_templates ORDER BY category, name`);
+    res.json(result.rows);
+  });
+
+  // POST /api/admin/email-templates
+  app.post("/api/admin/email-templates", async (req, res) => {
+    const { name, subject, body_html, body_text, category } = req.body;
+    if (!name || !subject) return res.status(400).json({ error: "name and subject required" });
+    const result = await db.execute(sql`
+      INSERT INTO email_templates (name, subject, body_html, body_text, category, created_at)
+      VALUES (${name}, ${subject}, ${body_html ?? null}, ${body_text ?? null}, ${category ?? "general"}, NOW())
+      RETURNING *
+    `);
+    res.status(201).json(result.rows[0]);
+  });
+
+  // GET /api/admin/sequences
+  app.get("/api/admin/sequences", async (_req, res) => {
+    const result = await db.execute(sql`SELECT * FROM email_sequence_definitions ORDER BY name`);
+    res.json(result.rows);
+  });
+
+  // GET /api/admin/marketing/campaigns — campaign analytics
+  app.get("/api/admin/marketing/campaigns", async (_req, res) => {
+    const sequences = await db.execute(sql`
+      SELECT
+        sequence_name,
+        COUNT(*) AS total_sent,
+        SUM(CASE WHEN opened THEN 1 ELSE 0 END) AS opened_count,
+        SUM(CASE WHEN clicked THEN 1 ELSE 0 END) AS clicked_count,
+        SUM(CASE WHEN replied THEN 1 ELSE 0 END) AS replied_count,
+        SUM(CASE WHEN bounced THEN 1 ELSE 0 END) AS bounced_count
+      FROM email_sequences
+      GROUP BY sequence_name
+      ORDER BY total_sent DESC
+    `);
+    res.json(sequences.rows);
+  });
+
+  // ── Phase 6: Social Media & Blog ─────────────────────────────────────────
+
+  // POST /api/webhook/log-social-post — PUBLISHER logs after each post
+  app.post("/api/webhook/log-social-post", requireWebhookToken, async (req, res) => {
+    const { platform, content_preview, post_url, likes, comments, shares } = req.body;
+    if (!platform) return res.status(400).json({ error: "platform required" });
+    const result = await db.execute(sql`
+      INSERT INTO social_posts (platform, content_preview, post_url, likes, comments, shares, posted_at, created_at)
+      VALUES (${platform}, ${content_preview ?? null}, ${post_url ?? null}, ${likes ?? 0}, ${comments ?? 0}, ${shares ?? 0}, NOW(), NOW())
+      RETURNING *
+    `);
+    res.status(201).json(result.rows[0]);
+  });
+
+  // POST /api/webhook/log-blog-post — PUBLISHER logs after each publish
+  app.post("/api/webhook/log-blog-post", requireWebhookToken, async (req, res) => {
+    const { title, platform, post_url, views, engagement_score } = req.body;
+    if (!title) return res.status(400).json({ error: "title required" });
+    const result = await db.execute(sql`
+      INSERT INTO blog_posts (title, platform, post_url, views, engagement_score, published_at, created_at)
+      VALUES (${title}, ${platform ?? "website"}, ${post_url ?? null}, ${views ?? 0}, ${engagement_score ?? 0}, NOW(), NOW())
+      RETURNING *
+    `);
+    res.status(201).json(result.rows[0]);
+  });
+
   return httpServer;
 }

@@ -399,3 +399,83 @@ export const insertAssetSchema = createInsertSchema(assets).omit({
 
 export type InsertAsset = z.infer<typeof insertAssetSchema>;
 export type Asset = typeof assets.$inferSelect;
+
+// ── Phase 5: Email Marketing ──────────────────────────────────────────────────
+
+export const emailSequences = pgTable("email_sequences", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id"),
+  clientId: integer("client_id").references(() => clients.id),
+  sequenceName: varchar("sequence_name", { length: 255 }).notNull(),
+  stepNumber: integer("step_number").default(1),
+  sentAt: timestamp("sent_at").defaultNow(),
+  opened: boolean("opened").default(false),
+  clicked: boolean("clicked").default(false),
+  replied: boolean("replied").default(false),
+  bounced: boolean("bounced").default(false),
+  trackingId: varchar("tracking_id", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmailSequenceSchema = createInsertSchema(emailSequences).omit({ id: true, createdAt: true });
+export type InsertEmailSequence = z.infer<typeof insertEmailSequenceSchema>;
+export type EmailSequence = typeof emailSequences.$inferSelect;
+
+export const emailTemplates = pgTable("email_templates", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  bodyHtml: text("body_html"),
+  bodyText: text("body_text"),
+  category: varchar("category", { length: 100 }).default("general"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({ id: true, createdAt: true });
+export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
+
+export const emailSequenceDefinitions = pgTable("email_sequence_definitions", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  steps: jsonb("steps").default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmailSequenceDefinitionSchema = createInsertSchema(emailSequenceDefinitions).omit({ id: true, createdAt: true });
+export type InsertEmailSequenceDefinition = z.infer<typeof insertEmailSequenceDefinitionSchema>;
+export type EmailSequenceDefinition = typeof emailSequenceDefinitions.$inferSelect;
+
+// ── Phase 6: Social Media & Blog ─────────────────────────────────────────────
+
+export const socialPosts = pgTable("social_posts", {
+  id: serial("id").primaryKey(),
+  platform: varchar("platform", { length: 100 }).notNull(),
+  contentPreview: text("content_preview"),
+  postUrl: varchar("post_url", { length: 500 }),
+  postedAt: timestamp("posted_at").defaultNow(),
+  likes: integer("likes").default(0),
+  comments: integer("comments").default(0),
+  shares: integer("shares").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSocialPostSchema = createInsertSchema(socialPosts).omit({ id: true, createdAt: true });
+export type InsertSocialPost = z.infer<typeof insertSocialPostSchema>;
+export type SocialPost = typeof socialPosts.$inferSelect;
+
+export const blogPosts = pgTable("blog_posts", {
+  id: serial("id").primaryKey(),
+  title: varchar("title", { length: 500 }).notNull(),
+  platform: varchar("platform", { length: 100 }).default("website"),
+  postUrl: varchar("post_url", { length: 500 }),
+  publishedAt: timestamp("published_at").defaultNow(),
+  views: integer("views").default(0),
+  engagementScore: integer("engagement_score").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertBlogPostSchema = createInsertSchema(blogPosts).omit({ id: true, createdAt: true });
+export type InsertBlogPost = z.infer<typeof insertBlogPostSchema>;
+export type BlogPost = typeof blogPosts.$inferSelect;

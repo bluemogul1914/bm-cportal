@@ -744,6 +744,17 @@ app.post("/admin/clients/:id/assets", (req, res) => {
   executePhpPost(join(projectRoot, "admin-client-assets.php"), req, res);
 });
 
+// Phase 5 & 6 marketing pages
+app.get("/admin/marketing/campaigns", (req, res) => {
+  executePhpFile(join(projectRoot, "admin-marketing-campaigns.php"), req, res);
+});
+app.get("/admin/marketing/social", (req, res) => {
+  executePhpFile(join(projectRoot, "admin-marketing-social.php"), req, res);
+});
+app.get("/admin/marketing/blog", (req, res) => {
+  executePhpFile(join(projectRoot, "admin-marketing-blog.php"), req, res);
+});
+
 app.get("/portal/:file", (req, res) => {
   const file = req.params.file;
   const phpFile = file.endsWith(".php") ? file : `${file}.php`;
