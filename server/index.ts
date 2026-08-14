@@ -3025,24 +3025,24 @@ async function bootstrapPortalDatabase() {
 
     const adminCheck = await webhookPool.query("SELECT id, password FROM users WHERE email = 'admin@bluemogul.biz' LIMIT 1");
     const { execSync } = await import("child_process");
-    const phpHash = execSync(`php -r "echo password_hash('admin123', PASSWORD_BCRYPT);"`, { encoding: "utf-8" }).trim();
+    // Admin password comes from the ADMIN_PASSWORD env var (set in Coolify). If it
+    // is not configured, a random password is generated once on first boot — never a
+    // hardcoded default. It is passed to PHP via an env var (not interpolated into the
+    // shell command) so special characters can't break execution. An existing admin is
+    // NEVER modified here, so the password survives container restarts.
+    const adminPassword = process.env.ADMIN_PASSWORD || randomUUID().replace(/-/g, '');
+    const phpHash = execSync(
+      `php -r "echo password_hash(getenv('ADMIN_PW'), PASSWORD_BCRYPT);"`,
+      { encoding: "utf-8", env: { ...process.env, ADMIN_PW: adminPassword } }
+    ).trim();
     if (adminCheck.rows.length === 0) {
       await webhookPool.query(
         "INSERT INTO users (email, password, name, is_admin, role, status) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (email) DO NOTHING",
         ["admin@bluemogul.biz", phpHash, "Admin", true, "super-admin", "active"]
       );
-      console.log("Created admin user: admin@bluemogul.biz");
+      console.log("Created admin user: admin@bluemogul.biz" + (process.env.ADMIN_PASSWORD ? "" : " with a randomly generated password"));
     } else {
-      // Ensure the hash is PHP-compatible ($2y$). Node.js bcrypt generates $2b$
-      // which PHP's password_verify cannot verify. Fix it on every startup.
-      const existingHash: string = adminCheck.rows[0].password || '';
-      if (!existingHash.startsWith('$2y$')) {
-        await webhookPool.query(
-          "UPDATE users SET password = $1 WHERE email = 'admin@bluemogul.biz'",
-          [phpHash]
-        );
-        console.log("Updated admin password to PHP-compatible hash");
-      }
+      console.log("Admin user exists; leaving password unchanged.");
     }
 
     const products = [
