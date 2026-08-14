@@ -2583,6 +2583,22 @@ async function bootstrapPortalDatabase() {
     await webhookPool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS external_id VARCHAR(100)`);
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR(500)`);
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS linkedin_data JSONB`);
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS leads (
+        id            SERIAL PRIMARY KEY,
+        name          TEXT,
+        email         TEXT,
+        phone         TEXT,
+        company       TEXT,
+        source        TEXT,
+        status        TEXT DEFAULT 'new',
+        notes         TEXT,
+        linkedin_url  VARCHAR(500),
+        linkedin_data JSONB,
+        created_at    TIMESTAMPTZ DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
     await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR(500)`);
     await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS linkedin_data JSONB`);
     // New "New Person" individual fields
@@ -2913,6 +2929,12 @@ async function bootstrapPortalDatabase() {
         status VARCHAR(20) DEFAULT 'new',
         notes TEXT,
         assigned_to INTEGER,
+        industry VARCHAR(200),
+        employee_count VARCHAR(50),
+        service_interest VARCHAR(200),
+        geography VARCHAR(200),
+        lead_score INTEGER DEFAULT 0,
+        next_action_date DATE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -3324,6 +3346,60 @@ async function bootstrapPortalDatabase() {
       )
     `).catch(()=>{});
     // ── End CRM Deals ──────────────────────────────────────────────────────────
+
+    // ── Missing tables referenced by seed / runtime code ──────────────────────
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS snippets (
+        id          SERIAL PRIMARY KEY,
+        title       TEXT NOT NULL,
+        code        TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(()=>{});
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS provider_settings (
+        provider_name TEXT PRIMARY KEY,
+        settings      JSONB,
+        updated_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(()=>{});
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS crm_social_posts (
+        id           SERIAL PRIMARY KEY,
+        platform     TEXT,
+        content      TEXT,
+        scheduled_at TIMESTAMPTZ,
+        status       TEXT DEFAULT 'draft',
+        created_by   INTEGER,
+        created_at   TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(()=>{});
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id         SERIAL PRIMARY KEY,
+        room       TEXT,
+        user_id    INTEGER,
+        user_name  TEXT,
+        is_admin   BOOLEAN DEFAULT FALSE,
+        message    TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(()=>{});
+    await webhookPool.query(`
+      CREATE TABLE IF NOT EXISTS client_services (
+        id            SERIAL PRIMARY KEY,
+        client_id     INTEGER,
+        service_name  TEXT,
+        service_type  TEXT,
+        price         NUMERIC(12,2),
+        billing_period TEXT,
+        status        TEXT DEFAULT 'active',
+        notes         TEXT,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(()=>{});
+    // ── End missing tables ─────────────────────────────────────────────────────
 
     console.log("Portal database bootstrap complete");
   } catch (err) {
