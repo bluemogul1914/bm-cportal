@@ -1,0 +1,56 @@
+{
+  "version": "10",
+  "information": {
+    "name": "frontier-asr",
+    "displayName": "Frontier ASR UOM Ordering",
+    "description": "Sends ASR UOM orders to Frontier Wholesale and receives SOAP responses. Supports TEST and PRODUCTION environments.",
+    "url": "https://bluemogul.biz",
+    "version": "1.2.0",
+    "unmsVersionCompliancy": {
+      "min": "1.0.0",
+      "max": null
+    },
+    "author": "Blue Mogul Enterprise LLC"
+  },
+  "configuration": [
+    {
+      "key": "environment",
+      "label": "Environment",
+      "description": "Use TEST for sandbox or PRODUCTION for live orders.",
+      "required": 1
+    },
+    {
+      "key": "ccna",
+      "label": "CCNA",
+      "description": "Your Frontier CCNA code (e.g. BMR).",
+      "required": 1
+    },
+    {
+      "key": "source_ip",
+      "label": "Source IP",
+      "description": "Your server public IP address.",
+      "required": 1
+    },
+    {
+      "key": "contact_name",
+      "label": "Default Contact Name",
+      "required": 1
+    },
+    {
+      "key": "contact_phone",
+      "label": "Default Contact Phone",
+      "required": 1
+    },
+    {
+      "key": "contact_email",
+      "label": "Default Contact Email",
+      "required": 1
+    },
+    {
+      "key": "ucrm_api_key",
+      "label": "UCRM API Key",
+      "description": "Generate at System > Users > API keys. Used to look up client addresses in the ordering panel.",
+      "required": 0
+    }
+  ]
+}
