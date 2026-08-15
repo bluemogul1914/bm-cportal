@@ -510,7 +510,14 @@ try { $deals = $pdo->query("SELECT d.*, l.name as lead_name, c.name as client_na
 $social_posts = [];
 try { $social_posts = $pdo->query("SELECT * FROM crm_social_posts ORDER BY created_at DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
 $companies = [];
-try { $companies = $pdo->query("SELECT * FROM crm_companies ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
+try { $companies = $pdo->query("SELECT c.*,
+              COUNT(DISTINCT cl.id) AS client_count,
+              COUNT(DISTINCT inv.id) AS invoice_count,
+              COALESCE(SUM(inv.total), 0) AS invoice_revenue
+            FROM crm_companies c
+            LEFT JOIN clients cl ON cl.crm_company_id = c.id
+            LEFT JOIN invoices inv ON inv.client_id = cl.id
+            GROUP BY c.id ORDER BY c.created_at DESC")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) {}
 
 $social_api = [];
 try {
@@ -1293,6 +1300,9 @@ if ($lid_param && $tab === 'leads') {
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Country/Region</th>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Industry</th>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Stage</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Clients</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Invoices</th>
+                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Revenue</th>
                                 <th class="px-4 py-3"></th>
                             </tr>
                         </thead>
@@ -1329,6 +1339,9 @@ if ($lid_param && $tab === 'leads') {
                                         </select>
                                     </form>
                                 </td>
+                                <td class="px-4 py-3 text-sm text-gray-600 text-center"><?= (int)($co['client_count'] ?? 0) ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-600 text-center"><?= (int)($co['invoice_count'] ?? 0) ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-900 text-right font-semibold">$<?= number_format((float)($co['invoice_revenue'] ?? 0), 2) ?></td>
                                 <td class="px-4 py-3 text-right">
                                     <div class="flex items-center gap-2 justify-end">
                                         <a href="?tab=companies&cid=<?= $co['id'] ?>" class="text-blue-600 hover:text-blue-800 text-sm" title="View" data-testid="button-view-company-<?= $co['id'] ?>"><i class="fas fa-eye"></i></a>
