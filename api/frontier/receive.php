@@ -5,7 +5,7 @@
  * Frontier posts ASR status updates here — always return 200
  */
 
-$rawXML = file_get_contents('php://input');
+$rawXML = file_get_contents($_SERVER['REQUEST_BODY_FILE'] ?? 'php://input');
 $timestamp = gmdate('c');
 
 // Log to file for audit trail

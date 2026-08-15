@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // Include confirmed-working SOAP client from existing v10 files
 require_once __DIR__ . '/../../frontier-asr-v10/src/FrontierASRClient.php';
 
-$body = json_decode(file_get_contents('php://input'), true) ?: [];
+$body = json_decode(file_get_contents($_SERVER['REQUEST_BODY_FILE'] ?? 'php://input'), true) ?: [];
 $address = trim($body['address'] ?? '');
 $city    = trim($body['city']    ?? '');
 $state   = trim($body['state']  ?? '');

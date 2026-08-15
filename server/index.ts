@@ -696,6 +696,76 @@ app.post("/portal/admin/:file", (req, res) => {
   executePhpPost(join(projectRoot, "admin", phpFile), req, res);
 });
 
+// ── Frontier ASR public API (OAM-3084 callback URLs) ─────────────────────
+// GET /api/frontier/health  — connectivity check
+// POST /api/frontier/receive — inbound SOAP ASR status callback
+// POST /api/frontier/preorder — address availability check
+const FRONTIER_PHP_FILES = ["receive.php", "health.php", "preorder.php"];
+const frontierPhpName = (p: string) => p.endsWith(".php") ? p : `${p}.php`;
+
+app.get("/api/frontier/:file", (req, res) => {
+  const phpFile = frontierPhpName(req.params.file);
+  if (!FRONTIER_PHP_FILES.includes(phpFile)) return res.status(404).send("Not found");
+  executePhpFile(resolve(projectRoot, "api/frontier", phpFile), req, res);
+});
+
+app.post("/api/frontier/:file", (req, res) => {
+  const phpFile = frontierPhpName(req.params.file);
+  if (!FRONTIER_PHP_FILES.includes(phpFile)) return res.status(404).send("Not found");
+  executeFrontierPost(resolve(projectRoot, "api/frontier", phpFile), req, res);
+});
+
+async function executeFrontierPost(filePath: string, req: Request, res: Response) {
+  try {
+    // Read the raw request body (SOAP XML / JSON). express.json() populated
+    // req.rawBody for JSON; for SOAP XML it left the stream unconsumed.
+    const raw = req.rawBody ?? await new Promise<Buffer>((resolveP, rejectP) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", () => resolveP(Buffer.concat(chunks)));
+      req.on("error", rejectP);
+    });
+    // Persist the raw body to a temp file; the PHP script reads it via
+    // $_SERVER['REQUEST_BODY_FILE'] (php://input is empty for CLI subprocesses).
+    const bodyFile = join(tmpdir(), `frontier_body_${randomUUID()}.txt`);
+    await unlink(bodyFile).catch(() => {});
+    await writeFile(bodyFile, raw as Buffer);
+    const sessionCode = buildSessionPhpCode(req);
+    const phpSelf = "/" + filePath.replace(/\\/g, "/").split("/").pop();
+    const phpCode = [
+      "<?php",
+      "error_reporting(E_ERROR | E_PARSE);",
+      `$_SERVER['PHP_SELF'] = '${phpSelf.replace(/'/g, "\\'")}';`,
+      `$_SERVER['SCRIPT_NAME'] = '${phpSelf.replace(/'/g, "\\'")}';`,
+      "session_start();",
+      sessionCode,
+      "$_SERVER['REQUEST_METHOD'] = 'POST';",
+      `$_SERVER['REQUEST_BODY_FILE'] = '${bodyFile.replace(/'/g, "\\'")}';`,
+      "$_GET = [];",
+      `require '${filePath.replace(/'/g, "\\'")}';`,
+    ].join("\n");
+    const tmpFile = join(tmpdir(), `portal_${randomUUID()}.php`);
+    const outFile = tmpFile;
+    await writeFile(outFile, phpCode);
+    execFile("php", [outFile], {
+      timeout: 60000,
+      maxBuffer: 10 * 1024 * 1024,
+      cwd: projectRoot,
+      env: { ...process.env },
+    }, (error, stdout, stderr) => {
+      unlink(outFile).catch(() => {});
+      unlink(bodyFile).catch(() => {});
+      if (error) {
+        console.error(`PHP Frontier error (${phpSelf}):`, stderr || error.message);
+        return res.status(500).send(stderr || error.message);
+      }
+      try { const json = JSON.parse(stdout); res.json(json); } catch { handlePhpResponse(stdout, req, res); }
+    });
+  } catch (e: any) {
+    res.status(400).send(String(e?.message || e));
+  }
+}
+
 // ── Phase 1 clean-URL aliases ─────────────────────────────────────────────
 app.get("/admin/tickets", (req, res) => {
   if (!req.query.view) req.query.view = "kanban";
