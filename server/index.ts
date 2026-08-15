@@ -766,6 +766,10 @@ async function executeFrontierPost(filePath: string, req: Request, res: Response
   }
 }
 
+// Convenience redirect: bare /admin-frontier.php -> /portal/admin-frontier.php
+app.get("/admin-frontier.php", (req, res) => {
+  res.redirect(302, "/portal/admin-frontier.php" + (req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""));
+});
 // ── Phase 1 clean-URL aliases ─────────────────────────────────────────────
 app.get("/admin/tickets", (req, res) => {
   if (!req.query.view) req.query.view = "kanban";
