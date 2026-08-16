@@ -15,6 +15,68 @@ function mail_decrypt_password(string $encrypted): string {
 }
 
 /**
+ * Split an HTML body into lines of at most $maxLen columns BEFORE embedding it
+ * in the raw SMTP payload. SMTP transports (Google et al.) reject messages
+ * whose lines exceed 2048 bytes ("lines too long for transport"). We split on
+ * whitespace boundaries and NEVER inside a quoted attribute value, so tags and
+ * attributes are never corrupted. Because we break at whitespace, consecutive
+ * runs of whitespace collapse to a newline — which is harmless in HTML.
+ */
+function wrap_html_for_smtp(string $html, int $maxLen = 76): string {
+    $lines = [];
+    $current = '';
+    $i = 0;
+    $len = strlen($html);
+    $inTag = false;
+    $inQuote = null; // null | "'" | '"'
+    $lineLen = 0;
+    $lastSafeBreak = -1; // index into $current where a space was seen (a break point)
+
+    while ($i < $len) {
+        $ch = $html[$i];
+
+        // Track tag / quote state so we never break inside a quoted attribute.
+        if ($ch === '<') { $inTag = true; }
+        elseif ($ch === '>' && $inTag) { $inTag = false; }
+        elseif ($inTag && ($ch === '"' || $ch === "'")) {
+            $inQuote = ($inQuote === null) ? $ch : ($inQuote === $ch ? null : $inQuote);
+        }
+
+        $current .= $ch;
+        $lineLen++;
+        $i++;
+
+        // Record a safe break point when we just appended a space OUTSIDE tags/quotes.
+        if (!$inTag && $inQuote === null && $ch === ' ') {
+            $lastSafeBreak = strlen($current) - 1;
+        }
+
+        // If we've hit the hard ceiling, cut at the last safe break if one exists,
+        // else hard-break now (never inside a tag/quote).
+        if ($lineLen >= $maxLen) {
+            if ($lastSafeBreak > 0) {
+                $cut = $lastSafeBreak;
+                $lines[] = substr($current, 0, $cut) . "\r";
+                $current = ltrim(substr($current, $cut)); // drop the space we broke on
+            } else {
+                // No safe break: hard cut. Only cut between chars; if we're inside a
+                // tag/quote we fall through to the next char until we exit (roadsafe).
+                if (!$inTag && $inQuote === null) {
+                    $lines[] = $current . "\r";
+                    $current = '';
+                }
+            }
+            $lineLen = strlen($current);
+            $lastSafeBreak = -1;
+        }
+    }
+    if ($current !== '') {
+        $lines[] = $current;
+    }
+    return implode("\n", $lines);
+}
+
+/**
  * Get per-user SMTP settings. Returns null if not configured,
  * falls back to company SMTP shape if only work email is set.
  */
@@ -109,6 +171,13 @@ function send_email($to, $subject, $html_body, $plain_body = '') {
     if (empty($plain_body)) {
         $plain_body = strip_tags(str_replace(['<br>', '<br/>', '<br />', '</p>', '</div>', '</li>'], "\n", $html_body));
     }
+
+    // Some HTML templates are stored/served as one long minified line. SMTP
+    // transports (e.g. Google) reject messages with lines > 2048 bytes with
+    // "lines too long for transport". Wrap long lines safely so email never
+    // bounces on line length. We split only between tags/attributes on
+    // whitespace boundaries, never inside a quoted attribute value.
+    $html_body = wrap_html_for_smtp($html_body);
 
     $boundary = md5(time() . rand());
     $headers = [];
