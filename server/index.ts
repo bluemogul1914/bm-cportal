@@ -2246,6 +2246,38 @@ app.post("/api/ollama/settings", express.json(), async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// AnythingLLM chat-backend settings (OpenAI-compatible via AnythingLLM API).
+app.get("/api/anythingllm/settings", async (_req, res) => {
+  try {
+    const { rows } = await webhookPool.query(
+      `SELECT setting_value FROM system_settings WHERE setting_key IN ('anythingllm_url','anythingllm_api_key','anythingllm_workspace','anythingllm_enabled')`
+    );
+    const s: Record<string, string> = {};
+    for (const r of rows) s[r.setting_key] = r.setting_value;
+    res.json({
+      url: s['anythingllm_url'] || '',
+      keySet: !!s['anythingllm_api_key'],
+      workspace: s['anythingllm_workspace'] || 'customer-support-kb',
+      enabled: s['anythingllm_enabled'] === 'true',
+    });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/anythingllm/settings", express.json(), async (req, res) => {
+  try {
+    const { url, api_key, workspace, enabled } = req.body;
+    const upsert = async (k: string, v: string) => webhookPool.query(
+      `INSERT INTO system_settings (setting_key, setting_value) VALUES ($1,$2)
+       ON CONFLICT (setting_key) DO UPDATE SET setting_value=$2`, [k, v]
+    );
+    if (url !== undefined) await upsert('anythingllm_url', String(url));
+    if (api_key !== undefined) await upsert('anythingllm_api_key', String(api_key));
+    if (workspace !== undefined) await upsert('anythingllm_workspace', String(workspace));
+    if (enabled !== undefined) await upsert('anythingllm_enabled', String(enabled));
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/api/ollama/models", async (_req, res) => {
   try {
     const { rows } = await webhookPool.query(`SELECT setting_value FROM system_settings WHERE setting_key='ollama_url'`);
@@ -2272,14 +2304,20 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
   let settingsRows: any;
   try {
     settingsRows = await webhookPool.query(
-      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('ollama_url','ollama_model','ollama_system_prompt','ollama_enabled')`
+      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('ollama_url','ollama_model','ollama_system_prompt','ollama_enabled','anythingllm_url','anythingllm_api_key','anythingllm_workspace','anythingllm_enabled')`
     );
   } catch (e: any) {
     return res.status(500).json({ error: 'DB error: ' + e.message });
   }
   const s: Record<string, string> = {};
   for (const r of settingsRows.rows) s[r.setting_key] = r.setting_value;
-  if (s['ollama_enabled'] === 'false') return res.status(503).json({ error: 'AI Assistant is disabled' });
+  // AnythingLLM takes precedence when enabled and configured.
+  const anythingLLMEnabled = (s['anythingllm_enabled'] === 'true') &&
+    !!s['anythingllm_url'] && !!s['anythingllm_api_key'];
+  const anythingLLMUrl = (s['anythingllm_url'] || '').replace(/\/$/, '');
+  const anythingLLMKey = s['anythingllm_api_key'] || '';
+  const anythingLLMWorkspace = s['anythingllm_workspace'] || 'customer-support-kb';
+  if (s['ollama_enabled'] === 'false' && !anythingLLMEnabled) return res.status(503).json({ error: 'AI Assistant is disabled' });
 
   const ollamaUrl = (s['ollama_url'] || 'http://localhost:11434').replace(/\/$/, '');
   const model = s['ollama_model'] || 'llama3';
@@ -2305,20 +2343,33 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
   req.on('close', () => { ctrl.abort(); clearTimeout(t); });
 
   try {
-    const ollamaRes = await fetch(`${ollamaUrl}/api/chat`, {
+    // Route to AnythingLLM (OpenAI-compatible) when enabled+configured, else Ollama.
+    const upstream = anythingLLMEnabled
+      ? {
+          url: `${anythingLLMUrl}/api/v1/openai/chat/completions`,
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anythingLLMKey}` },
+          body: JSON.stringify({ model: anythingLLMWorkspace, messages: fullMessages, stream: true }),
+        }
+      : {
+          url: `${ollamaUrl}/api/chat`,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model, messages: fullMessages, stream: true }),
+        };
+
+    const upstreamRes = await fetch(upstream.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages: fullMessages, stream: true }),
+      headers: upstream.headers,
+      body: upstream.body,
       signal: ctrl.signal,
     });
 
-    if (!ollamaRes.ok) {
-      const txt = await ollamaRes.text();
-      sendEvent({ error: `Ollama error: ${txt}` });
+    if (!upstreamRes.ok) {
+      const txt = await upstreamRes.text();
+      sendEvent({ error: `${anythingLLMEnabled ? 'AnythingLLM' : 'Ollama'} error: ${txt}` });
       res.end(); clearTimeout(t); return;
     }
 
-    const reader = ollamaRes.body!.getReader();
+    const reader = upstreamRes.body!.getReader();
     const decoder = new TextDecoder();
     let fullReply = '';
     let lineBuffer = '';
@@ -2334,8 +2385,14 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
+        // OpenAI-compatible SSE: lines look like "data: {...}" (AnythingLLM).
+        // AnythingLLM streams OpenAI-style but each event may be a bare JSON payload.
+        const payload = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed;
+        if (payload === '[DONE]') continue;
+        if (!payload) continue;
         try {
-          const chunk = JSON.parse(trimmed) as {
+          const chunk = JSON.parse(payload) as {
+            choices?: { delta?: { content?: string }; message?: { content?: string } }[];
             message?: { content: string };
             done?: boolean;
             error?: string;
@@ -2344,7 +2401,10 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
             sendEvent({ error: chunk.error });
             res.end(); clearTimeout(t); return;
           }
-          const token = chunk.message?.content ?? '';
+          // OpenAI-style (AnythingLLM): choices[].delta.content or choices[].message.content.
+          // Ollama-style: message.content
+          const choice = chunk.choices?.[0];
+          const token = choice?.delta?.content ?? choice?.message?.content ?? chunk.message?.content ?? '';
           if (token) {
             fullReply += token;
             sendEvent({ token });
@@ -2355,8 +2415,9 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
     // Flush any remaining content in the buffer (last line without trailing newline)
     if (lineBuffer.trim()) {
       try {
-        const chunk = JSON.parse(lineBuffer.trim()) as { message?: { content: string }; error?: string };
-        const token = chunk.message?.content ?? '';
+        const chunk = JSON.parse(lineBuffer.trim()) as { choices?: { delta?: { content?: string }; message?: { content?: string } }[]; message?: { content: string }; error?: string };
+        const choice = chunk.choices?.[0];
+        const token = choice?.delta?.content ?? choice?.message?.content ?? chunk.message?.content ?? '';
         if (token) { fullReply += token; sendEvent({ token }); }
       } catch { /* partial/incomplete JSON — discard */ }
     }
