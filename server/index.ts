@@ -2344,17 +2344,18 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
 
   try {
     // Route to AnythingLLM (OpenAI-compatible) when enabled+configured, else Ollama.
-    const upstream = anythingLLMEnabled
-      ? {
-          url: `${anythingLLMUrl}/api/v1/openai/chat/completions`,
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anythingLLMKey}` },
-          body: JSON.stringify({ model: anythingLLMWorkspace, messages: fullMessages, stream: true }),
-        }
-      : {
-          url: `${ollamaUrl}/api/chat`,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, messages: fullMessages, stream: true }),
-        };
+    const upHeaders: Record<string, string> = anythingLLMEnabled
+      ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anythingLLMKey}` }
+      : { 'Content-Type': 'application/json' };
+    const upstream = {
+      url: anythingLLMEnabled
+        ? `${anythingLLMUrl}/api/v1/openai/chat/completions`
+        : `${ollamaUrl}/api/chat`,
+      headers: upHeaders,
+      body: JSON.stringify(anythingLLMEnabled
+        ? { model: anythingLLMWorkspace, messages: fullMessages, stream: true }
+        : { model, messages: fullMessages, stream: true }),
+    };
 
     const upstreamRes = await fetch(upstream.url, {
       method: 'POST',
