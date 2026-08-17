@@ -58,7 +58,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $cid = intval($_POST['client_id'] ?? 0);
         $title = trim($_POST['title'] ?? '');
         if ($cid && $title) {
-            $stmt = $pdo->prepare("INSERT INTO network_credentials (client_id, title, category, username, password, url, notes, created_by) VALUES (?,?,?,?,?,?,?,?)");
+            $stmt = $pdo->prepare("INSERT INTO network_credentials (client_id, service_name, credential_type, username, password_encrypted, url, notes) VALUES (?,?,?,?,?,?,?)");
             $stmt->execute([
                 $cid, $title,
                 trim($_POST['category'] ?? 'general'),
@@ -66,7 +66,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 trim($_POST['cred_password'] ?? '') ?: null,
                 trim($_POST['url'] ?? '') ?: null,
                 trim($_POST['notes'] ?? '') ?: null,
-                $_SESSION['user_id'],
             ]);
             $success_msg = 'Credential saved.';
             if ($cid) $client_id = $cid;
@@ -100,7 +99,7 @@ if ($client_id) {
     $stmt->execute([$client_id]);
     $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $stmt = $pdo->prepare("SELECT * FROM network_credentials WHERE client_id = ? ORDER BY category ASC, title ASC");
+    $stmt = $pdo->prepare("SELECT * FROM network_credentials WHERE client_id = ? ORDER BY credential_type ASC, service_name ASC");
     $stmt->execute([$client_id]);
     $credentials = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
@@ -379,7 +378,7 @@ $warning_devices = $pdo->query("SELECT COUNT(*) FROM network_devices WHERE statu
                                 <?php
                                     $cred_categories = [];
                                     foreach ($credentials as $cred) {
-                                        $cred_categories[$cred['category'] ?? 'general'][] = $cred;
+                                        $cred_categories[$cred['credential_type'] ?? 'general'][] = $cred;
                                     }
                                 ?>
                                 <?php foreach ($cred_categories as $cat => $creds): ?>
@@ -392,7 +391,7 @@ $warning_devices = $pdo->query("SELECT COUNT(*) FROM network_devices WHERE statu
                                                 <i class="fas fa-lock text-yellow-600"></i>
                                             </div>
                                             <div class="flex-1 min-w-0">
-                                                <p class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($cred['title']); ?></p>
+                                                <p class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($cred['service_name']); ?></p>
                                                 <?php if ($cred['url']): ?><p class="text-xs text-blue-600 truncate"><?php echo htmlspecialchars($cred['url']); ?></p><?php endif; ?>
                                                 <?php if ($cred['notes']): ?><p class="text-xs text-gray-500"><?php echo htmlspecialchars($cred['notes']); ?></p><?php endif; ?>
                                             </div>
@@ -400,10 +399,10 @@ $warning_devices = $pdo->query("SELECT COUNT(*) FROM network_devices WHERE statu
                                                 <?php if ($cred['username']): ?>
                                                     <p class="text-xs text-gray-600"><span class="text-gray-400">User:</span> <code class="bg-gray-100 px-1.5 py-0.5 rounded font-mono"><?php echo htmlspecialchars($cred['username']); ?></code></p>
                                                 <?php endif; ?>
-                                                <?php if ($cred['password']): ?>
+                                                <?php if ($cred['password_encrypted']): ?>
                                                     <p class="text-xs text-gray-600 mt-1">
                                                         <span class="text-gray-400">Pass:</span>
-                                                        <code class="bg-gray-100 px-1.5 py-0.5 rounded font-mono cred-pass" data-pass="<?php echo htmlspecialchars($cred['password']); ?>">••••••••</code>
+                                                        <code class="bg-gray-100 px-1.5 py-0.5 rounded font-mono cred-pass" data-pass="<?php echo htmlspecialchars($cred['password_encrypted']); ?>">••••••••</code>
                                                         <button onclick="togglePass(this)" class="ml-1 text-gray-400 hover:text-blue-600"><i class="fas fa-eye text-[10px]"></i></button>
                                                     </p>
                                                 <?php endif; ?>
