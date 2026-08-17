@@ -2752,6 +2752,8 @@ async function bootstrapPortalDatabase() {
     await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS deal_value DECIMAL(12,2) DEFAULT 0`);
     await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS last_contacted TIMESTAMP`);
     await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS last_comments TEXT`);
+    // Dashboard churn query reads subscriptions.updated_at (matches admin-dashboard.php)
+    await webhookPool.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`);
     // New "New Person" individual fields
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)`);
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_name  VARCHAR(100)`);
@@ -2972,6 +2974,16 @@ async function bootstrapPortalDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    // messages may pre-date this with a chat shape (conversation_id/role/content);
+    // ensure the messaging columns admin-messages.php expects exist (idempotent).
+    await webhookPool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS subject VARCHAR(255)`);
+    await webhookPool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS body TEXT`);
+    await webhookPool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS category VARCHAR(50)`);
+    await webhookPool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'draft'`);
+    await webhookPool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS recipients JSONB DEFAULT '[]'`);
+    await webhookPool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP`);
+    await webhookPool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS created_by INTEGER`);
+    await webhookPool.query(`ALTER TABLE message_templates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS message_templates (
         id SERIAL PRIMARY KEY,
