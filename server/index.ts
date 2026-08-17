@@ -2737,6 +2737,21 @@ async function bootstrapPortalDatabase() {
     `);
     await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR(500)`);
     await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS linkedin_data JSONB`);
+    // Leads pipeline schema (matches includes/leads-db-bootstrap.php intended shape, idempotent)
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS lead_number VARCHAR(20)`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS full_name VARCHAR(200)`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS pipeline_status VARCHAR(50) DEFAULT 'new_enquiry'`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS owner VARCHAR(100) DEFAULT 'Me'`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS partner VARCHAR(100)`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS location VARCHAR(200)`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS city VARCHAR(100)`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS street VARCHAR(200)`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS zip_code VARCHAR(20)`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS geo_data VARCHAR(200)`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS custom_status VARCHAR(50) DEFAULT 'customer'`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS deal_value DECIMAL(12,2) DEFAULT 0`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS last_contacted TIMESTAMP`);
+    await webhookPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS last_comments TEXT`);
     // New "New Person" individual fields
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)`);
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_name  VARCHAR(100)`);
