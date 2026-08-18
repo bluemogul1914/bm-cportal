@@ -66,7 +66,7 @@
             <div class="space-y-1">
                 <a href="admin-dealers.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition" data-testid="link-admin-dealers">
                     <i class="fas fa-handshake w-5 text-blue-400"></i>
-                    <span>All Dealers</span>
+                    <span>Dealers Dashboard</span>
                     <i class="fas fa-arrow-right ml-auto text-xs"></i>
                 </a>
                 <a href="admin-dashboard.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition">

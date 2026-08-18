@@ -96,12 +96,6 @@ $current_page = basename(__FILE__);
       <div class="topbar-sub">All registered dealer / ISO partners</div>
     </div>
     <div class="topbar-right">
-      <?php if ($pending_comm_count > 0): ?>
-      <a href="/portal/admin/admin-dealer-payouts.php" class="btn btn-outline btn-sm">
-        <span style="width:18px;height:18px;background:var(--amber);color:#fff;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;"><?= min($pending_comm_count,99) ?></span>
-        Payout queue
-      </a>
-      <?php endif; ?>
       <a href="/portal/dealer-register.php" target="_blank" class="btn btn-outline btn-sm">+ Invite dealer</a>
     </div>
   </div>

@@ -109,11 +109,6 @@
                 <span>Knowledge Base</span>
             </a>
 
-            <a href="admin-dealers.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-dealers.php','admin-dealer-detail.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-dealers">
-                <i class="fas fa-handshake w-5"></i>
-                <span>Dealers</span>
-            </a>
-
             <a href="admin-messages.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-messages.php','admin-message-compose.php','admin-message-templates.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-messages">
                 <i class="fas fa-envelope w-5"></i>
                 <span>Messages</span>
@@ -273,26 +268,11 @@
                     }
                 } catch (Exception $e) {}
                 ?>
-                <a href="/portal/admin/admin-dealers.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-dealers.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-dealer-list">
+                <a href="/portal/admin-dealers.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-dealers.php','admin-dealer-detail.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-dealer-dashboard">
                     <i class="fas fa-handshake w-5"></i>
-                    <span>All Dealers</span>
+                    <span>Dealers Dashboard</span>
                     <?php if ($dealer_pending_count > 0): ?>
                     <span class="ml-auto bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full"><?= $dealer_pending_count ?></span>
-                    <?php endif; ?>
-                </a>
-                <a href="/portal/admin/admin-dealer-payouts.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-dealer-payouts.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-dealer-payouts">
-                    <i class="fas fa-money-bill-wave w-5"></i>
-                    <span>Payout Queue</span>
-                    <?php
-                    $payout_pending_count = 0;
-                    try {
-                        if (isset($db_temp) && $db_temp) {
-                            $pp = $db_temp->query("SELECT COUNT(*) FROM commissions WHERE status='pending'");
-                            $payout_pending_count = (int)$pp->fetchColumn();
-                        }
-                    } catch (Exception $e) {}
-                    if ($payout_pending_count > 0): ?>
-                    <span class="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full"><?= min($payout_pending_count, 99) ?></span>
                     <?php endif; ?>
                 </a>
             </div>

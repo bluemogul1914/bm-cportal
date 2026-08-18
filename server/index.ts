@@ -641,7 +641,7 @@ app.get("/portal/api/xero/data", async (req, res) => {
 });
 // ── End Xero OAuth ────────────────────────────────────────────────────────────
 
-const ADMIN_DEALER_PHP_FILES = ["admin-dealers.php", "admin-dealer-detail.php", "admin-dealer-payouts.php"];
+const ADMIN_DEALER_PHP_FILES = ["admin-dealers.php", "admin-dealer-detail.php"];
 
 app.get("/portal/admin/:file", (req, res) => {
   const phpFile = req.params.file.endsWith(".php") ? req.params.file : `${req.params.file}.php`;
