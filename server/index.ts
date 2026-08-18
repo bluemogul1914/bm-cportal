@@ -15,8 +15,17 @@ import { randomUUID } from "crypto";
 import session from "express-session";
 import pg from "pg";
 import bcrypt from "bcryptjs";
+import connectPgSimple from "connect-pg-simple";
 
 const webhookPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+// Persistent session store backed by Neon Postgres so admin/dealer sessions
+// survive container restarts/redeploys (MemoryStore was being wiped on every
+// restart, which forced users back to login and "froze" dashboards).
+const PgSession = connectPgSimple(session);
+const sessionPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 2,
+});
 
 const app = express();
 const httpServer = createServer(app);
@@ -105,6 +114,12 @@ app.set("trust proxy", 1);
 
 app.use(
   session({
+    store: new PgSession({
+      pool: sessionPool,
+      tableName: "session",
+      createTableIfMissing: true,
+      pruneSessionInterval: 60 * 15,
+    }),
     secret: process.env.SESSION_SECRET || "bluemogul-portal-secret",
     resave: false,
     saveUninitialized: true,
