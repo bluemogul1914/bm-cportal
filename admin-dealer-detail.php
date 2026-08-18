@@ -4,7 +4,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) p
 $user_name = $_SESSION['user_name'] ?? 'Admin';
 $pdo = getDB();
 $did = (int)($_GET['id'] ?? 0);
-$d = $pdo->prepare("SELECT d.*,u.name as user_name,u.email,u.created_at as user_created FROM dealers d JOIN users u ON d.user_id=u.id WHERE d.id=?");
+$d = $pdo->prepare("SELECT d.*,COALESCE(u.name, d.full_name) AS user_name,u.email,u.created_at as user_created FROM dealers d LEFT JOIN users u ON d.user_id=u.id WHERE d.id=?");
 $d->execute([$did]); $d = $d->fetch(PDO::FETCH_ASSOC);
 if (!$d) portal_redirect('/portal/admin-dealers.php');
 
@@ -12,11 +12,13 @@ $success = ''; $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['update_dealer'])) {
-        $pdo->prepare("UPDATE dealers SET company_name=?,commission_rate=?,status=?,notes=? WHERE id=?")
-            ->execute([trim($_POST['company_name']??''), max(0,min(100,(float)($_POST['commission_rate']??10))), $_POST['status']??'active', trim($_POST['notes']??''), $did]);
-        $pdo->prepare("UPDATE users SET name=? WHERE id=?")->execute([trim($_POST['user_name']??''), $d['user_id']]);
+        $pdo->prepare("UPDATE dealers SET company_name=?,commission_rate=?,status=?,notes=?,full_name=? WHERE id=?")
+            ->execute([trim($_POST['company_name']??''), max(0,min(100,(float)($_POST['commission_rate']??10))), $_POST['status']??'active', trim($_POST['notes']??''), trim($_POST['user_name']??''), $did]);
+        if (!empty($d['user_id'])) {
+            $pdo->prepare("UPDATE users SET name=? WHERE id=?")->execute([trim($_POST['user_name']??''), $d['user_id']]);
+        }
         $success = 'Dealer updated.';
-        $d = $pdo->prepare("SELECT d.*,u.name as user_name,u.email,u.created_at as user_created FROM dealers d JOIN users u ON d.user_id=u.id WHERE d.id=?");
+        $d = $pdo->prepare("SELECT d.*,COALESCE(u.name, d.full_name) AS user_name,u.email,u.created_at as user_created FROM dealers d LEFT JOIN users u ON d.user_id=u.id WHERE d.id=?");
         $d->execute([$did]); $d = $d->fetch(PDO::FETCH_ASSOC);
     }
     if (isset($_POST['approve_commission'])) {

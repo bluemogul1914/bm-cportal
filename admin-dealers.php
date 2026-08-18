@@ -88,7 +88,7 @@ if ($filter_status) { $where[]="d.status=?"; $params[]=$filter_status; }
 $wsql = implode(' AND ',$where);
 $t=$pdo->prepare("SELECT COUNT(*) FROM dealers d LEFT JOIN users u ON d.user_id=u.id WHERE $wsql"); $t->execute($params); $total=(int)$t->fetchColumn();
 $total_pages=max(1,ceil($total/$per)); $offset=($page-1)*$per;
-$q=$pdo->prepare("SELECT d.*,u.name as user_name,u.email,
+$q=$pdo->prepare("SELECT d.*,COALESCE(u.name,d.full_name) as user_name,COALESCE(u.email,d.email) as email,
     (SELECT COUNT(*) FROM dealer_orders WHERE dealer_id=d.id) as total_orders,
     (SELECT COUNT(*) FROM dealer_orders WHERE dealer_id=d.id AND status='completed') as completed_orders,
     (SELECT COALESCE(SUM(amount),0) FROM dealer_commissions WHERE dealer_id=d.id AND status='paid') as total_paid,
