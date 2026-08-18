@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_dealer'])) {
                 $dealer_code = 'DLR-' . str_pad(random_int(10000,99999),5,'0',STR_PAD_LEFT);
                 $pdo->prepare(
                     "INSERT INTO dealers (dealer_code, referral_code, full_name, email, phone, company, status, tier, created_at)
-                     VALUES (?,?,?,?,?,?,?,'active',?,NOW())"
+                     VALUES (?,?,?,?,?,?,'active',?,NOW())"
                 )->execute([$dealer_code, $dealer_code, $full_name, $email, $phone ?: null, $company ?: null, $tier]);
                 $success = "Dealer added ($dealer_code).";
             }
