@@ -83,7 +83,7 @@ $search = trim($_GET['q'] ?? '');
 $filter_status = $_GET['status'] ?? '';
 $page = max(1,(int)($_GET['page']??1)); $per=20;
 $where = ["1=1"]; $params = [];
-if ($search) { $where[]="(u.name ILIKE ? OR u.email ILIKE ? OR d.company_name ILIKE ? OR d.referral_code ILIKE ?)"; $params[]="%$search%"; $params[]="%$search%"; $params[]="%$search%"; $params[]="%$search%"; }
+if ($search) { $where[]="(u.name ILIKE ? OR u.email ILIKE ? OR d.full_name ILIKE ? OR d.email ILIKE ? OR d.company_name ILIKE ? OR d.referral_code ILIKE ?)"; $params[]="%$search%"; $params[]="%$search%"; $params[]="%$search%"; $params[]="%$search%"; $params[]="%$search%"; $params[]="%$search%"; }
 if ($filter_status) { $where[]="d.status=?"; $params[]=$filter_status; }
 $wsql = implode(' AND ',$where);
 $t=$pdo->prepare("SELECT COUNT(*) FROM dealers d LEFT JOIN users u ON d.user_id=u.id WHERE $wsql"); $t->execute($params); $total=(int)$t->fetchColumn();
