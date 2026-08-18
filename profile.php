@@ -85,7 +85,7 @@ try {
     $stmt->execute([$user_id]);
     $client_data = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    $stmt = $pdo->prepare("SELECT email, created_at, avatar_path FROM users WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT email, created_at, avatar_path, avatar_data FROM users WHERE id = ?");
     $stmt->execute([$user_id]);
     $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
@@ -94,6 +94,7 @@ try {
     $user_data = [];
 }
 $avatar_path = $user_data['avatar_path'] ?? '';
+$avatar_data = $user_data['avatar_data'] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -137,7 +138,9 @@ $avatar_path = $user_data['avatar_path'] ?? '';
             <div class="bg-white rounded-lg border border-gray-200 mb-6">
                 <div class="px-6 py-4 border-b border-gray-200 flex items-center gap-4">
                     <div class="relative group">
-                        <?php if ($avatar_path): ?>
+                        <?php if ($avatar_data): ?>
+                            <img src="<?php echo htmlspecialchars($avatar_data); ?>" alt="Avatar" class="h-16 w-16 rounded-full object-cover border-2 border-blue-200" data-testid="img-avatar" id="avatar-preview">
+                        <?php elseif ($avatar_path): ?>
                             <img src="/<?php echo htmlspecialchars($avatar_path); ?>" alt="Avatar" class="h-16 w-16 rounded-full object-cover border-2 border-blue-200" data-testid="img-avatar" id="avatar-preview">
                         <?php else: ?>
                             <div class="bg-blue-600 text-white rounded-full h-16 w-16 flex items-center justify-center font-bold text-2xl" id="avatar-initials">

@@ -42,6 +42,30 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
             }
         }
     }
+
+    if ($_POST['action'] === 'reopen_ticket') {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT id FROM clients WHERE user_id = ?");
+            $stmt->execute([$user_id]);
+            $client = $stmt->fetch(PDO::FETCH_ASSOC);
+            $client_id = $client ? $client['id'] : $user_id;
+
+            // Only the owner client can reopen their own ticket (ownership check same as load)
+            $check = $pdo->prepare("SELECT id FROM tickets WHERE id = ? AND (client_id = ? OR client_id = ?)");
+            $check->execute([$ticket_id, $client_id, $user_id]);
+            if ($check->fetch(PDO::FETCH_ASSOC)) {
+                $pdo->prepare("UPDATE tickets SET status = 'open', updated_at = NOW() WHERE id = ?")->execute([$ticket_id]);
+                $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
+                    ->execute([$user_id, 'ticket_reopened', 'ticket', $ticket_id, 'Client reopened ticket #' . $ticket_id, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);
+                $success_msg = 'Ticket reopened successfully.';
+            } else {
+                $error_msg = 'You are not authorized to reopen this ticket.';
+            }
+        } catch (PDOException $e) {
+            $error_msg = 'Failed to reopen ticket.';
+        }
+    }
 }
 
 try {
@@ -192,7 +216,14 @@ $is_closed = ($status === 'closed');
                     <div class="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center mt-6">
                         <i class="fas fa-lock text-gray-400 text-xl mb-2"></i>
                         <p class="text-gray-600 font-medium">This ticket is closed</p>
-                        <p class="text-sm text-gray-500">If you need further assistance, please create a new ticket.</p>
+                        <p class="text-sm text-gray-500">If you need further assistance, you can reopen this ticket or create a new one.</p>
+                        <form method="POST" action="ticket-detail.php?id=<?php echo $ticket_id; ?>" class="mt-4">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="reopen_ticket">
+                            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-md font-medium text-sm transition" data-testid="button-reopen-ticket">
+                                <i class="fas fa-undo mr-2"></i>Reopen Ticket
+                            </button>
+                        </form>
                     </div>
                 <?php endif; ?>
             </div>

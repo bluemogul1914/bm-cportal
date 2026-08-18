@@ -41,7 +41,7 @@ $where = ["1=1"]; $params = [];
 if ($search) { $where[]="(u.name ILIKE ? OR u.email ILIKE ? OR d.company_name ILIKE ? OR d.referral_code ILIKE ?)"; $params[]="%$search%"; $params[]="%$search%"; $params[]="%$search%"; $params[]="%$search%"; }
 if ($filter_status) { $where[]="d.status=?"; $params[]=$filter_status; }
 $wsql = implode(' AND ',$where);
-$t=$pdo->prepare("SELECT COUNT(*) FROM dealers d JOIN users u ON d.user_id=u.id WHERE $wsql"); $t->execute($params); $total=(int)$t->fetchColumn();
+$t=$pdo->prepare("SELECT COUNT(*) FROM dealers d LEFT JOIN users u ON d.user_id=u.id WHERE $wsql"); $t->execute($params); $total=(int)$t->fetchColumn();
 $total_pages=max(1,ceil($total/$per)); $offset=($page-1)*$per;
 $q=$pdo->prepare("SELECT d.*,u.name as user_name,u.email,
     (SELECT COUNT(*) FROM dealer_orders WHERE dealer_id=d.id) as total_orders,
@@ -49,7 +49,7 @@ $q=$pdo->prepare("SELECT d.*,u.name as user_name,u.email,
     (SELECT COALESCE(SUM(amount),0) FROM dealer_commissions WHERE dealer_id=d.id AND status='paid') as total_paid,
     (SELECT COALESCE(SUM(amount),0) FROM dealer_commissions WHERE dealer_id=d.id AND status='pending') as pending_amount,
     (SELECT COALESCE(SUM(amount),0) FROM dealer_payout_requests WHERE dealer_id=d.id AND status='pending') as pending_payout
-    FROM dealers d JOIN users u ON d.user_id=u.id WHERE $wsql ORDER BY d.created_at DESC LIMIT $per OFFSET $offset");
+    FROM dealers d LEFT JOIN users u ON d.user_id=u.id WHERE $wsql ORDER BY d.created_at DESC LIMIT $per OFFSET $offset");
 $q->execute($params); $dealers=$q->fetchAll(PDO::FETCH_ASSOC);
 
 // Summary stats

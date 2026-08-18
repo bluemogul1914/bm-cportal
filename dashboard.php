@@ -16,24 +16,31 @@ $last_login_formatted = date('l \a\t g:i A', strtotime($last_login));
 try {
     $pdo = getDB();
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM tickets WHERE client_id = ? AND status != 'closed'");
+    // Resolve the client linked to this user (same pattern as billing.php).
+    // Data (tickets/invoices/subscriptions) is keyed by clients.id, NOT users.id.
+    $stmt = $pdo->prepare("SELECT id FROM clients WHERE user_id = ?");
     $stmt->execute([$user_id]);
+    $client = $stmt->fetch(PDO::FETCH_ASSOC);
+    $client_id = $client ? (int)$client['id'] : (int)$user_id;
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM tickets WHERE client_id = ? AND status != 'closed'");
+    $stmt->execute([$client_id]);
     $tickets_count = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
 
     $stmt = $pdo->prepare("SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total FROM invoices WHERE client_id = ? AND status = 'unpaid'");
-    $stmt->execute([$user_id]);
+    $stmt->execute([$client_id]);
     $invoice_data = $stmt->fetch(PDO::FETCH_ASSOC);
     $invoices_count = $invoice_data['count'];
     $invoices_total = $invoice_data['total'];
 
     $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM subscriptions WHERE client_id = ? AND status = 'active'");
-    $stmt->execute([$user_id]);
+    $stmt->execute([$client_id]);
     $services_count = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
 
     $voip_count = 0;
     try {
         $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM client_voip_accounts WHERE client_id = ? AND status = 'active'");
-        $stmt->execute([$user_id]);
+        $stmt->execute([$client_id]);
         $voip_count = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
     } catch (PDOException $e) {
         // table may not exist
@@ -41,11 +48,11 @@ try {
     $services_count += $voip_count;
 
     $stmt = $pdo->prepare("SELECT * FROM tickets WHERE client_id = ? AND status != 'closed' ORDER BY created_at DESC LIMIT 5");
-    $stmt->execute([$user_id]);
+    $stmt->execute([$client_id]);
     $recent_tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $stmt = $pdo->prepare("SELECT * FROM invoices WHERE client_id = ? AND status = 'unpaid' ORDER BY due_date ASC LIMIT 5");
-    $stmt->execute([$user_id]);
+    $stmt->execute([$client_id]);
     $unpaid_invoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $stmt = $pdo->prepare("
@@ -56,7 +63,7 @@ try {
         ORDER BY s.created_at DESC 
         LIMIT 6
     ");
-    $stmt->execute([$user_id]);
+    $stmt->execute([$client_id]);
     $active_services = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $stmt = $pdo->prepare("SELECT * FROM notifications WHERE user_id = ? AND is_read = false ORDER BY created_at DESC LIMIT 10");

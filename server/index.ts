@@ -1068,10 +1068,14 @@ async function handleLogin(req: Request, res: Response) {
     console.log(`[LOGIN] success for ${email} (id=${user.id}, admin=${user.is_admin})`);
 
     req.session.save(() => {
+      const role = user.role || 'user';
+      let redirect = 'dashboard.php';
+      if (role === 'dealer') redirect = 'dealer-dashboard.php';
+      else if (Boolean(user.is_admin)) redirect = 'admin-dashboard.php';
       res.json({
         success: true,
         message: 'Login successful!',
-        redirect: 'dashboard.php',
+        redirect,
         user: {
           id: user.id,
           name: user.name,
@@ -1094,7 +1098,7 @@ app.use("/uploads", express.static(join(projectRoot, "uploads")));
 // ═══════════════════════════════════════════════════════════════
 
 import multer from "multer";
-import { existsSync, mkdirSync, unlinkSync, statSync } from "fs";
+import { existsSync, mkdirSync, unlinkSync, statSync, readFileSync } from "fs";
 
 const uploadsDir = join(projectRoot, "uploads");
 if (!existsSync(uploadsDir)) {
@@ -1307,7 +1311,21 @@ app.post("/api/upload/avatar", avatarUploader.single("avatar"), async (req, res)
   if (!file) return res.status(400).json({ error: "No file uploaded" });
   try {
     const relPath = `uploads/avatars/${file.filename}`;
-    await webhookPool.query("UPDATE users SET avatar_path = $1 WHERE id = $2", [relPath, sess.user_id]);
+    // Persist the image in the DB (Neon) so it survives container recreation
+    // (/app/uploads is an ephemeral layer). We read the written file back and
+    // store a data-URI; profile.php renders avatar_data first, file second.
+    let avatarData: string | null = null;
+    try {
+      const abs = join(avatarsUploadDir, file.filename);
+      if (existsSync(abs)) {
+        const buf = readFileSync(abs);
+        const mime = file.mimetype || "image/jpeg";
+        avatarData = `data:${mime};base64,${buf.toString("base64")}`;
+      }
+    } catch (readErr: any) {
+      console.error("Avatar read-back error:", readErr?.message);
+    }
+    await webhookPool.query("UPDATE users SET avatar_path = $1, avatar_data = $2 WHERE id = $3", [relPath, avatarData, sess.user_id]);
     if ((req.session as any).portalUser) {
       (req.session as any).portalUser.avatar_path = relPath;
     }
@@ -2779,6 +2797,13 @@ async function bootstrapPortalDatabase() {
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phones     JSONB DEFAULT '[]'::jsonb`);
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS emails     JSONB DEFAULT '[]'::jsonb`);
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS social_links JSONB DEFAULT '[]'::jsonb`);
+    // Help Center (help.php) + admin-knowledge.php read/write is_published & view_count.
+    // The original CREATE used status/views; add the canonical columns idempotently.
+    await webhookPool.query(`ALTER TABLE knowledge_articles ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT false`);
+    await webhookPool.query(`ALTER TABLE knowledge_articles ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0`);
+    // Profile avatar stores the image as a data-URI in the DB (Neon) so it survives
+    // container recreation — /app/uploads is an ephemeral layer (no volume mount).
+    await webhookPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_data TEXT`);
     // New Organisation fields for crm_companies
     await webhookPool.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS tags         TEXT[]`);
     await webhookPool.query(`ALTER TABLE crm_companies ADD COLUMN IF NOT EXISTS phones       JSONB DEFAULT '[]'::jsonb`);
