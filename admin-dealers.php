@@ -29,9 +29,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_commission'])
 // Mark payout paid
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_paid'])) {
     $pid = (int)$_POST['payout_id'];
-    $pdo->prepare("UPDATE dealer_payout_requests SET status='paid' WHERE id=?")->execute([$pid]);
+    $pdo->prepare("UPDATE dealer_payout_requests SET status='paid' WHERE id=?" )->execute([$pid]);
     // Also mark related commissions as paid
     $success = 'Payout marked as paid.';
+}
+// Add dealer directly from the admin dashboard
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_dealer'])) {
+    require_csrf();
+    $full_name = trim($_POST['full_name'] ?? '');
+    $email     = trim($_POST['email'] ?? '');
+    $company   = trim($_POST['company'] ?? '');
+    $phone     = trim($_POST['phone'] ?? '');
+    $tier      = in_array($_POST['tier'] ?? '', ['base','silver','gold']) ? $_POST['tier'] : 'base';
+    if (!$full_name || !$email) {
+        $error = 'Name and email are required to add a dealer.';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error = 'Please enter a valid email address.';
+    } else {
+        try {
+            $check = $pdo->prepare("SELECT id FROM dealers WHERE email=? LIMIT 1");
+            $check->execute([$email]);
+            if ($check->fetch()) {
+                $error = 'A dealer with that email already exists.';
+            } else {
+                $dealer_code = 'DLR-' . str_pad(random_int(10000,99999),5,'0',STR_PAD_LEFT);
+                $pdo->prepare(
+                    "INSERT INTO dealers (dealer_code, referral_code, full_name, email, phone, company, status, tier, created_at)
+                     VALUES (?,?,?,?,?,?,?,'active',?,NOW())"
+                )->execute([$dealer_code, $dealer_code, $full_name, $email, $phone ?: null, $company ?: null, $tier]);
+                $success = "Dealer added ($dealer_code).";
+            }
+        } catch (PDOException $e) {
+            $error = 'Failed to add dealer: ' . $e->getMessage();
+        }
+    }
+}
+// Delete dealer (cascades to orders, commissions, payouts, and linked user via FK)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_dealer'])) {
+    require_csrf();
+    $did = (int)$_POST['dealer_id'];
+    if ($did <= 0) { $error = 'Invalid dealer.'; }
+    else {
+        try {
+            $pdo->prepare("DELETE FROM dealers WHERE id=?")->execute([$did]);
+            $success = 'Dealer deleted.';
+        } catch (PDOException $e) {
+            $error = 'Failed to delete dealer: ' . $e->getMessage();
+        }
+    }
 }
 
 $search = trim($_GET['q'] ?? '');
@@ -85,15 +130,65 @@ $status_badge = ['active'=>'bg-green-100 text-green-800','pending'=>'bg-yellow-1
             <p class="text-xs text-gray-400">Admin /</p>
             <h1 class="text-2xl font-semibold text-gray-900"><i class="fas fa-handshake text-blue-600 mr-2"></i>Partner Dealers</h1>
         </div>
-        <a href="dealer-register.php" target="_blank" class="border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium px-4 py-2 rounded-lg transition flex items-center gap-2">
-            <i class="fas fa-external-link-alt text-blue-500"></i> Dealer Registration Page
-        </a>
+        <div class="flex items-center gap-3">
+            <button type="button" onclick="document.getElementById('add-dealer-modal').classList.remove('hidden')" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition flex items-center gap-2" data-testid="button-add-dealer">
+                <i class="fas fa-plus"></i> Add Dealer
+            </button>
+            <a href="dealer-register.php" target="_blank" class="border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium px-4 py-2 rounded-lg transition flex items-center gap-2">
+                <i class="fas fa-external-link-alt text-blue-500"></i> Dealer Registration Page
+            </a>
+        </div>
     </div>
 </header>
 
 <div class="p-6 space-y-6">
 
+<!-- Add Dealer modal -->
+<div id="add-dealer-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-40 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">Add Dealer</h3>
+            <button type="button" onclick="document.getElementById('add-dealer-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+        </div>
+        <form method="post" class="space-y-3">
+            <?= csrf_field() ?>
+            <input type="hidden" name="add_dealer" value="1">
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Full Name *</label>
+                <input type="text" name="full_name" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" data-testid="input-add-full-name">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Email *</label>
+                <input type="email" name="email" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" data-testid="input-add-email">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Company</label>
+                    <input type="text" name="company" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" data-testid="input-add-company">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                    <input type="text" name="phone" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" data-testid="input-add-phone">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Tier</label>
+                <select name="tier" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" data-testid="select-add-tier">
+                    <option value="base">Base</option>
+                    <option value="silver">Silver</option>
+                    <option value="gold">Gold</option>
+                </select>
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+                <button type="button" onclick="document.getElementById('add-dealer-modal').classList.add('hidden')" class="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm">Cancel</button>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium" data-testid="button-submit-add-dealer"><i class="fas fa-plus mr-1"></i>Add Dealer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <?php if ($success): ?><div class="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3 text-green-800" data-testid="alert-success"><i class="fas fa-check-circle text-green-500"></i><?= htmlspecialchars($success) ?></div><?php endif; ?>
+<?php if ($error): ?><div class="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3 text-red-800" data-testid="alert-error"><i class="fas fa-exclamation-triangle text-red-500"></i><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
 <!-- Stats -->
 <div class="grid grid-cols-3 gap-4">
@@ -247,7 +342,15 @@ $status_badge = ['active'=>'bg-green-100 text-green-800','pending'=>'bg-yellow-1
                     </form>
                 </td>
                 <td class="px-5 py-3">
-                    <a href="admin-dealer-detail.php?id=<?= $d['id'] ?>" class="text-blue-600 hover:underline text-xs font-medium" data-testid="link-view-dealer-<?= $d['id'] ?>"><i class="fas fa-eye mr-1"></i>View</a>
+                    <div class="flex items-center gap-3">
+                        <a href="admin-dealer-detail.php?id=<?= $d['id'] ?>" class="text-blue-600 hover:underline text-xs font-medium" data-testid="link-view-dealer-<?= $d['id'] ?>"><i class="fas fa-eye mr-1"></i>View/Edit</a>
+                        <form method="post" class="inline" onsubmit="return confirm('Delete this dealer and all their orders/commissions/payouts?');">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="delete_dealer" value="1">
+                                                    <input type="hidden" name="dealer_id" value="<?= $d['id'] ?>">
+                                                    <button type="submit" class="text-red-600 hover:underline text-xs font-medium" data-testid="button-delete-dealer-<?= $d['id'] ?>"><i class="fas fa-trash mr-1"></i>Delete</button>
+                                                </form>
+                    </div>
                 </td>
             </tr>
             <?php endforeach; ?>
