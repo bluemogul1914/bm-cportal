@@ -2283,7 +2283,7 @@ app.post("/api/ollama/settings", express.json(), async (req, res) => {
 app.get("/api/anythingllm/settings", async (_req, res) => {
   try {
     const { rows } = await webhookPool.query(
-      `SELECT setting_value FROM system_settings WHERE setting_key IN ('anythingllm_url','anythingllm_api_key','anythingllm_workspace','anythingllm_enabled')`
+      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('anythingllm_url','anythingllm_api_key','anythingllm_workspace','anythingllm_enabled')`
     );
     const s: Record<string, string> = {};
     for (const r of rows) s[r.setting_key] = r.setting_value;
