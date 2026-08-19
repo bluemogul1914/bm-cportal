@@ -715,7 +715,7 @@ app.post("/portal/admin/:file", (req, res) => {
 // GET /api/frontier/health  — connectivity check
 // POST /api/frontier/receive — inbound SOAP ASR status callback
 // POST /api/frontier/preorder — address availability check
-const FRONTIER_PHP_FILES = ["receive.php", "health.php", "preorder.php"];
+const FRONTIER_PHP_FILES = ["receive.php", "health.php", "preorder.php", "send.php"];
 const frontierPhpName = (p: string) => p.endsWith(".php") ? p : `${p}.php`;
 
 app.get("/api/frontier/:file", (req, res) => {
