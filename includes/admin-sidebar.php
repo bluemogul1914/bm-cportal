@@ -159,11 +159,6 @@
                     <span>Frontier ASR</span>
                 </a>
 
-                <a href="admin-enom.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-enom.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-enom">
-                    <i class="fas fa-globe w-5 text-violet-400"></i>
-                    <span>Enom Domains</span>
-                </a>
-
                 <a href="admin-resellerclub.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-resellerclub.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-resellerclub">
                     <i class="fas fa-store w-5 text-sky-400"></i>
                     <span>ResellerClub</span>
@@ -189,11 +184,6 @@
                     <span>ITFlow</span>
                 </a>
 
-                <a href="admin-uisp.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-uisp.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
-                    <i class="fas fa-wifi w-5"></i>
-                    <span>UISP</span>
-                </a>
-
                 <a href="admin-voip.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-voip.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                     <i class="fas fa-phone w-5"></i>
                     <span>VoIP.ms</span>
@@ -209,19 +199,14 @@
                     <span>Stripe</span>
                 </a>
 
-                <a href="admin-xero.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-xero.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-xero">
-                    <svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 512 512" fill="none"><circle cx="256" cy="256" r="256" fill="#13B5EA"/><path d="M256 151c-57.9 0-105 47.1-105 105s47.1 105 105 105 105-47.1 105-105-47.1-105-105-105zm0 172.5c-37.2 0-67.5-30.3-67.5-67.5s30.3-67.5 67.5-67.5 67.5 30.3 67.5 67.5-30.3 67.5-67.5 67.5z" fill="white"/></svg>
-                    <span>Xero</span>
-                </a>
-
-                <a href="admin-vultr.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-vultr.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-vultr">
-                    <i class="fas fa-cloud w-5"></i>
-                    <span>Vultr Cloud</span>
-                </a>
-
                 <a href="admin-hostwinds.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-hostwinds.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-hostwinds">
                     <i class="fas fa-server w-5 text-cyan-400"></i>
                     <span>Hostwinds Cloud</span>
+                </a>
+
+                <a href="admin-hetzner.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-hetzner.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-hetzner">
+                    <i class="fas fa-database w-5 text-orange-400"></i>
+                    <span>Hetzner</span>
                 </a>
 
             </div>

@@ -5,6 +5,26 @@ $pdo = getDB();
 require_once 'includes/leads-db-bootstrap.php';
 try { leads_bootstrap($pdo); } catch (Exception $e) {}
 
+$create_msg = '';
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'create_quote') {
+    $lead_id       = (int)($_POST['lead_id'] ?? 0);
+    $total         = (float)($_POST['total'] ?? 0);
+    $doc_date      = $_POST['document_date'] ?? date('Y-m-d');
+    $valid_until   = trim($_POST['valid_until'] ?? '');
+    $note          = trim($_POST['note'] ?? '');
+    if ($lead_id > 0) {
+        $qnum = 'Q-' . date('Ymd') . '-' . strtoupper(substr(md5(uniqid()), 0, 4));
+        try {
+            $stmt = $pdo->prepare("INSERT INTO lead_quotes (lead_id, quote_number, status, document_date, valid_until, deal_value, note, items, total_without_tax, tax_amount, total, created_at) VALUES (?,?, 'new', ?, ?, ?, ?, '[]', ?, 0, ?, NOW())");
+            $stmt->execute([$lead_id, $qnum, $doc_date, $valid_until !== '' ? $valid_until : null, $total, $note, $total, $total]);
+            portal_redirect('admin-leads-quotes.php?created=1');
+        } catch (Exception $e) {
+            $create_msg = 'Error: ' . $e->getMessage();
+        }
+    }
+}
+$leads_for_form = $pdo->query("SELECT id, full_name, email FROM leads WHERE full_name IS NOT NULL AND full_name != '' ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
+
 $convert_msg = '';
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'convert_invoice') {
     $qid = (int)($_POST['quote_id'] ?? 0);
@@ -118,6 +138,45 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
 </header>
 
 <div class="p-6 space-y-6">
+
+<?php if (isset($_GET['created'])): ?>
+    <div class="p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">Quote created.</div>
+<?php endif; ?>
+<?php if ($create_msg): ?>
+    <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"><?= htmlspecialchars($create_msg) ?></div>
+<?php endif; ?>
+
+<div class="bg-white rounded-lg border border-gray-200">
+    <div class="px-5 py-3 border-b border-gray-100">
+        <h2 class="text-sm font-semibold text-gray-800 flex items-center gap-2"><i class="fas fa-plus text-blue-500 text-xs"></i> New Quote</h2>
+    </div>
+    <form method="POST" class="px-5 py-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+        <input type="hidden" name="action" value="create_quote">
+        <?= csrf_field() ?>
+        <div>
+            <label class="text-xs text-gray-500 mb-1 block">Lead</label>
+            <select name="lead_id" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+                <option value="">Select lead…</option>
+                <?php foreach ($leads_for_form as $ld): ?>
+                    <option value="<?= (int)$ld['id'] ?>"><?= htmlspecialchars($ld['full_name'] . ($ld['email'] ? ' — ' . $ld['email'] : '')) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div>
+            <label class="text-xs text-gray-500 mb-1 block">Total ($)</label>
+            <input type="number" step="0.01" min="0" name="total" required placeholder="0.00" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+        </div>
+        <div>
+            <label class="text-xs text-gray-500 mb-1 block">Document Date</label>
+            <input type="date" name="document_date" value="<?= date('Y-m-d') ?>" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+        </div>
+        <div>
+            <label class="text-xs text-gray-500 mb-1 block">Valid Until</label>
+            <input type="date" name="valid_until" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+        </div>
+        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Create Quote</button>
+    </form>
+</div>
 
 <div class="bg-white rounded-lg border border-gray-200">
     <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-4 flex-wrap">

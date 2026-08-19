@@ -311,12 +311,12 @@ export async function registerRoutes(
     const { clientId, subject, description, priority = "medium", assignedTo, source = "admin" } = req.body;
     if (!subject) return res.status(400).json({ error: "subject is required" });
     const slaDueAt = computeSlaDueAt(priority);
-    const [ticket] = await db.execute(
+    const createResult = await db.execute(
       sql`INSERT INTO tickets (client_id, subject, description, status, priority, assigned_to, source, sla_due_at, created_at, updated_at)
           VALUES (${clientId ?? null}, ${subject}, ${description ?? null}, 'open', ${priority}, ${assignedTo ?? null}, ${source}, ${slaDueAt.toISOString()}, NOW(), NOW())
           RETURNING *`
     );
-    res.status(201).json((ticket as any).rows?.[0] ?? ticket);
+    res.status(201).json(createResult.rows?.[0] ?? null);
   });
 
   app.get("/api/admin/tickets/:id", async (req, res) => {

@@ -45,7 +45,7 @@ async function initStripe() {
 
   try {
     console.log("Initializing Stripe schema...");
-    await runMigrations({ databaseUrl, schema: "stripe" });
+    await runMigrations({ databaseUrl, schema: "stripe" } as any);
     console.log("Stripe schema ready");
 
     const stripeSync = await getStripeSync();
@@ -173,7 +173,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-xero.php",
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-hetzner.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-xero.php",
   "dealer-register.php", "dealer-dashboard.php", "dealer-orders.php", "dealer-commissions.php",
   "dealer-customers.php", "dealer-customer-detail.php", "dealer-smtp.php", "dealer-payouts.php",
   "dealer-training.php", "dealer-profile.php", "dealer-spiffs.php",
@@ -444,12 +444,12 @@ async function performScrapeLookup(params: {
     await webhookPool.query(
       `UPDATE ${table} SET ${isLinkedIn ? "linkedin_url = COALESCE($1, linkedin_url)," : ""} linkedin_data = $2, updated_at = NOW() WHERE id = $3`,
       isLinkedIn
-        ? [urlToSave, JSON.stringify(profile), parseInt(params.entity_id)]
-        : [JSON.stringify(profile), parseInt(params.entity_id)]
+        ? [urlToSave, JSON.stringify(profile), parseInt(params.entity_id ?? '')]
+        : [JSON.stringify(profile), parseInt(params.entity_id ?? '')]
     ).catch(() =>
       webhookPool.query(
         `UPDATE ${table} SET linkedin_data = $1, updated_at = NOW() WHERE id = $2`,
-        [JSON.stringify(profile), parseInt(params.entity_id)]
+        [JSON.stringify(profile), parseInt(params.entity_id ?? '')]
       ).catch(() => {})
     );
   }
@@ -2793,6 +2793,8 @@ async function bootstrapPortalDatabase() {
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS title      VARCHAR(30)`);
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS job_title  VARCHAR(150)`);
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS website    VARCHAR(500)`);
+    await webhookPool.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS mrr NUMERIC(10,2) DEFAULT 0`);
+    await webhookPool.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS cancel_date DATE`);
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS tags       TEXT[]`);
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phones     JSONB DEFAULT '[]'::jsonb`);
     await webhookPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS emails     JSONB DEFAULT '[]'::jsonb`);
