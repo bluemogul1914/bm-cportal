@@ -310,10 +310,10 @@ body {
     transition: all 0.3s ease;
 }
 
-.form-control:focus {
+.form-control:focus-visible {
     outline: none;
     border-color: var(--blue-mogul-primary);
-    box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.1);
+    box-shadow: 0 0 0 3px rgba(82, 113, 253, 0.15);
 }
 
 .form-control:disabled {

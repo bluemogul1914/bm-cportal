@@ -31,9 +31,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     '<p>Hi ' . htmlspecialchars($user['name']) . ',</p>
                     <p>We received a request to reset your password. Click the button below to create a new password:</p>
                     <p style="text-align:center;margin:30px 0;">
-                        <a href="' . $reset_link . '" style="background-color:#1a56db;color:#ffffff;padding:12px 30px;border-radius:6px;text-decoration:none;font-weight:600;">Reset Password</a>
+                        <a href="' . $reset_link . '" style="background-color:#5271FD;color:#ffffff;padding:12px 30px;border-radius:6px;text-decoration:none;font-weight:600;">Reset Password</a>
                     </p>
-                    <p style="font-size:13px;color:#666;">This link expires in 48 hours. If you didn\'t request this, you can safely ignore this email.</p>'
+                    <p style="font-size:13px;color:#A0A0A0;">This link expires in 48 hours. If you didn\'t request this, you can safely ignore this email.</p>'
                 );
                 send_email($user['email'], 'Password Reset - Blue Mogul Portal', $body);
             }
@@ -56,14 +56,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="stylesheet" href="/assets/css/brand-design-system.css">
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
-                        'blue-mogul-primary': '#1a56db',
-                        'blue-mogul-secondary': '#0d1b3e',
-                        'blue-mogul-accent': '#3b82f6'
+                        'blue-mogul-primary': '#5271FD',
+                        'blue-mogul-secondary': '#0A0A0A',
+                        'blue-mogul-accent': '#5271FD',
+                        'blue-mogul-surface': '#111111',
+                        'blue-mogul-dim': '#A0A0A0',
+                        'blue-mogul-border': '#1A1A1A'
                     },
                     fontFamily: { 'inter': ['Inter', 'sans-serif'] }
                 }
@@ -71,7 +75,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
     </script>
 </head>
-<body class="font-inter min-h-screen bg-gradient-to-br from-blue-mogul-secondary via-blue-900 to-blue-mogul-primary flex items-center justify-center p-4">
+<body class="font-inter min-h-screen bg-[#0A0A0A] flex items-center justify-center p-4">
 
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
@@ -82,21 +86,21 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             <p class="text-blue-200 mt-2">Enter your email address and we'll send you a reset link</p>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-2xl p-8 mb-6">
+        <div class="bg-[#0A0A0A] rounded-2xl shadow-2xl p-8 mb-6">
 
             <?php if ($success_msg): ?>
-                <div class="bg-green-50 border border-green-200 text-green-800 p-4 rounded-lg mb-6" data-testid="alert-success">
+                <div class="bg-[#3ECF8E]/10 border border-[#3ECF8E]/30 text-[#3ECF8E] p-4 rounded-lg mb-6" data-testid="alert-success">
                     <div class="flex items-start">
-                        <i class="fas fa-check-circle text-green-600 mt-0.5 mr-3"></i>
+                        <i class="fas fa-check-circle text-[#3ECF8E] mt-0.5 mr-3"></i>
                         <p class="text-sm"><?php echo htmlspecialchars($success_msg); ?></p>
                     </div>
                 </div>
             <?php endif; ?>
 
             <?php if ($error_msg): ?>
-                <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-lg mb-6" data-testid="alert-error">
+                <div class="bg-[#E05A4E]/10 border border-[#E05A4E]/30 text-[#E05A4E] p-4 rounded-lg mb-6" data-testid="alert-error">
                     <div class="flex items-start">
-                        <i class="fas fa-exclamation-circle text-red-600 mt-0.5 mr-3"></i>
+                        <i class="fas fa-exclamation-circle text-[#E05A4E] mt-0.5 mr-3"></i>
                         <p class="text-sm"><?php echo htmlspecialchars($error_msg); ?></p>
                     </div>
                 </div>
@@ -106,10 +110,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 <form method="POST" action="/portal/forgot-password.php" data-testid="form-forgot-password">
                     <?= csrf_field() ?>
                     <div class="mb-6">
-                        <label for="email" class="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
+                        <label for="email" class="block text-sm font-semibold text-[#A0A0A0] mb-2">Email Address</label>
                         <div class="relative">
                             <span class="absolute inset-y-0 left-0 flex items-center pl-3">
-                                <i class="fas fa-envelope text-gray-400"></i>
+                                <i class="fas fa-envelope text-[#A0A0A0]"></i>
                             </span>
                             <input 
                                 type="email" 
@@ -117,7 +121,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                                 id="email"
                                 required
                                 placeholder="Enter your email address"
-                                class="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-mogul-primary focus:border-blue-mogul-primary transition-all text-gray-800"
+                                class="w-full pl-10 pr-4 py-3 border-2 border-[#1A1A1A] rounded-lg focus-visible:ring-2 focus-visible:ring-[#5271FD] focus-visible:border-[#5271FD] transition-all text-white bg-[#0A0A0A]"
                                 data-testid="input-email"
                                 value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>"
                             >
@@ -126,7 +130,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
                     <button 
                         type="submit" 
-                        class="w-full bg-blue-mogul-primary hover:bg-blue-mogul-accent text-white font-semibold py-3 rounded-lg transition-all duration-300 transform hover:scale-[1.02]"
+                        class="w-full bg-[#5271FD] hover:bg-[#6B8AFF] text-white font-semibold py-3 rounded-lg transition-all duration-300 transform hover:scale-[1.02]"
                         data-testid="button-submit"
                     >
                         <i class="fas fa-paper-plane mr-2"></i>
@@ -136,7 +140,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             <?php endif; ?>
 
             <div class="mt-6 text-center">
-                <a href="/portal" class="text-sm text-blue-mogul-primary hover:text-blue-mogul-accent transition-colors" data-testid="link-back-login">
+                <a href="/portal" class="text-sm text-[#5271FD] hover:text-[#6B8AFF] transition-colors" data-testid="link-back-login">
                     <i class="fas fa-arrow-left mr-1"></i>
                     Back to Login
                 </a>

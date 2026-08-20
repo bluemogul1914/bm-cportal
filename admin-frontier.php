@@ -414,7 +414,7 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                 <input type="hidden" name="tab" value="track">
                 <input type="text" name="q" value="<?php echo htmlspecialchars($filterSearch); ?>"
                     placeholder="Search PON, address, client…"
-                    class="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px] focus:outline-none focus:ring-2 focus:ring-orange-300" data-testid="input-track-search">
+                    class="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300" data-testid="input-track-search">
                 <div class="flex gap-1 flex-wrap">
                     <a href="?tab=track<?php echo $filterSearch ? '&q='.urlencode($filterSearch) : ''; ?>"
                        class="px-3 py-1.5 text-xs font-medium rounded-lg <?php echo !$filterStatus ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'; ?>">
@@ -708,23 +708,23 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                     <div class="mb-4">
                         <label class="block text-sm font-semibold text-gray-700 mb-1">Street Address</label>
                         <input type="text" name="address_line1" required placeholder="123 Main St" data-testid="input-preq-address"
-                               class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                               class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                     </div>
                     <div class="grid grid-cols-3 gap-4 mb-6">
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">City</label>
                             <input type="text" name="city" required placeholder="Houston" data-testid="input-preq-city"
-                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">State</label>
                             <input type="text" name="state" required placeholder="TX" maxlength="2" data-testid="input-preq-state"
-                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">ZIP</label>
                             <input type="text" name="zip" required placeholder="77001" data-testid="input-preq-zip"
-                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                         </div>
                     </div>
                     <button type="submit" data-testid="button-prequalify"
@@ -804,7 +804,7 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Client</label>
                             <?php $preselectedClientId = (int)($_GET['client_id'] ?? 0); ?>
-                            <select name="client_id" data-testid="select-client" class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                            <select name="client_id" data-testid="select-client" class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                                 <option value="">— Select client —</option>
                                 <?php foreach ($clients as $cl): ?>
                                     <option value="<?php echo $cl['id']; ?>" <?php echo $preselectedClientId === (int)$cl['id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($cl['company'] ?: $cl['name']); ?></option>
@@ -813,7 +813,7 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                         </div>
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Order Type</label>
-                            <select name="activity_code" data-testid="select-activity" class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                            <select name="activity_code" data-testid="select-activity" class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                                 <option value="N">New Service</option>
                                 <option value="C">Change</option>
                                 <option value="D">Disconnect</option>
@@ -826,13 +826,13 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Account Number</label>
                             <input type="text" name="account_number" placeholder="Frontier account #" data-testid="input-account-number"
-                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Desired Due Date</label>
                             <input type="date" name="desired_due_date" data-testid="input-due-date"
                                    min="<?php echo date('Y-m-d', strtotime('+5 days')); ?>"
-                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                         </div>
                     </div>
 
@@ -840,20 +840,20 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                     <div class="mb-4">
                         <label class="block text-sm font-semibold text-gray-700 mb-1">Service Address</label>
                         <input type="text" name="address_line1" required placeholder="Street address" data-testid="input-address"
-                               class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                               class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                     </div>
                     <div class="grid grid-cols-3 gap-4 mb-4">
                         <div>
                             <input type="text" name="city" required placeholder="City" data-testid="input-city"
-                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                         </div>
                         <div>
                             <input type="text" name="state" required placeholder="TX" maxlength="2" data-testid="input-state"
-                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                         </div>
                         <div>
                             <input type="text" name="zip" required placeholder="ZIP" data-testid="input-zip"
-                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 focus:outline-none">
+                                   class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:border-orange-400 focus-visible:outline-none">
                         </div>
                     </div>
 
