@@ -156,13 +156,17 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function setLoadingState(loading) {
         if (loading) {
-            submitBtn.classList.add('hidden');
-            loadingBtn.classList.remove('hidden');
+            submitBtn.style.opacity = '0';
+            submitBtn.style.pointerEvents = 'none';
+            loadingBtn.style.opacity = '1';
+            loadingBtn.style.pointerEvents = 'auto';
             emailInput.disabled = true;
             passwordInput.disabled = true;
         } else {
-            submitBtn.classList.remove('hidden');
-            loadingBtn.classList.add('hidden');
+            submitBtn.style.opacity = '1';
+            submitBtn.style.pointerEvents = 'auto';
+            loadingBtn.style.opacity = '0';
+            loadingBtn.style.pointerEvents = 'none';
             emailInput.disabled = false;
             passwordInput.disabled = false;
         }

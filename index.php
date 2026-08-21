@@ -160,27 +160,28 @@
                             </a>
                         </div>
 
-                        <button
-                            type="submit"
-                            id="submit-btn"
-                            data-testid="button-submit"
-                            aria-label="Sign in"
-                            class="w-full bg-[#5271FD] text-white font-semibold py-3 rounded-xl hover:bg-[#6B8AFF] transition-all duration-300 shadow-lg hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5271FD]/50 focus-visible:ring-offset-2"
-                        >
-                            <i class="fas fa-sign-in-alt mr-2"></i>
-                            Sign In
-                        </button>
-
-                        <button
-                            type="button"
-                            id="loading-btn"
-                            aria-label="Signing in, please wait"
-                            class="w-full bg-[#5271FD] text-white font-semibold py-3 rounded-xl hidden"
-                            disabled
-                        >
-                            <i class="fas fa-spinner fa-spin mr-2"></i>
-                            Signing in...
-                        </button>
+                        <div class="relative">
+                            <button
+                                type="submit"
+                                id="submit-btn"
+                                data-testid="button-submit"
+                                aria-label="Sign in"
+                                class="w-full bg-[#5271FD] text-white font-semibold py-3 rounded-xl hover:bg-[#6B8AFF] transition-all duration-300 shadow-lg hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5271FD]/50 focus-visible:ring-offset-2"
+                            >
+                                <i class="fas fa-sign-in-alt mr-2"></i>
+                                Sign In
+                            </button>
+                            <button
+                                type="button"
+                                id="loading-btn"
+                                aria-label="Signing in, please wait"
+                                class="w-full bg-[#5271FD] text-white font-semibold py-3 rounded-xl opacity-0 pointer-events-none absolute inset-0 transition-opacity duration-300"
+                                disabled
+                            >
+                                <i class="fas fa-spinner fa-spin mr-2"></i>
+                                Signing in...
+                            </button>
+                        </div>
 
                     </form>
 
