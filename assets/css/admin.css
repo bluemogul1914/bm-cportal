@@ -4,6 +4,55 @@
     transition: all 0.2s ease;
 }
 
+/* ==========================================================
+   BLUE MOGUL BRAND DESIGN SYSTEM — SITE-WIDE OVERRIDE LAYER
+   This is the single source of truth for the portal's scheme,
+   spacing, and alignment. Every admin page imports admin.css,
+   so these tokens propagate consistently across the whole site
+   and neutralize per-page inline dark overrides.
+   ========================================================== */
+:root {
+    --brand-primary: #5271FD;   /* Blue Mogul brand blue */
+    --brand-accent:  #3ECF8E;   /* Blue Mogul brand green */
+    --brand-ink:     #0A0A0A;   /* near-black text on white  */
+    --brand-gray:    #1A1A1A;   /* border/graphic gray       */
+    --brand-muted:   #A0A0A0;   /* muted text                */
+    --brand-bg:      #FFFFFF;   /* white page background     */
+}
+
+/* Consistent page background — force white, never dark */
+html body,
+body {
+    background-color: #FFFFFF !important;
+    color: #0A0A0A !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                 Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+/* Neutralize the legacy dark sidebar token (was #0d1b3e) */
+.bg-secondary { background-color: #5271FD !important; }
+.bg-primary   { background-color: #5271FD !important; }
+.bg-blue-mogul-primary    { background-color: #5271FD !important; }
+.bg-blue-mogul-secondary  { background-color: #0d1b3e !important; }
+.bg-blue-mogul-accent     { background-color: #3ECF8E !important; }
+.text-blue-mogul-primary  { color: #5271FD !important; }
+.text-primary             { color: #5271FD !important; }
+
+/* Neutralize any remaining #0A0A0A dark page backgrounds from
+   the 2026-08-20 brand-commits, forcing them back to white. */
+[class*="bg-\\[#0A0A0A\\]"] { background-color: #FFFFFF !important; }
+[class*="bg-\\[#1A1A1A\\]"] { background-color: #FFFFFF !important; }
+
+/* Consistent layout / container / spacing */
+.container, .container-fluid, .max-w-7xl, .max-w-6xl, .max-w-screen-xl,
+.main-content, .app-content, .content-wrapper, .dashboard-wrap {
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+}
+
+.admin-card {
+    background-color: #FFFFFF !important;
+}
 .admin-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);

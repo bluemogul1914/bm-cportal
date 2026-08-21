@@ -7,10 +7,10 @@
    CUSTOM PROPERTIES (CSS Variables)
    ================================= */
 :root {
-    /* Brand Colors */
-    --blue-mogul-primary: #1a56db;
+    /* Brand Colors — Blue Mogul design system (2026-08-21 sweep) */
+    --blue-mogul-primary: #5271FD;
     --blue-mogul-secondary: #0d1b3e;
-    --blue-mogul-accent: #3b82f6;
+    --blue-mogul-accent: #3ECF8E;
     
     /* Status Colors */
     --success: #10b981;
@@ -48,10 +48,46 @@
     box-sizing: border-box;
 }
 
+/* Consistent page background + spacing baseline (2026-08-21 sweep).
+   Unifies vertical rhythm across all pages and neutralizes per-page
+   dark backgrounds / loose spacing drift. */
+html { scroll-behavior: smooth; }
+
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    background-color: #ffffff;
+    color: #111827;
+}
+
+/* Consistent content container spacing — fixes per-page gap drift */
+.container, .container-fluid, .main-content, .app-content, .content-wrapper,
+.dashboard-wrap, .admin-content, .max-w-6xl, .max-w-7xl, .max-w-screen-xl {
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+}
+
+/* Consistent section spacing */
+.page-header, .content-header {
+    margin-bottom: 24px !important;
+}
+.page-title, .content-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 4px;
+}
+.page-subtitle {
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+/* Consistent card padding across pages */
+.admin-card, .card, .panel, .stat-card, .dashboard-card {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
 }
 
 /* =================================
