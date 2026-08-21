@@ -49,7 +49,7 @@
         .animate-delay-200 { animation-delay: 0.2s; }
     </style>
 </head>
-<body class="min-h-screen flex bg-[#0A0A0A] text-white font-sans">
+<body class="min-h-screen flex bg-white font-sans">
 
     <!-- Skip to content link for keyboard accessibility -->
     <a href="#login-form" class="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-50 focus-visible:bg-[#5271FD] focus-visible:text-white focus-visible:px-4 focus-visible:py-2 focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
@@ -57,7 +57,7 @@
     </a>
 
     <!-- Left panel — login form -->
-    <div class="w-full lg:w-1/2 flex flex-col min-h-screen bg-gradient-to-b from-blue-mogul-secondary to-blue-mogul-primary lg:bg-none lg:bg-[#0A0A0A]">
+    <div class="w-full lg:w-1/2 flex flex-col min-h-screen bg-gradient-to-b from-blue-mogul-secondary to-blue-mogul-primary lg:bg-none lg:bg-white">
 
         <!-- Mobile: top logo bar -->
         <div class="lg:hidden flex items-center justify-center pt-10 pb-4 px-8">
@@ -81,7 +81,7 @@
                 </div>
 
                 <!-- Card wrapper (desktop only visual card) -->
-                <div class="bg-[#0A0A0A] text-white lg:bg-[#0A0A0A] rounded-2xl shadow-none lg:shadow-xl p-0 lg:p-8 animate-fadeInUp animate-delay-100">
+                <div class="bg-white text-gray-900 lg:bg-white rounded-2xl shadow-none lg:shadow-xl p-0 lg:p-8 animate-fadeInUp animate-delay-100">
 
                     <!-- Error/Success Messages -->
                     <div id="message-container" class="mb-5 hidden">
@@ -107,7 +107,7 @@
                                 data-testid="input-email"
                                 aria-label="Email or username"
                                 aria-required="true"
-                                class="w-full px-4 py-3 border-2 border-[#1A1A1A] rounded-xl focus-visible:border-[#5271FD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5271FD]/30 transition-all text-white bg-[#0A0A0A] placeholder-[#A0A0A0]"
+                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus-visible:border-[#5271FD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5271FD]/30 transition-all text-gray-900 bg-white placeholder-gray-400"
                                 placeholder="your.email@example.com"
                                 autocomplete="username"
                             >
@@ -127,7 +127,7 @@
                                     data-testid="input-password"
                                     aria-label="Password"
                                     aria-required="true"
-                                    class="w-full px-4 py-3 border-2 border-[#1A1A1A] rounded-xl focus-visible:border-[#5271FD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5271FD]/30 transition-all text-white bg-[#0A0A0A] placeholder-[#A0A0A0] pr-12"
+                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus-visible:border-[#5271FD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5271FD]/30 transition-all text-gray-900 bg-white placeholder-gray-400 pr-12"
                                     placeholder="Enter your password"
                                     autocomplete="current-password"
                                 >
@@ -151,7 +151,7 @@
                                     id="remember"
                                     data-testid="input-remember"
                                     aria-label="Remember me"
-                                    class="w-4 h-4 text-[#5271FD] border-[#1A1A1A] rounded focus-visible:ring-[#5271FD]"
+                                    class="w-4 h-4 text-[#5271FD] border-gray-300 rounded focus-visible:ring-[#5271FD]"
                                 >
                                 <span class="ml-2 text-sm text-[#A0A0A0]">Remember me</span>
                             </label>
@@ -205,33 +205,34 @@
     </div>
 
     <!-- Right panel — brand visual (hidden on mobile, shown on lg+) -->
-    <div class="hidden lg:flex lg:w-1/2 relative flex-col overflow-hidden bg-gradient-to-br from-[#5271FD] via-[#0A0A0A] to-[#3ECF8E]">
-        <!-- Abstract brand pattern -->
-        <div class="absolute inset-0 opacity-20">
-            <div class="absolute top-1/4 left-1/4 w-64 h-64 bg-[#5271FD] rounded-full blur-3xl"></div>
-            <div class="absolute bottom-1/4 right-1/4 w-48 h-48 bg-[#3ECF8E] rounded-full blur-3xl"></div>
-            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-white rounded-full blur-3xl opacity-10"></div>
+        <div class="hidden lg:flex lg:w-1/2 relative flex-col overflow-hidden">
+            <img
+                src="/assets/img/blue-mogul-banner.png"
+                alt="Blue Mogul banner"
+                class="absolute inset-0 w-full h-full object-cover"
+            />
+            <div class="absolute inset-0 bg-blue-mogul-secondary/20"></div>
+            <!-- Text overlay -->
+            <div class="absolute bottom-0 left-0 right-0 p-8 bg-blue-mogul-secondary/85">
+                <p class="text-white text-sm font-semibold tracking-wider uppercase mb-2">Blue Mogul</p>
+                <p class="text-white text-3xl font-extrabold leading-tight mb-3">High Speed Internet</p>
+                <p class="text-white/80 text-sm font-medium tracking-wide italic break-words">Unparalleled coverage and no contractual obligations</p>
+            </div>
         </div>
-        <!-- Text overlay -->
-        <div class="absolute bottom-0 left-0 right-0 p-8 bg-[#0A0A0A]/85">
-            <p class="text-white text-sm font-semibold tracking-wider uppercase mb-2">Blue Mogul</p>
-            <p class="text-white text-3xl font-extrabold leading-tight mb-3">High Speed Internet</p>
-            <p class="text-[#A0A0A0] text-sm font-medium tracking-wide italic">Unparalleled coverage and no contractual obligations</p>
-        </div>
-    </div>
 
-    <!-- Mobile hero (visible below form, hidden on lg+) -->
-    <div class="lg:hidden w-full relative overflow-hidden h-[220px] bg-gradient-to-br from-[#5271FD] via-[#0A0A0A] to-[#3ECF8E]">
-        <!-- Abstract brand pattern -->
-        <div class="absolute inset-0 opacity-20">
-            <div class="absolute top-1/4 left-1/4 w-32 h-32 bg-[#5271FD] rounded-full blur-2xl"></div>
-            <div class="absolute bottom-1/4 right-1/4 w-24 h-24 bg-[#3ECF8E] rounded-full blur-2xl"></div>
+        <!-- Mobile hero (visible below form, hidden on lg+) -->
+        <div class="lg:hidden w-full relative overflow-hidden" style="height: 220px;">
+            <img
+                src="/assets/img/blue-mogul-banner.png"
+                alt="Blue Mogul banner"
+                class="absolute inset-0 w-full h-full object-cover"
+            />
+            <div class="absolute inset-0 bg-blue-mogul-secondary/30"></div>
+            <div class="absolute bottom-0 left-0 right-0 p-6 bg-blue-mogul-secondary/85">
+                <p class="text-white text-lg font-extrabold leading-tight">High Speed Internet</p>
+                <p class="text-white/80 text-xs font-medium tracking-wide italic break-words">Unparalleled coverage and no contractual obligations</p>
+            </div>
         </div>
-        <div class="absolute bottom-0 left-0 right-0 p-6 bg-[#0A0A0A]/85">
-            <p class="text-white text-lg font-extrabold leading-tight">High Speed Internet</p>
-            <p class="text-[#A0A0A0] text-xs font-medium tracking-wide italic">Unparalleled coverage and no contractual obligations</p>
-        </div>
-    </div>
 
     <script src="/assets/js/login.js"></script>
     <script>
