@@ -519,7 +519,7 @@ body#login-page {
 }
 body#login-page h1,
 body#login-page p {
-    color: #0A0A0A;
+    color: #ffffff;
 }
 
 /* The skip link uses Tailwind `sr-only` (--falls back to literally visible
@@ -539,7 +539,7 @@ body#login-page a[href="#login-form"] {
 }
 
 /* Default = mobile layout: stacked, banner hero below the form */
-#login-left      { width: 100%; }
+#login-left      { width: 100%; background: #052a52; }
 #login-right     { display: none; }
 #login-mobiletop { display: flex; justify-content: center; padding: 40px 32px 16px; }
 #login-mobiletop img { height: 48px; }

@@ -56,7 +56,7 @@
     </a>
 
     <!-- Left panel — login form -->
-    <div id="login-left" class="w-full lg:w-1/2 flex flex-col min-h-screen bg-gradient-to-b from-blue-mogul-secondary to-blue-mogul-primary lg:bg-none lg:bg-white">
+    <div id="login-left" class="w-full lg:w-1/2 flex flex-col min-h-screen bg-[#052a52]">
 
         <!-- Mobile: top logo bar -->
         <div id="login-mobiletop" class="lg:hidden flex items-center justify-center pt-10 pb-4 px-8">
@@ -70,13 +70,13 @@
                 <div id="login-head-desktop" class="hidden lg:block text-center mb-8 animate-fadeInUp">
                     <img src="/assets/img/logo.png" alt="Blue Mogul" class="mx-auto mb-5 h-14">
                     <h1 class="text-3xl font-bold text-white mb-1">Welcome back</h1>
-                    <p class="text-[#A0A0A0] text-sm">Sign in to your client portal</p>
+                    <p class="text-white text-sm">Sign in to your client portal</p>
                 </div>
 
                 <!-- Mobile heading -->
                 <div id="login-head-mobile" class="lg:hidden text-center mb-8">
                     <h1 class="text-3xl font-bold text-white mb-1">Client Portal</h1>
-                    <p class="text-blue-200 text-sm">Unified MSP &amp; Fiber Services</p>
+                    <p class="text-white text-sm">Unified MSP &amp; Fiber Services</p>
                 </div>
 
                 <!-- Card wrapper (desktop only visual card) -->
@@ -189,12 +189,12 @@
 
                 <!-- Contact info -->
                 <div class="mt-6 text-center animate-fadeInUp animate-delay-200">
-                    <p class="text-xs text-[#A0A0A0] mb-2">Need help?</p>
+                    <p class="text-xs text-white mb-2">Need help?</p>
                     <div class="flex items-center justify-center gap-5">
-                        <a href="tel:3463095514" class="text-xs text-[#A0A0A0] hover:text-[#5271FD] transition-colors">
+                        <a href="tel:3463095514" class="text-xs text-white hover:text-blue-200 transition-colors">
                             <i class="fas fa-phone mr-1"></i>346-309-5514
                         </a>
-                        <a href="mailto:contact@bluemogul.biz" class="text-xs text-[#A0A0A0] hover:text-[#5271FD] transition-colors">
+                        <a href="mailto:contact@bluemogul.biz" class="text-xs text-white hover:text-blue-200 transition-colors">
                             <i class="fas fa-envelope mr-1"></i>contact@bluemogul.biz
                         </a>
                     </div>
