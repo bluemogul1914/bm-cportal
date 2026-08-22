@@ -1,0 +1,5 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Brand override layer (see admin.css) — keep whitespace consistent */

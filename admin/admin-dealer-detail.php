@@ -180,7 +180,7 @@ $current_page = basename(__FILE__);
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous">
-  <script src="https://cdn.tailwindcss.com?v=3"></script>
+  <link rel="stylesheet" href="/assets/css/tailwind.css">
   <style>
     <?php include __DIR__ . '/../includes/admin-styles.css.php'; ?>
   </style>

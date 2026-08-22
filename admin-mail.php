@@ -393,7 +393,7 @@ $mb_info = $view_mailbox !== 'all' ? ($MAILBOXES[$view_mailbox] ?? null) : null;
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?= $mb_info ? htmlspecialchars($mb_info['label']).' Mail' : 'All Mail' ?> | Blue Mogul Admin</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="/assets/css/tailwind.css">
     <link rel="stylesheet" href="/assets/css/style.css">
     <link rel="stylesheet" href="/assets/css/admin.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">

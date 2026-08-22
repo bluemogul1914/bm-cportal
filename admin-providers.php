@@ -358,7 +358,7 @@ function fmtBalance($b, $currency = '$') {
 <head>
 <meta charset="UTF-8">
 <title>Provider Accounts – Blue Mogul Admin</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="/assets/css/tailwind.css">
     <link rel="stylesheet" href="/assets/css/style.css">
     <link rel="stylesheet" href="/assets/css/admin.css">
 <style>
