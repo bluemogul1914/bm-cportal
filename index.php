@@ -9,6 +9,7 @@
     <link rel="icon" type="image/png" href="/client/public/favicon.png">
     
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/assets/css/tailwind.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/css/style.css">
@@ -49,7 +50,7 @@
         .animate-delay-200 { animation-delay: 0.2s; }
     </style>
 </head>
-<body class="min-h-screen flex bg-white font-sans">
+<body id="login-page" class="min-h-screen flex bg-white font-sans">
 
     <!-- Skip to content link for keyboard accessibility -->
     <a href="#login-form" class="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-50 focus-visible:bg-[#5271FD] focus-visible:text-white focus-visible:px-4 focus-visible:py-2 focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
@@ -57,25 +58,25 @@
     </a>
 
     <!-- Left panel — login form -->
-    <div class="w-full lg:w-1/2 flex flex-col min-h-screen bg-gradient-to-b from-blue-mogul-secondary to-blue-mogul-primary lg:bg-none lg:bg-white">
+    <div id="login-left" class="w-full lg:w-1/2 flex flex-col min-h-screen bg-gradient-to-b from-blue-mogul-secondary to-blue-mogul-primary lg:bg-none lg:bg-white">
 
         <!-- Mobile: top logo bar -->
-        <div class="lg:hidden flex items-center justify-center pt-10 pb-4 px-8">
+        <div id="login-mobiletop" class="lg:hidden flex items-center justify-center pt-10 pb-4 px-8">
             <img src="/assets/img/logo.png" alt="Blue Mogul" class="h-12 drop-shadow-lg">
         </div>
 
-        <div class="flex-1 flex flex-col items-center justify-center px-8 py-10">
+        <div id="login-center" class="flex-1 flex flex-col items-center justify-center px-8 py-10">
             <div class="w-full max-w-md">
 
                 <!-- Desktop: logo + heading -->
-                <div class="hidden lg:block text-center mb-8 animate-fadeInUp">
+                <div id="login-head-desktop" class="hidden lg:block text-center mb-8 animate-fadeInUp">
                     <img src="/assets/img/logo.png" alt="Blue Mogul" class="mx-auto mb-5 h-14">
                     <h1 class="text-3xl font-bold text-white mb-1">Welcome back</h1>
                     <p class="text-[#A0A0A0] text-sm">Sign in to your client portal</p>
                 </div>
 
                 <!-- Mobile heading -->
-                <div class="lg:hidden text-center mb-8">
+                <div id="login-head-mobile" class="lg:hidden text-center mb-8">
                     <h1 class="text-3xl font-bold text-white mb-1">Client Portal</h1>
                     <p class="text-blue-200 text-sm">Unified MSP &amp; Fiber Services</p>
                 </div>
@@ -206,7 +207,7 @@
     </div>
 
     <!-- Right panel — brand visual (hidden on mobile, shown on lg+) -->
-        <div class="hidden lg:flex lg:w-1/2 relative flex-col overflow-hidden">
+        <div id="login-right" class="hidden lg:flex lg:w-1/2 relative flex-col overflow-hidden">
             <img
                 src="/assets/img/blue-mogul-banner.png"
                 alt="Blue Mogul banner"
@@ -222,7 +223,7 @@
         </div>
 
         <!-- Mobile hero (visible below form, hidden on lg+) -->
-        <div class="lg:hidden w-full relative overflow-hidden" style="height: 220px;">
+        <div id="login-mobile-hero" class="lg:hidden w-full relative overflow-hidden" style="height: 220px;">
             <img
                 src="/assets/img/blue-mogul-banner.png"
                 alt="Blue Mogul banner"
