@@ -48,7 +48,7 @@
         .animate-delay-200 { animation-delay: 0.2s; }
     </style>
 </head>
-<body id="login-page" class="min-h-screen flex bg-white font-sans">
+<body id="login-page" class="min-h-screen flex flex-wrap bg-white font-sans">
 
     <!-- Skip to content link for keyboard accessibility -->
     <a href="#login-form" class="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-50 focus-visible:bg-[#5271FD] focus-visible:text-white focus-visible:px-4 focus-visible:py-2 focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
