@@ -2143,6 +2143,58 @@ app.post("/api/webhook/create-invoice", express.json(), async (req, res) => {
 });
 
 // ── n8n: Create Lead ───────────────────────────────────────────
+// ── TwentyCRM: mirror a portal lead into a Twenty opportunity (Company → Person → Opportunity) ──
+// Post-match to crm_leads insert. Safe: never throws into the webhook path (logged only).
+async function syncLeadToTwenty(lead: {
+  name: string; email?: string|null; phone?: string|null; company?: string|null;
+  source?: string|null; status?: string|null; industry?: string|null; service_interest?: string|null; notes?: string|null;
+}): Promise<void> {
+  const key = process.env.TWENTY_CRM_API_KEY;
+  const url = process.env.TWENTY_API_URL || "https://twenty.bluemogul.us/mcp";
+  if (!key) return; // Twenty sync not configured — skip silently
+  try {
+    // MCP streamable-http tool call
+    const mcTool = async (name: string, args: any) => {
+      const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } });
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "Authorization": `Bearer ${key}` },
+        body,
+      });
+      const text = await resp.text();
+      // SSE response: parse the `data:` line; it's JSON: {result:{content:[{type:'text',text:'...'}]}}
+      const dataLine = text.split('\n').find((l: string) => l.startsWith('data: '));
+      if (dataLine) {
+        const envelope = JSON.parse(dataLine.slice(6));
+        const content = envelope?.result?.content?.[0]?.text || "";
+        try { return JSON.parse(content); } catch { return { raw: content }; }
+      }
+      return { text };
+    };
+    // 1. Company (reuse existing by name? simplest: create)
+    const companyRes: any = await mcTool("create_one_company", { name: lead.company || lead.name, position: "first" });
+    const companyId = companyRes?.success && companyRes?.result?.id ? companyRes.result.id : undefined;
+    // 2. Person
+    const personRes: any = await mcTool("create_one_person", {
+      name: { firstName: lead.name, lastName: "" },
+      emails: lead.email ? { primaryEmail: lead.email } : undefined,
+      phones: lead.phone ? { primaryPhoneNumber: lead.phone } : undefined,
+      companyId, position: "first",
+    });
+    const personId = personRes?.success && personRes?.result?.id ? personRes.result.id : undefined;
+    // 3. Opportunity (stage NEW, no amount)
+    await mcTool("create_one_opportunity", {
+      name: (lead.company ? `${lead.company} — ${lead.name}` : `${lead.name}`) + (lead.service_interest ? ` · ${lead.service_interest}` : ""),
+      stage: "NEW",
+      companyId, pointOfContactId: personId, position: "first",
+    });
+    console.log(`[twenty-sync] lead "${lead.name}" -> opportunity (company=${companyId}, person=${personId})`);
+  } catch (e: any) {
+    console.error("[twenty-sync] failed for lead:", lead.name, e.message);
+  }
+}
+
+// ── n8n: Create Lead (syncs to TwentyCRM) ─────────────────
 app.post("/api/webhook/create-lead", express.json(), async (req, res) => {
   if (!validateWebhookAuth(req, res)) return;
   try {
@@ -2153,6 +2205,8 @@ app.post("/api/webhook/create-lead", express.json(), async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW()) RETURNING id`,
       [name, email||null, phone||null, company||null, source||'n8n', status||'new', notes||null, industry||null, employee_count||null, service_interest||null, geography||null, lead_score||0, next_action_date||null]
     );
+    // Fire-and-forget Twenty sync (does not block the webhook response)
+    void syncLeadToTwenty({ name, email, phone, company, source, status, notes, industry, service_interest });
     res.json({ success: true, lead_id: r.rows[0].id });
   } catch (err: any) {
     console.error("Webhook create-lead error:", err);
