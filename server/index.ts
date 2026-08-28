@@ -2153,42 +2153,44 @@ async function syncLeadToTwenty(lead: {
   const url = process.env.TWENTY_API_URL || "https://twenty.bluemogul.us/mcp";
   if (!key) return; // Twenty sync not configured — skip silently
   try {
-    // MCP streamable-http tool call
-    const mcTool = async (name: string, args: any) => {
-      const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } });
+    // Twenty's public MCP exposes CRUD indirectly via "execute_tool" (toolName + arguments).
+    const execTool = async (toolName: string, args: any): Promise<any> => {
+      const body = JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "tools/call",
+        params: { name: "execute_tool", arguments: { toolName, arguments: args } },
+      });
       const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "Authorization": `Bearer ${key}` },
         body,
       });
       const text = await resp.text();
-      // SSE response: parse the `data:` line; it's JSON: {result:{content:[{type:'text',text:'...'}]}}
-      const dataLine = text.split('\n').find((l: string) => l.startsWith('data: '));
-      if (dataLine) {
-        const envelope = JSON.parse(dataLine.slice(6));
-        const content = envelope?.result?.content?.[0]?.text || "";
-        try { return JSON.parse(content); } catch { return { raw: content }; }
+      // SSE: skip progress notifications; take the data: line carrying a result with content.
+      for (const line of text.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        const envelope = JSON.parse(line.slice(6));
+        const result = envelope?.result;
+        if (result && (result as any).content) {
+          const inner = (result as any).content?.[0]?.text || "";
+          try { return JSON.parse(inner); } catch { return { raw: inner }; }
+        }
       }
-      return { text };
+      return { raw: text.slice(0, 200) };
     };
-    // 1. Company (reuse existing by name? simplest: create)
-    const companyRes: any = await mcTool("create_one_company", { name: lead.company || lead.name, position: "first" });
-    const companyId = companyRes?.success && companyRes?.result?.id ? companyRes.result.id : undefined;
+
+    // 1. Company
+    const companyRes: any = await execTool("create_one_company", { name: lead.company || lead.name, position: "first" });
+    const companyId = companyRes?.result?.id;
     // 2. Person
-    const personRes: any = await mcTool("create_one_person", {
-      name: { firstName: lead.name, lastName: "" },
-      emails: lead.email ? { primaryEmail: lead.email } : undefined,
-      phones: lead.phone ? { primaryPhoneNumber: lead.phone } : undefined,
-      companyId, position: "first",
-    });
-    const personId = personRes?.success && personRes?.result?.id ? personRes.result.id : undefined;
-    // 3. Opportunity (stage NEW, no amount)
-    await mcTool("create_one_opportunity", {
-      name: (lead.company ? `${lead.company} — ${lead.name}` : `${lead.name}`) + (lead.service_interest ? ` · ${lead.service_interest}` : ""),
-      stage: "NEW",
-      companyId, pointOfContactId: personId, position: "first",
-    });
-    console.log(`[twenty-sync] lead "${lead.name}" -> opportunity (company=${companyId}, person=${personId})`);
+    const personArgs: any = { name: { firstName: lead.name, lastName: "" }, companyId, position: "first" };
+    if (lead.email) personArgs.emails = { primaryEmail: lead.email };
+    if (lead.phone) personArgs.phones = { primaryPhoneNumber: lead.phone };
+    const personRes: any = await execTool("create_one_person", personArgs);
+    const personId = personRes?.result?.id;
+    // 3. Opportunity (stage NEW)
+    const oppName = (lead.company ? `${lead.company} — ${lead.name}` : lead.name) + (lead.service_interest ? ` · ${lead.service_interest}` : "");
+    const oppRes: any = await execTool("create_one_opportunity", { name: oppName, stage: "NEW", companyId, pointOfContactId: personId, position: "first" });
+    console.log(`[twenty-sync] lead "${lead.name}" -> opportunity (company=${companyId}, person=${personId}, opp=${oppRes?.result?.id})`);
   } catch (e: any) {
     console.error("[twenty-sync] failed for lead:", lead.name, e.message);
   }
