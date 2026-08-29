@@ -178,7 +178,8 @@ const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashb
   "dealer-customers.php", "dealer-customer-detail.php", "dealer-smtp.php", "dealer-payouts.php",
   "dealer-training.php", "dealer-profile.php", "dealer-spiffs.php",
   "admin-dealers.php", "admin-dealer-detail.php",
-  "admin-client-contacts.php", "admin-client-assets.php"];
+  "admin-client-contacts.php", "admin-client-assets.php",
+  "admin-dandh.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -784,6 +785,11 @@ async function executeFrontierPost(filePath: string, req: Request, res: Response
 // Convenience redirect: bare /admin-frontier.php -> /portal/admin-frontier.php
 app.get("/admin-frontier.php", (req, res) => {
   res.redirect(302, "/portal/admin-frontier.php" + (req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""));
+});
+
+// Convenience redirect: bare /admin-dandh.php -> /portal/admin-dandh.php
+app.get("/admin-dandh.php", (req, res) => {
+  res.redirect(302, "/portal/admin-dandh.php" + (req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""));
 });
 // ── Phase 1 clean-URL aliases ─────────────────────────────────────────────
 app.get("/admin/tickets", (req, res) => {

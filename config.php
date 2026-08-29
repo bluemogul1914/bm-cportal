@@ -113,6 +113,18 @@ define('TRAVELSIM_UNAME',   getenv('TRAVELSIM_UNAME')   ?: '');
 define('TRAVELSIM_UPASS',   getenv('TRAVELSIM_UPASS')   ?: '');
 define('TRAVELSIM_API_URL', 'https://xml2.travelsim.com/tsim_xml/service/xmlgate');
 
+// D&H DISTRIBUTING (DandH) CONFIGURATION
+// ============================================
+// OAuth2 client-credentials grant against the D&H auth server.
+// NOTE: This is a distributor integration for D&H Distributing (dandh.com).
+// ============================================
+define('DANDH_CLIENT_ID',     getenv('DANDH_CLIENT_ID')     ?: '5b8c4293-d0db-4d1f-a6a1-eacb9c73e107');
+define('DANDH_CLIENT_SECRET', getenv('DANDH_CLIENT_SECRET') ?: '74947838-2c7a-47d0-bcff-ca9afbecfe65');
+define('DANDH_ACCOUNT_NUMBER', getenv('DANDH_ACCOUNT_NUMBER') ?: '3054540000');
+define('DANDH_API_URL',       getenv('DANDH_API_URL')       ?: 'https://test.api.dandh.com');   // test; use https://api.dandh.com for live
+define('DANDH_AUTH_URL',      getenv('DANDH_AUTH_URL')      ?: 'https://test.auth.dandh.com');  // test auth host; use https://auth.dandh.com for live
+define('DANDH_TENANT',        getenv('DANDH_TENANT')        ?: 'dhus');                        // dhus | dhca | dsc
+
 // RESELLERCLUB CONFIGURATION
 // ============================================
 define('RC_AUTH_USERID', getenv('RC_AUTH_USERID') ?: '');

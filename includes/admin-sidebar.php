@@ -209,6 +209,11 @@
                     <span>Hetzner</span>
                 </a>
 
+                <a href="admin-dandh.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-dandh.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-dandh">
+                    <i class="fas fa-truck w-5 text-orange-400"></i>
+                    <span>D&amp;H Distributing</span>
+                </a>
+
             </div>
         </div>
 
