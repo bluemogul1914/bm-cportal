@@ -17,7 +17,7 @@ import pg from "pg";
 import bcrypt from "bcryptjs";
 import connectPgSimple from "connect-pg-simple";
 
-import { getDhCredentials, getDhToken, dhRequest } from "./dh-api";
+import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInquiry, dhOrderTracking, dhSearchCatalog } from "./dh-api";
 
 const webhookPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 // Persistent session store backed by Neon Postgres so admin/dealer sessions
@@ -175,7 +175,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-hetzner.php", "admin-dh.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-xero.php",
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-hetzner.php", "admin-dh.php", "admin-dandh.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-xero.php",
   "dealer-register.php", "dealer-dashboard.php", "dealer-orders.php", "dealer-commissions.php",
   "dealer-customers.php", "dealer-customer-detail.php", "dealer-smtp.php", "dealer-payouts.php",
   "dealer-training.php", "dealer-profile.php", "dealer-spiffs.php",
@@ -2313,16 +2313,17 @@ app.post("/api/anythingllm/settings", express.json(), async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// D&H Customer Order Management API settings + connectivity
+// D&H Customer Order Management API — settings, search, price, tracking
 app.get("/api/dh/settings", async (_req, res) => {
   try {
     const raw = await webhookPool.query(
-      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('dh_client_id','dh_client_secret','dh_account')`
+      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('dh_client_id','dh_client_secret','dh_account','dh_env')`
     );
     const m: Record<string, string> = {};
     for (const r of raw.rows) m[r.setting_key] = r.setting_value;
     res.json({
       account: m.dh_account || "3054540000",
+      env: m.dh_env || "TEST",
       keySet: !!(m.dh_client_id && m.dh_client_secret),
     });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -2337,18 +2338,62 @@ app.post("/api/dh/settings", express.json(), async (req, res) => {
     if (req.body.client_id !== undefined) await upsert("dh_client_id", String(req.body.client_id));
     if (req.body.client_secret !== undefined) await upsert("dh_client_secret", String(req.body.client_secret));
     if (req.body.account !== undefined) await upsert("dh_account", String(req.body.account));
+    if (req.body.env !== undefined) await upsert("dh_env", String(req.body.env));
     res.json({ success: true });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// Test D&H connectivity: get token, then call /carriers (auth-only, no item needed)
+// Test D&H connectivity: get token, then call /carriers
 app.get("/api/dh/test", async (_req, res) => {
   try {
     const creds = await getDhCredentials(webhookPool);
     await getDhToken(creds);
     const carriers = await dhRequest(webhookPool, `/customers/${creds.account}/carriers`);
-    res.json({ ok: true, carriers });
+    res.json({ ok: true, env: creds.env, carriers });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Price & Availability for a specific item
+app.get("/api/dh/price-availability/:manufacturer/:itemNumber", async (req, res) => {
+  try {
+    const { manufacturer, itemNumber } = req.params;
+    const result = await dhPriceAvailability(webhookPool, manufacturer, itemNumber);
+    res.json(result);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Item inquiry
+app.get("/api/dh/item-inquiry/:manufacturer/:itemNumber", async (req, res) => {
+  try {
+    const { manufacturer, itemNumber } = req.params;
+    const result = await dhItemInquiry(webhookPool, manufacturer, itemNumber);
+    res.json(result);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Order tracking
+app.get("/api/dh/tracking", async (_req, res) => {
+  try {
+    const result = await dhOrderTracking(webhookPool);
+    res.json(result);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Catalog search — pages through items and filters by keyword
+app.post("/api/dh/search-items", express.json(), async (req, res) => {
+  try {
+    const { query, scrollId, maxPages = 5, pageSize = 200 } = req.body;
+    if (!query || typeof query !== "string" || !query.trim()) {
+      return res.status(400).json({ error: "Search query is required" });
+    }
+    const result = await dhSearchCatalog(webhookPool, query.trim(), { scrollId, maxPages, pageSize });
+    res.json(result);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Convenience redirect: /admin-dandh.php -> /portal/admin-dandh.php
+app.get("/admin-dandh.php", (req, res) => {
+  res.redirect(302, "/portal/admin-dandh.php" + (req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""));
 });
 
 app.get("/api/ollama/models", async (_req, res) => {

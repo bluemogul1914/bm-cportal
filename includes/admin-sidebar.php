@@ -209,9 +209,9 @@
                     <span>Hetzner</span>
                 </a>
 
-                <a href="admin-dh.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-dh.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-dh">
+                <a href="admin-dandh.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-dh.php','admin-dandh.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-dh">
                     <i class="fas fa-truck w-5 text-yellow-400"></i>
-                    <span>D&H API</span>
+                    <span>D&H Distributing</span>
                 </a>
 
             </div>

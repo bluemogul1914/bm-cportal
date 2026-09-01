@@ -204,6 +204,16 @@ define('UISP_URL', 'https://uisp.bluemogul.us');
 define('UISP_API_KEY', getenv('UISP_API_KEY') ?: '');
 
 // ============================================
+// D&H DISTRIBUTING CONFIGURATION
+// ============================================
+define('DH_ACCOUNT', '3054540000');
+define('DH_ENV', getenv('DH_ENV') ?: 'TEST');
+define('DH_AUTH_URL', 'https://auth.dandh.com/api/oauth/token');
+define('DH_API_URL_TEST', 'https://test.api.dandh.com/customerOrderManagement/v2');
+define('DH_API_URL_PROD', 'https://api.dandh.com/customerOrderManagement/v2');
+define('DH_TENANT', getenv('DH_TENANT') ?: 'dhus');
+
+// ============================================
 // VULTR CLOUD CONFIGURATION
 // ============================================
 define('VULTR_API_KEY', getenv('VULTR_API_KEY') ?: '');
