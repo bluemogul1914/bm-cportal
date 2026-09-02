@@ -209,6 +209,7 @@ define('UISP_API_KEY', getenv('UISP_API_KEY') ?: '');
 define('DH_ACCOUNT', '3054540000');
 define('DH_ENV', getenv('DH_ENV') ?: 'TEST');
 define('DH_AUTH_URL', 'https://auth.dandh.com/api/oauth/token');
+define('DH_AUTH_URL_TEST', 'https://test.auth.dandh.com/api/oauth/token');
 define('DH_API_URL_TEST', 'https://test.api.dandh.com/customerOrderManagement/v2');
 define('DH_API_URL_PROD', 'https://api.dandh.com/customerOrderManagement/v2');
 define('DH_TENANT', getenv('DH_TENANT') ?: 'dhus');

@@ -5,7 +5,8 @@
 //          https://api.dandh.com/customerOrderManagement/v2 (production)
 import type { Pool } from "pg";
 
-const TOKEN_URL = "https://auth.dandh.com/api/oauth/token";
+const PROD_TOKEN_URL = "https://auth.dandh.com/api/oauth/token";
+const TEST_TOKEN_URL = "https://test.auth.dandh.com/api/oauth/token";
 const PROD_BASE = "https://api.dandh.com/customerOrderManagement/v2";
 const TEST_BASE = "https://test.api.dandh.com/customerOrderManagement/v2";
 
@@ -41,12 +42,13 @@ export async function getDhCredentials(pool: Pool): Promise<DhCredentials> {
 
 export async function getDhToken(c: DhCredentials): Promise<string> {
   if (cachedToken && Date.now() < cachedToken.expiresAt) return cachedToken.value;
+  const tokenUrl = c.env === "PRODUCTION" ? PROD_TOKEN_URL : TEST_TOKEN_URL;
   const body = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: c.clientId,
     client_secret: c.clientSecret,
   });
-  const r = await fetch(TOKEN_URL, {
+  const r = await fetch(tokenUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),

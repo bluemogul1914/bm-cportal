@@ -34,7 +34,8 @@ function dh_curl_token($creds) {
         'client_id'     => $creds['dh_client_id'],
         'client_secret' => $creds['dh_client_secret'],
     ]);
-    $ch = curl_init(DH_AUTH_URL);
+    $authUrl = ($creds['dh_env'] ?? 'TEST') === 'PRODUCTION' ? DH_AUTH_URL : DH_AUTH_URL_TEST;
+    $ch = curl_init($authUrl);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 20,
