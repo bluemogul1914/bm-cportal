@@ -207,23 +207,52 @@ if ($_sessionData) {
 `;
   }
   if (csrfToken) {
-    code += `\n\$_SESSION['csrf_token'] = '${csrfToken.replace(/'/g, "\\'")}';`;
+    code += `\n\$_SESSION['csrf_token'] = '${csrfToken.replace(/'/g, "\\\\'")}';`;
   }
-  code += `\nregister_shutdown_function(function() { echo "\\n__CSRF_TOKEN__:" . (\$_SESSION['csrf_token'] ?? ''); });`;
+  const dhCart = (req.session as any)?.dhCart;
+  if (dhCart && typeof dhCart === "object") {
+    const escapedCart = JSON.stringify(dhCart).replace(/'/g, "\\'");
+    code += `\n\$_SESSION['dh_cart'] = json_decode('${escapedCart}', true) ?? [];`;
+  }
+  // Order matters: csrf echo first, cart second → stdout ends with the cart JSON.
+  code += `\nregister_shutdown_function(function() { echo "\n__CSRF_TOKEN__:" . (\$_SESSION['csrf_token'] ?? ''); });`;
+  code += `\nregister_shutdown_function(function() { echo "\n__DH_CART__:" . json_encode(\$_SESSION['dh_cart'] ?? []); });`;
   return code;
 }
 
+function extractDhCart(stdout: string, req: Request): string {
+  // Cart JSON is echoed last (after the CSRF token). Use indexOf + slice so
+  // spaces inside the JSON (e.g. descriptions) don't break the parse.
+  const marker = "\n__DH_CART__:";
+  const idx = stdout.indexOf(marker);
+  if (idx !== -1) {
+    const raw = stdout.slice(idx + marker.length).trim();
+    try {
+      const cart = JSON.parse(raw);
+      if (cart && typeof cart === "object") {
+        (req.session as any).dhCart = cart;
+        // Persist the cart into the DB-backed Node session so the NEXT
+        // request's PHP process gets it injected via buildSessionPhpCode.
+        (req.session as any).save?.((err?: Error) => { if (err) console.error("dhCart save error:", err); });
+      }
+    } catch (e) { /* ignore malformed cart echo */ }
+    return stdout.slice(0, idx).trimEnd();
+  }
+  return stdout.trimEnd();
+}
+
 function extractCsrfToken(stdout: string, req: Request): string {
-  const csrfMatch = stdout.match(/\n__CSRF_TOKEN__:([a-f0-9]+)\s*$/);
+  const csrfMatch = stdout.match(/\n__CSRF_TOKEN__:([a-f0-9]+)/);
   if (csrfMatch) {
     (req.session as any).csrfToken = csrfMatch[1];
     req.session.save(() => {});
-    return stdout.replace(/\n__CSRF_TOKEN__:[a-f0-9]+\s*$/, '').trimEnd();
+    return stdout.replace(/\n__CSRF_TOKEN__:[a-f0-9]+/, "").trimEnd();
   }
-  return stdout.replace(/\n__CSRF_TOKEN__:\s*$/, '').trimEnd();
+  return stdout.replace(/\n__CSRF_TOKEN__:\s*$/, "").trimEnd();
 }
 
 function handlePhpResponse(stdout: string, req: Request, res: Response) {
+  stdout = extractDhCart(stdout, req);
   stdout = extractCsrfToken(stdout, req);
   const redirectMatch = stdout.match(/^__REDIRECT__:(.+)$/m);
   if (redirectMatch) {
@@ -699,6 +728,7 @@ require '${filePath.replace(/'/g, "\\'")}';
         console.error(`PHP POST error (${phpSelf}):`, errMsg);
         return res.status(500).send(`<html><body style="font-family:Inter,sans-serif;padding:40px"><h2 style="color:#991b1b">Server Error</h2><pre>${errMsg.replace(/</g,'&lt;').substring(0,500)}</pre><a href="javascript:history.back()">Go Back</a></body></html>`);
       }
+      stdout = extractDhCart(stdout, req);
       stdout = extractCsrfToken(stdout, req);
       try { const json = JSON.parse(stdout); res.json(json); } catch { handlePhpResponse(stdout, req, res); }
     });
@@ -943,6 +973,7 @@ a{color:#1a56db;text-decoration:none;}</style></head>
 <a href="javascript:history.back()">&#8592; Go Back</a></div></body></html>`;
           return res.status(500).send(htmlError);
         }
+        stdout = extractDhCart(stdout, req);
         stdout = extractCsrfToken(stdout, req);
         try {
           const json = JSON.parse(stdout);
