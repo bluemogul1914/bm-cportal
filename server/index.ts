@@ -2431,9 +2431,10 @@ app.get("/api/dh/item-inquiry/:itemId", async (req, res) => {
 });
 
 // Order tracking
-app.get("/api/dh/tracking", async (_req, res) => {
+app.get("/api/dh/tracking", async (req, res) => {
   try {
-    const result = await dhOrderTracking(webhookPool);
+    const orderNumber = typeof req.query.orderNumber === 'string' ? String(req.query.orderNumber) : undefined;
+    const result = await dhOrderTracking(webhookPool, orderNumber);
     res.json(result);
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });

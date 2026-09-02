@@ -219,7 +219,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Order tracking
     if ($action === 'order_tracking') {
-        $res = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/salesOrders/tracking');
+        $orderNum = trim($_POST['dh_order_number'] ?? '');
+        $path = '/customers/' . rawurlencode($creds['dh_account']) . '/salesOrders/tracking';
+        if ($orderNum !== '') {
+            $path .= '?orderNumber=' . rawurlencode($orderNum);
+        } else {
+            $path .= '?purchaseOrderNumber=BM-'; // show all orders with BM- prefix
+        }
+        $res = dh_curl($creds, $path);
         if (!empty($res['error'])) { $api_error = $res['error']; }
         else { $tracking_result = $res; }
     }
@@ -869,9 +876,14 @@ include 'includes/admin-header.php';
             <?php if ($tab === 'tracking'): ?>
             <div class="bg-white rounded-xl border border-gray-200 p-6 max-w-2xl mb-6">
                 <h2 class="text-base font-semibold text-gray-800 mb-4">Order Tracking</h2>
-                <form method="POST">
+                <form method="POST" class="space-y-3">
                     <input type="hidden" name="action" value="order_tracking">
                     <?= csrf_field() ?>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">D&H Order Number (or PO / Invoice #)</label>
+                        <input type="text" name="dh_order_number" placeholder="e.g. 95622692" class="w-full max-w-sm border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono">
+                        <p class="text-xs text-gray-400 mt-1">Required: D&H requires order #, PO #, or invoice #. Leave blank to search by PO prefix "BM-".</p>
+                    </div>
                     <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"><i class="fas fa-sync-alt mr-1"></i> Fetch Order Status</button>
                 </form>
             </div>
