@@ -351,6 +351,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// ── GET add-to-cart (from catalog search links) ────────────────────
+$get_add = trim($_GET['add'] ?? '');
+if ($get_add !== '') {
+    $desc  = trim($_GET['desc'] ?? '');
+    $qty   = max(1, (int)($_GET['qty'] ?? 1));
+    $price = trim($_GET['price'] ?? '');
+    $key = $get_add;
+    if (!isset($dh_cart[$key])) {
+        $dh_cart[$key] = ['item' => $get_add, 'description' => $desc, 'qty' => 0, 'unit_price' => $price];
+    }
+    $dh_cart[$key]['qty'] += $qty;
+    if ($price !== '') $dh_cart[$key]['unit_price'] = $price;
+    $api_success = "Added {$qty} × {$get_add} to the order cart. <a href=\"?tab=orders\" class=\"underline font-semibold\">View Cart →</a>";
+    $tab = 'orders';
+}
+
 // ── GET deep-link from search results (price/avail) ─────────────────
 $deep_lookup_item = trim($_GET['dh_item_id'] ?? '');
 $deep_lookup_mode = trim($_GET['dh_lookup'] ?? '');
@@ -405,7 +421,7 @@ include 'includes/admin-header.php';
 
             <!-- Messages -->
             <?php if ($api_success): ?>
-            <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm"><?= htmlspecialchars($api_success) ?></div>
+            <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm"><?= $api_success ?></div>
             <?php endif; ?>
             <?php if ($api_error): ?>
             <div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"><?= htmlspecialchars($api_error) ?></div>
@@ -419,7 +435,7 @@ include 'includes/admin-header.php';
                         'price'    => ['Price & Availability', 'fa-tag'],
                         'inquiry'  => ['Item Inquiry', 'fa-search'],
                         'catalog'  => ['Catalog Search', 'fa-list'],
-                        'orders'   => ['Place Order', 'fa-cart-plus'],
+                        'orders'   => ['Place Order' . (count($dh_cart) > 0 ? ' <span class="inline-flex items-center justify-center h-5 w-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold ml-1">' . count($dh_cart) . '</span>' : ''), 'fa-cart-plus'],
                         'tracking' => ['Order Tracking', 'fa-truck'],
                         'settings' => ['Settings', 'fa-cog'],
                     ];
@@ -664,17 +680,9 @@ include 'includes/admin-header.php';
                                 <td class="py-2 pr-3 font-mono text-xs text-gray-400"><?= htmlspecialchars($vid) ?></td>
                                 <td class="py-2 pr-3 text-right font-medium"><?= $retail ? '$' . number_format((float)$retail, 2) : '-' ?></td>
                                 <td class="py-2 text-right whitespace-nowrap">
-                                    <a href="?tab=price&dh_item_id=<?= urlencode($id) ?>&dh_lookup=price" class="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2">Price</a>
-                                    <a href="?tab=price&dh_item_id=<?= urlencode($id) ?>&dh_lookup=avail" class="text-emerald-600 hover:text-emerald-800 text-xs font-medium mr-2">Avail</a>
-                                    <form method="POST" class="inline">
-                                        <input type="hidden" name="action" value="add_to_cart">
-                                        <input type="hidden" name="dh_item" value="<?= htmlspecialchars($id) ?>">
-                                        <input type="hidden" name="dh_desc" value="<?= htmlspecialchars($desc) ?>">
-                                        <input type="hidden" name="dh_qty" value="1">
-                                        <input type="hidden" name="dh_price" value="<?= $retail ? htmlspecialchars(number_format((float)$retail, 2, '.', '')) : '' ?>">
-                                        <?= csrf_field() ?>
-                                        <button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium" title="Add to order cart"><i class="fas fa-cart-plus mr-0.5"></i>Add</button>
-                                    </form>
+                                    <a href="?tab=orders&add=<?= urlencode($id) ?>&desc=<?= urlencode($desc) ?>&price=<?= $retail ? urlencode(number_format((float)$retail, 2, '.', '')) : '' ?>" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium" title="Add to order cart"><i class="fas fa-cart-plus mr-0.5"></i>Add</a>
+                                    <a href="?tab=price&dh_item_id=<?= urlencode($id) ?>&dh_lookup=price" class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2">Price</a>
+                                    <a href="?tab=price&dh_item_id=<?= urlencode($id) ?>&dh_lookup=avail" class="text-emerald-600 hover:text-emerald-800 text-xs font-medium ml-2">Avail</a>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
