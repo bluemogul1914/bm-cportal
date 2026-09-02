@@ -13,7 +13,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
 $pdo = getDB();
 
 // ── Load credentials from DB ────────────────────────────────────────
-$creds = ['dh_client_id'=>'','dh_client_secret'=>'','dh_account'=>DH_ACCOUNT,'dh_env'=>DH_ENV];
+$creds = ['dh_client_id'=>'','dh_client_secret'=>'','dh_account'=>DH_ACCOUNT,'dh_env'=>DH_ENV,'dh_tenant'=>DH_TENANT];
 $allKeys = array_keys($creds);
 foreach ($allKeys as $k) {
     try {
@@ -56,7 +56,9 @@ function dh_curl($creds, $path, $method = 'GET', $body = null) {
     if (!empty($tok['error'])) return $tok;
     $base = $creds['dh_env'] === 'PRODUCTION' ? DH_API_URL_PROD : DH_API_URL_TEST;
     $url  = $base . $path;
-    $headers = ['Authorization: Bearer ' . $tok['token'], 'Accept: application/json'];
+    // D&H requires the dandh-tenant header on EVERY request (e.g. "dhus")
+    $tenant = $creds['dh_tenant'] ?? DH_TENANT;
+    $headers = ['Authorization: Bearer ' . $tok['token'], 'Accept: application/json', 'dandh-tenant: ' . $tenant];
     if ($body) $headers[] = 'Content-Type: application/json';
     $ch = curl_init($url);
     $opts = [
@@ -99,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'dh_client_secret' => trim($_POST['dh_client_secret'] ?? ''),
             'dh_account'       => trim($_POST['dh_account'] ?? DH_ACCOUNT),
             'dh_env'           => trim($_POST['dh_env'] ?? DH_ENV),
+            'dh_tenant'        => trim($_POST['dh_tenant'] ?? DH_TENANT),
         ];
         foreach ($fields as $k => $v) {
             $stmt = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value");
@@ -119,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$item) { $api_error = 'Please enter an item number.'; }
         else {
             $man = $man ?: $item; // treat as both if manufacturer not given
-            $res = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/items/' . rawurlencode($man) . '/' . rawurlencode($item) . '/priceAndAvailability');
+            $res = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/items/' . rawurlencode($item) . '/priceAndAvailability');
             if (!empty($res['error'])) { $api_error = $res['error'] . ' ' . ($res['raw'] ?? ''); }
             else { $lookup_result = $res; }
         }
@@ -132,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$item) { $api_error = 'Please enter an item number.'; }
         else {
             $man = $man ?: $item;
-            $res = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/items/' . rawurlencode($man) . '/' . rawurlencode($item) . '/priceAndAvailability');
+            $res = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/items/' . rawurlencode($item) . '/priceAndAvailability');
             if (!empty($res['error'])) { $api_error = $res['error'] . ' ' . ($res['raw'] ?? ''); }
             else { $avail_result = $res; }
         }
@@ -145,7 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$item) { $api_error = 'Please enter an item number.'; }
         else {
             $man = $man ?: $item;
-            $res = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/items/' . rawurlencode($man) . '/' . rawurlencode($item));
+            $res = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/items/' . rawurlencode($item));
             if (!empty($res['error'])) { $api_error = $res['error'] . ' ' . ($res['raw'] ?? ''); }
             else { $item_result = $res; }
         }
@@ -173,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $res = dh_curl($creds, $path);
                 if (!empty($res['error'])) { $api_error = $res['error']; break; }
                 $pagesDone++;
-                $items = $res['items'] ?? $res['data'] ?? [];
+                $items = $res['elements'] ?? $res['items'] ?? $res['data'] ?? [];
                 if (!is_array($items) || !count($items)) { $hasMore = false; break; }
                 foreach ($items as $item) {
                     $haystack = ($item['description'] ?? $item['itemDescription'] ?? '') . ' '
@@ -223,10 +226,10 @@ $deep_lookup_mode = trim($_GET['dh_lookup'] ?? '');
 if ($deep_lookup_item !== '' && $dh_connected && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     $man = $deep_lookup_item;
     if ($deep_lookup_mode === 'avail') {
-        $avail_result = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/items/' . rawurlencode($man) . '/' . rawurlencode($deep_lookup_item) . '/priceAndAvailability');
+        $avail_result = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/items/' . rawurlencode($deep_lookup_item) . '/priceAndAvailability');
         $tab = 'price';
     } else {
-        $lookup_result = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/items/' . rawurlencode($man) . '/' . rawurlencode($deep_lookup_item) . '/priceAndAvailability');
+        $lookup_result = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/items/' . rawurlencode($deep_lookup_item) . '/priceAndAvailability');
         $tab = 'price';
     }
     if (!empty($lookup_result['error']) && $deep_lookup_mode !== 'avail') {
@@ -386,14 +389,14 @@ include 'includes/admin-header.php';
                     <?php if ($desc): ?><div class="col-span-2"><span class="text-gray-500">Description</span><div class="font-medium"><?= htmlspecialchars($desc) ?></div></div><?php endif; ?>
                     <?php if ($vendor): ?><div><span class="text-gray-500">Vendor</span><div class="font-medium"><?= htmlspecialchars($vendor) ?></div></div><?php endif; ?>
                 </div>
-                <?php if (!empty($lookup_result['availability'])): ?>
+                <?php if (!empty($lookup_result['branchInventory'])): ?>
                 <div class="mt-4 pt-4 border-t border-gray-100">
                     <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Branch Availability</h4>
                     <div class="space-y-1">
-                    <?php foreach ((array)$lookup_result['availability'] as $br): ?>
+                    <?php foreach ((array)$lookup_result['branchInventory'] as $br): ?>
                         <div class="flex justify-between text-sm py-1 px-2 rounded bg-gray-50">
                             <span class="font-mono text-xs"><?= htmlspecialchars($br['branch'] ?? $br['warehouse'] ?? '?') ?></span>
-                            <span class="font-medium"><?= (int)($br['quantity'] ?? $br['qty'] ?? $br['availableQuantity'] ?? 0) ?></span>
+                            <span class="font-medium"><?= (int)($br['availableQuantity'] ?? $br['quantity'] ?? $br['qty'] ?? 0) ?></span>
                         </div>
                     <?php endforeach; ?>
                     </div>
@@ -414,11 +417,10 @@ include 'includes/admin-header.php';
                     <span class="font-mono font-medium"><?= htmlspecialchars($itemId) ?></span>
                     <?php if ($desc): ?> — <span><?= htmlspecialchars($desc) ?></span><?php endif; ?>
                 </div>
-                <?php if (!empty($avail_result['availability'])): ?>
+                <?php if (!empty($avail_result['branchInventory'])): ?>
                 <div class="space-y-1">
-                    <?php $totalAvail = 0; foreach ((array)$avail_result['availability'] as $br):
-                        $qty = (int)($br['quantity'] ?? $br['qty'] ?? $br['availableQuantity'] ?? 0);
-                        $totalAvail += $qty;
+                    <?php $totalAvail = (int)($avail_result['totalAvailableQuantity'] ?? 0); foreach ((array)$avail_result['branchInventory'] as $br):
+                        $qty = (int)($br['availableQuantity'] ?? $br['quantity'] ?? 0);
                     ?>
                     <div class="flex justify-between text-sm py-1.5 px-3 rounded bg-gray-50">
                         <span class="font-mono text-xs"><?= htmlspecialchars($br['branch'] ?? $br['warehouse'] ?? '?') ?></span>
@@ -645,6 +647,11 @@ include 'includes/admin-header.php';
                             <option value="TEST" <?= ($creds['dh_env'] ?? 'TEST') === 'TEST' ? 'selected' : '' ?>>TEST (test.api.dandh.com)</option>
                             <option value="PRODUCTION" <?= ($creds['dh_env'] ?? '') === 'PRODUCTION' ? 'selected' : '' ?>>PRODUCTION (api.dandh.com)</option>
                         </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Tenant</label>
+                        <input type="text" name="dh_tenant" value="<?= htmlspecialchars($creds['dh_tenant'] ?? DH_TENANT) ?>" placeholder="dhus" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono">
+                        <p class="text-xs text-gray-400 mt-1">D&H requires the <code>dandh-tenant</code> header on every request. Default: dhus.</p>
                     </div>
                     <div class="flex items-center gap-3">
                         <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Save Credentials</button>

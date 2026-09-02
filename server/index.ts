@@ -2373,13 +2373,14 @@ app.post("/api/anythingllm/settings", express.json(), async (req, res) => {
 app.get("/api/dh/settings", async (_req, res) => {
   try {
     const raw = await webhookPool.query(
-      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('dh_client_id','dh_client_secret','dh_account','dh_env')`
+      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('dh_client_id','dh_client_secret','dh_account','dh_env','dh_tenant')`
     );
     const m: Record<string, string> = {};
     for (const r of raw.rows) m[r.setting_key] = r.setting_value;
     res.json({
       account: m.dh_account || "3054540000",
       env: m.dh_env || "TEST",
+      tenant: m.dh_tenant || "dhus",
       keySet: !!(m.dh_client_id && m.dh_client_secret),
     });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -2395,6 +2396,7 @@ app.post("/api/dh/settings", express.json(), async (req, res) => {
     if (req.body.client_secret !== undefined) await upsert("dh_client_secret", String(req.body.client_secret));
     if (req.body.account !== undefined) await upsert("dh_account", String(req.body.account));
     if (req.body.env !== undefined) await upsert("dh_env", String(req.body.env));
+    if (req.body.tenant !== undefined) await upsert("dh_tenant", String(req.body.tenant));
     res.json({ success: true });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -2409,20 +2411,21 @@ app.get("/api/dh/test", async (_req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// Price & Availability for a specific item
-app.get("/api/dh/price-availability/:manufacturer/:itemNumber", async (req, res) => {
+// Price & Availability for a specific item (single itemId)
+app.get("/api/dh/price-availability/:itemId", async (req, res) => {
   try {
-    const { manufacturer, itemNumber } = req.params;
-    const result = await dhPriceAvailability(webhookPool, manufacturer, itemNumber);
+    const { itemId } = req.params;
+    const qty = req.query.quantity ? parseInt(req.query.quantity as string) : undefined;
+    const result = await dhPriceAvailability(webhookPool, itemId, qty);
     res.json(result);
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// Item inquiry
-app.get("/api/dh/item-inquiry/:manufacturer/:itemNumber", async (req, res) => {
+// Item inquiry (single itemId)
+app.get("/api/dh/item-inquiry/:itemId", async (req, res) => {
   try {
-    const { manufacturer, itemNumber } = req.params;
-    const result = await dhItemInquiry(webhookPool, manufacturer, itemNumber);
+    const { itemId } = req.params;
+    const result = await dhItemInquiry(webhookPool, itemId);
     res.json(result);
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });

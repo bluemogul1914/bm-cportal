@@ -1,20 +1,28 @@
 // D&H Distributing — Customer Order Management API client.
 // Grounded in D&H live OpenAPI spec (CustomerOrderManagementAPI.json v2.0.1):
-//   token: https://auth.dandh.com/api/oauth/token (client_credentials)
-//   base:  https://test.api.dandh.com/customerOrderManagement/v2 (test)
-//          https://api.dandh.com/customerOrderManagement/v2 (production)
+//   token: https://auth.dandh.com/api/oauth/token (client_credentials)  [prod]
+//          https://test.auth.dandh.com/api/oauth/token                 [test]
+//   base:  https://api.dandh.com/customerOrderManagement/v2            [prod]
+//          https://test.api.dandh.com/customerOrderManagement/v2       [test]
+//
+// REQUIRED header on every request: `dandh-tenant` (e.g. "dhus").
+// Item endpoints take a single {itemId} path param (e.g. "TI83PLUS").
+// List endpoints return `elements` arrays; pageSize must be a multiple
+// of 10 within 10–200.
 import type { Pool } from "pg";
 
 const PROD_TOKEN_URL = "https://auth.dandh.com/api/oauth/token";
 const TEST_TOKEN_URL = "https://test.auth.dandh.com/api/oauth/token";
 const PROD_BASE = "https://api.dandh.com/customerOrderManagement/v2";
 const TEST_BASE = "https://test.api.dandh.com/customerOrderManagement/v2";
+const DEFAULT_TENANT = "dhus";
 
 export interface DhCredentials {
   clientId: string;
   clientSecret: string;
   account: string; // e.g. "3054540000"
   env: string;     // "TEST" or "PRODUCTION"
+  tenant: string;  // e.g. "dhus"
 }
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
@@ -25,7 +33,7 @@ function getBaseUrl(env: string): string {
 
 export async function getDhCredentials(pool: Pool): Promise<DhCredentials> {
   const raw = await pool.query(
-    `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('dh_client_id','dh_client_secret','dh_account','dh_env')`
+    `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('dh_client_id','dh_client_secret','dh_account','dh_env','dh_tenant')`
   );
   const m: Record<string, string> = {};
   for (const r of raw.rows) m[r.setting_key] = r.setting_value;
@@ -37,6 +45,7 @@ export async function getDhCredentials(pool: Pool): Promise<DhCredentials> {
     clientSecret: m.dh_client_secret,
     account: m.dh_account || "3054540000",
     env: m.dh_env || "TEST",
+    tenant: m.dh_tenant || DEFAULT_TENANT,
   };
 }
 
@@ -63,7 +72,11 @@ export async function dhRequest(pool: Pool, path: string, opts: { method?: strin
   const creds = await getDhCredentials(pool);
   const token = await getDhToken(creds);
   const base = getBaseUrl(creds.env);
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+    "dandh-tenant": creds.tenant,
+  };
   if (opts.body) headers["Content-Type"] = "application/json";
   const r = await fetch(`${base}${path}`, {
     method: opts.method || "GET",
@@ -76,30 +89,35 @@ export async function dhRequest(pool: Pool, path: string, opts: { method?: strin
 
 // ── Convenience wrappers ────────────────────────────────────────────
 
-/** Price & Availability for a specific item */
-export async function dhPriceAvailability(pool: Pool, manufacturer: string, itemNumber: string) {
+/** Price & Availability for a specific item (single itemId) */
+export async function dhPriceAvailability(pool: Pool, itemId: string, quantity?: number) {
   const creds = await getDhCredentials(pool);
-  return dhRequest(pool, `/customers/${creds.account}/items/${encodeURIComponent(manufacturer)}/${encodeURIComponent(itemNumber)}/priceAndAvailability`);
+  const q = quantity ? `?quantity=${quantity}` : "";
+  return dhRequest(pool, `/customers/${creds.account}/items/${encodeURIComponent(itemId)}/priceAndAvailability${q}`);
 }
 
 /** Order tracking list */
-export async function dhOrderTracking(pool: Pool) {
+export async function dhOrderTracking(pool: Pool, orderNumber?: string) {
   const creds = await getDhCredentials(pool);
-  return dhRequest(pool, `/customers/${creds.account}/salesOrders/tracking`);
+  let path = `/customers/${creds.account}/salesOrders/tracking`;
+  if (orderNumber) path += `?orderNumber=${encodeURIComponent(orderNumber)}`;
+  return dhRequest(pool, path);
 }
 
-/** List /items catalog page (paginated with scrollId) */
+/** List /items catalog page (paginated with scrollId; elements array) */
 export async function dhItemsList(pool: Pool, scrollId?: string, pageSize: number = 200) {
   const creds = await getDhCredentials(pool);
-  let path = `/customers/${creds.account}/items?pageSize=${pageSize}`;
+  // pageSize must be a multiple of 10 within 10–200
+  const size = Math.max(10, Math.min(200, Math.round(pageSize / 10) * 10));
+  let path = `/customers/${creds.account}/items?pageSize=${size}`;
   if (scrollId) path += `&scrollId=${encodeURIComponent(scrollId)}`;
   return dhRequest(pool, path);
 }
 
-/** Item inquiry by item number (manufacturer/item) */
-export async function dhItemInquiry(pool: Pool, manufacturer: string, itemNumber: string) {
+/** Item inquiry by single itemId */
+export async function dhItemInquiry(pool: Pool, itemId: string) {
   const creds = await getDhCredentials(pool);
-  return dhRequest(pool, `/customers/${creds.account}/items/${encodeURIComponent(manufacturer)}/${encodeURIComponent(itemNumber)}`);
+  return dhRequest(pool, `/customers/${creds.account}/items/${encodeURIComponent(itemId)}`);
 }
 
 /** List carriers (auth check) */
@@ -126,7 +144,7 @@ export async function dhSearchCatalog(
     const data: any = await dhItemsList(pool, scroll || undefined, pageSize);
     pagesScanned++;
 
-    const items = data?.items || data?.data || [];
+    const items = data?.elements || data?.items || data?.data || [];
     if (!Array.isArray(items) || items.length === 0) {
       hasMore = false;
       break;
