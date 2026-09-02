@@ -27,6 +27,16 @@ $dh_env_label = $creds['dh_env'] === 'PRODUCTION' ? 'Production' : 'TEST';
 $dh_api_base  = $creds['dh_env'] === 'PRODUCTION' ? DH_API_URL_PROD : DH_API_URL_TEST;
 $dh_api_key   = getenv('DH_API_KEY') ?: '';
 
+// ── Clients (for order → invoice creation) ──────────────────────────
+$dh_clients = [];
+try {
+    $stmt = $pdo->prepare("SELECT id, name, email, company FROM clients ORDER BY name");
+    $stmt->execute();
+    $dh_clients = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $dh_clients = [];
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 function dh_curl_token($creds) {
     $body = http_build_query([
@@ -80,6 +90,12 @@ function dh_curl($creds, $path, $method = 'GET', $body = null) {
 
 // ── Tab state ───────────────────────────────────────────────────────
 $tab = $_GET['tab'] ?? 'overview';
+
+// ── Order cart (session-persisted) ─────────────────────────────────
+if (!isset($_SESSION['dh_cart']) || !is_array($_SESSION['dh_cart'])) {
+    $_SESSION['dh_cart'] = [];
+}
+$dh_cart = &$_SESSION['dh_cart'];
 
 // ── POST handlers ───────────────────────────────────────────────────
 $api_error   = '';
@@ -218,6 +234,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             else { $api_success = 'Connected — OAuth access token acquired. Environment: ' . $dh_env_label . ' · Account: ' . $creds['dh_account']; }
         }
     }
+
+    // ── Order cart ──────────────────────────────────────────────────
+    // Add item to cart (from catalog / price / quick-add)
+    if ($action === 'add_to_cart') {
+        require_csrf();
+        $item  = trim($_POST['dh_item'] ?? '');
+        $desc  = trim($_POST['dh_desc'] ?? '');
+        $qty   = max(1, (int)($_POST['dh_qty'] ?? 1));
+        $price = trim($_POST['dh_price'] ?? '');
+        if ($item !== '') {
+            $key = $item;
+            if (!isset($dh_cart[$key])) {
+                $dh_cart[$key] = ['item' => $item, 'description' => $desc, 'qty' => 0, 'unit_price' => $price];
+            }
+            $dh_cart[$key]['qty'] += $qty;
+            if ($price !== '') $dh_cart[$key]['unit_price'] = $price;
+            $api_success = "Added {$qty} × {$item} to order.";
+        } else {
+            $api_error = 'Item number required to add to order.';
+        }
+    }
+
+    // Update cart quantities / remove line
+    if ($action === 'update_cart') {
+        require_csrf();
+        $item = trim($_POST['dh_item'] ?? '');
+        $qty  = max(0, (int)($_POST['dh_qty'] ?? 0));
+        if ($qty <= 0) { unset($dh_cart[$item]); }
+        elseif (isset($dh_cart[$item])) { $dh_cart[$item]['qty'] = $qty; }
+        $api_success = 'Cart updated.';
+    }
+
+    // Clear cart
+    if ($action === 'clear_cart') {
+        require_csrf();
+        $_SESSION['dh_cart'] = [];
+        $dh_cart = &$_SESSION['dh_cart'];
+        $api_success = 'Cart cleared.';
+    }
+
+    // ── Place order with D&H + auto-create portal invoice ───────────
+    if ($action === 'place_order') {
+        require_csrf();
+        if (!$dh_connected) { $api_error = 'D&H credentials not configured.'; }
+        elseif (count($dh_cart) === 0) { $api_error = 'Cart is empty — add items first.'; }
+        else {
+            $poNumber   = trim($_POST['dh_po'] ?? '');
+            $branch     = trim($_POST['dh_branch'] ?? '');
+            $clientId   = (int)($_POST['dh_client_id'] ?? 0);
+            $dueDate    = trim($_POST['dh_due_date'] ?? '');
+            $taxRate    = (float)($_POST['dh_tax_rate'] ?? 0);
+            $notes      = trim($_POST['dh_notes'] ?? '');
+            if ($poNumber === '') { $api_error = 'Purchase Order number is required.'; }
+            elseif (mb_strlen($poNumber) > 30) { $api_error = 'PO number max 30 characters.'; }
+            elseif (!$clientId) { $api_error = 'Select a client to invoice.'; }
+            else {
+                // Build D&H body
+                $lines = [];
+                $subtotal = 0.0;
+                foreach ($dh_cart as $k => $line) {
+                    $qty = max(1, (int)$line['qty']);
+                    $price = (float)($line['unit_price'] ?? 0);
+                    $subtotal += $price * $qty;
+                    $lines[] = ['item' => $k, 'orderQuantity' => $qty] + ($price > 0 ? ['unitPrice' => number_format($price, 2, '.', '')] : []);
+                }
+                $body = ['customerPurchaseOrder' => $poNumber, 'shipments' => [['lines' => $lines]]];
+                if ($branch !== '') $body['shipments'][0]['branch'] = $branch;
+
+                // Submit to D&H
+                $res = dh_curl($creds, '/customers/' . rawurlencode($creds['dh_account']) . '/salesOrders', 'POST', $body);
+                if (!empty($res['error'])) {
+                    $api_error = 'D&H order failed: ' . $res['error'] . ' ' . ($res['raw'] ?? '');
+                } else {
+                    $dhOrderNumber = $res['orderNumber'] ?? $res['salesOrderNumber'] ?? '?';
+                    // Create portal invoice
+                    try {
+                        $stmt = $pdo->prepare("SELECT COALESCE(MAX(CAST(REPLACE(invoice_number, 'INV-', '') AS INTEGER)), 0) + 1 as next_num FROM invoices WHERE invoice_number ~ '^INV-[0-9]{3,5}$'");
+                        $stmt->execute();
+                        $next = (int)$stmt->fetch(PDO::FETCH_ASSOC)['next_num'];
+                        $invoice_number = 'INV-' . str_pad($next, 5, '0', STR_PAD_LEFT);
+
+                        $tax_amount = round($subtotal * ($taxRate / 100), 2);
+                        $total = round($subtotal + $tax_amount, 2);
+                        $items = [];
+                        foreach ($dh_cart as $k => $line) {
+                            $items[] = [
+                                'description' => $line['description'] !== '' ? $line['description'] : $k,
+                                'quantity'    => max(1, (int)$line['qty']),
+                                'unit_price'  => number_format((float)($line['unit_price'] ?? 0), 2, '.', ''),
+                            ];
+                        }
+                        $invoice_notes = ($notes !== '' ? $notes . "\n" : '') . "D&H Order #{$dhOrderNumber} · PO {$poNumber}";
+                        $stmt = $pdo->prepare("INSERT INTO invoices (client_id, invoice_number, amount, tax, total, status, due_date, notes, footer, items, created_at) VALUES (?, ?, ?, ?, ?, 'unpaid', ?, ?, NULL, ?::jsonb, NOW())");
+                        $stmt->execute([$clientId, $invoice_number, $subtotal, $tax_amount, $total, $dueDate !== '' ? $dueDate : null, $invoice_notes, json_encode($items)]);
+                        $new_invoice_id = (int)$pdo->lastInsertId();
+
+                        $_SESSION['dh_cart'] = [];
+                        $dh_cart = &$_SESSION['dh_cart'];
+                        $api_success = "Order placed with D&H (#{$dhOrderNumber}) — invoice {$invoice_number} created for client.";
+                        // stash for display
+                        $placed_order = ['orderNumber' => $dhOrderNumber, 'invoiceNumber' => $invoice_number, 'invoiceId' => $new_invoice_id, 'po' => $poNumber];
+                    } catch (PDOException $e) {
+                        $api_error = 'Order submitted to D&H (#'.$dhOrderNumber.') but invoice failed: ' . $e->getMessage();
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ── GET deep-link from search results (price/avail) ─────────────────
@@ -288,6 +412,7 @@ include 'includes/admin-header.php';
                         'price'    => ['Price & Availability', 'fa-tag'],
                         'inquiry'  => ['Item Inquiry', 'fa-search'],
                         'catalog'  => ['Catalog Search', 'fa-list'],
+                        'orders'   => ['Place Order', 'fa-cart-plus'],
                         'tracking' => ['Order Tracking', 'fa-truck'],
                         'settings' => ['Settings', 'fa-cog'],
                     ];
@@ -533,7 +658,16 @@ include 'includes/admin-header.php';
                                 <td class="py-2 pr-3 text-right font-medium"><?= $retail ? '$' . number_format((float)$retail, 2) : '-' ?></td>
                                 <td class="py-2 text-right whitespace-nowrap">
                                     <a href="?tab=price&dh_item_id=<?= urlencode($id) ?>&dh_lookup=price" class="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2">Price</a>
-                                    <a href="?tab=price&dh_item_id=<?= urlencode($id) ?>&dh_lookup=avail" class="text-emerald-600 hover:text-emerald-800 text-xs font-medium">Avail</a>
+                                    <a href="?tab=price&dh_item_id=<?= urlencode($id) ?>&dh_lookup=avail" class="text-emerald-600 hover:text-emerald-800 text-xs font-medium mr-2">Avail</a>
+                                    <form method="POST" class="inline">
+                                        <input type="hidden" name="action" value="add_to_cart">
+                                        <input type="hidden" name="dh_item" value="<?= htmlspecialchars($id) ?>">
+                                        <input type="hidden" name="dh_desc" value="<?= htmlspecialchars($desc) ?>">
+                                        <input type="hidden" name="dh_qty" value="1">
+                                        <input type="hidden" name="dh_price" value="<?= $retail ? htmlspecialchars(number_format((float)$retail, 2, '.', '')) : '' ?>">
+                                        <?= csrf_field() ?>
+                                        <button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium" title="Add to order cart"><i class="fas fa-cart-plus mr-0.5"></i>Add</button>
+                                    </form>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -562,6 +696,173 @@ include 'includes/admin-header.php';
                 <?php endif; ?>
             </div>
             <?php endif; ?>
+            <?php endif; ?>
+
+            <!-- ── TAB: Place Order (cart + checkout) ──────────────── -->
+            <?php if ($tab === 'orders'): ?>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                <!-- Left: quick add + item lookup -->
+                <div class="lg:col-span-1 space-y-6">
+                    <div class="bg-white rounded-xl border border-gray-200 p-6">
+                        <h2 class="text-base font-semibold text-gray-800 mb-4">Quick Add Item</h2>
+                        <form method="POST" class="space-y-3">
+                            <input type="hidden" name="action" value="add_to_cart">
+                            <?= csrf_field() ?>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">D&H Item #</label>
+                                <input type="text" name="dh_item" required placeholder="e.g. TI83PLUS" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Description <span class="text-gray-400 font-normal">(optional)</span></label>
+                                <input type="text" name="dh_desc" placeholder="Shown on client invoice" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Qty</label>
+                                    <input type="number" name="dh_qty" value="1" min="1" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Unit Price $</label>
+                                    <input type="number" name="dh_price" step="0.01" min="0" placeholder="0.00" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                                </div>
+                            </div>
+                            <button type="submit" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"><i class="fas fa-cart-plus mr-1"></i> Add to Order</button>
+                        </form>
+                        <p class="text-xs text-gray-400 mt-3">Tip: search the <a href="?tab=catalog" class="text-blue-600 hover:underline">Catalog</a> tab for item numbers &amp; retail prices, then add from there.</p>
+                    </div>
+                </div>
+
+                <!-- Right: cart -->
+                <div class="lg:col-span-2 space-y-6">
+                    <?php if (!empty($placed_order)): ?>
+                    <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                        <h3 class="font-semibold text-emerald-800">✅ Order placed with D&H</h3>
+                        <p class="text-sm text-emerald-700 mt-1">
+                            D&H Order #<strong><?= htmlspecialchars($placed_order['orderNumber']) ?></strong> · Invoice
+                            <a href="admin-invoice-detail.php?id=<?= (int)$placed_order['invoiceId'] ?>" class="underline font-medium"><?= htmlspecialchars($placed_order['invoiceNumber']) ?></a> created for client.
+                        </p>
+                    </div>
+                    <?php endif; ?>
+
+                    <div class="bg-white rounded-xl border border-gray-200 p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-base font-semibold text-gray-800">Order Cart <span class="text-gray-400 font-normal text-sm">(<?= count($dh_cart) ?> line<?= count($dh_cart) === 1 ? '' : 's' ?>)</span></h2>
+                            <?php if (count($dh_cart) > 0): ?>
+                            <form method="POST">
+                                <input type="hidden" name="action" value="clear_cart">
+                                <?= csrf_field() ?>
+                                <button type="submit" class="text-xs text-red-600 hover:text-red-800 font-medium"><i class="fas fa-trash mr-1"></i>Clear Cart</button>
+                            </form>
+                            <?php endif; ?>
+                        </div>
+
+                        <?php if (count($dh_cart) === 0): ?>
+                        <div class="text-center py-10 text-gray-400">
+                            <i class="fas fa-shopping-cart text-4xl mb-3 block"></i>
+                            <p class="text-sm">Cart is empty. Add items to start an order.</p>
+                        </div>
+                        <?php else: ?>
+                        <div class="overflow-x-auto mb-4">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b border-gray-200 text-left text-xs text-gray-500 uppercase tracking-wider">
+                                        <th class="pb-2 pr-3 font-medium">Item</th>
+                                        <th class="pb-2 pr-3 font-medium">Description</th>
+                                        <th class="pb-2 pr-3 font-medium text-right">Unit $</th>
+                                        <th class="pb-2 pr-3 font-medium text-center">Qty</th>
+                                        <th class="pb-2 pr-3 font-medium text-right">Line $</th>
+                                        <th class="pb-2 font-medium text-right"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                <?php $cart_total = 0.0; foreach ($dh_cart as $key => $line):
+                                    $qty = max(1, (int)$line['qty']);
+                                    $price = (float)($line['unit_price'] ?? 0);
+                                    $lineTotal = $price * $qty;
+                                    $cart_total += $lineTotal;
+                                ?>
+                                    <tr class="border-b border-gray-50">
+                                        <td class="py-2 pr-3 font-mono text-xs font-medium"><?= htmlspecialchars($key) ?></td>
+                                        <td class="py-2 pr-3 text-gray-700 max-w-xs truncate"><?= htmlspecialchars($line['description'] ?: '—') ?></td>
+                                        <td class="py-2 pr-3 text-right"><?= $price > 0 ? '$' . number_format($price, 2) : '<span class="text-gray-400">0.00</span>' ?></td>
+                                        <td class="py-2 pr-3 text-center">
+                                            <form method="POST" class="inline-flex items-center gap-1">
+                                                <input type="hidden" name="action" value="update_cart">
+                                                <input type="hidden" name="dh_item" value="<?= htmlspecialchars($key) ?>">
+                                                <?= csrf_field() ?>
+                                                <input type="number" name="dh_qty" value="<?= $qty ?>" min="0" class="w-16 border border-gray-300 rounded px-2 py-1 text-xs text-center">
+                                                <button type="submit" class="text-blue-600 hover:text-blue-800 text-xs font-medium" title="Update">✓</button>
+                                            </form>
+                                        </td>
+                                        <td class="py-2 pr-3 text-right font-medium"><?= $price > 0 ? '$' . number_format($lineTotal, 2) : '—' ?></td>
+                                        <td class="py-2 text-right">
+                                            <form method="POST">
+                                                <input type="hidden" name="action" value="update_cart">
+                                                <input type="hidden" name="dh_item" value="<?= htmlspecialchars($key) ?>">
+                                                <input type="hidden" name="dh_qty" value="0">
+                                                <?= csrf_field() ?>
+                                                <button type="submit" class="text-red-500 hover:text-red-700 text-xs" title="Remove"><i class="fas fa-times"></i></button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="4" class="pt-3 text-right font-semibold text-gray-700">Subtotal</td>
+                                        <td class="pt-3 text-right font-semibold">$<?= number_format($cart_total, 2) ?></td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        <!-- Checkout form -->
+                        <form method="POST" class="border-t border-gray-100 pt-4 space-y-4">
+                            <input type="hidden" name="action" value="place_order">
+                            <?= csrf_field() ?>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Client to invoice *</label>
+                                    <select name="dh_client_id" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                                        <option value="">— Select client —</option>
+                                        <?php foreach ($dh_clients as $c): ?>
+                                        <option value="<?= (int)$c['id'] ?>"><?= htmlspecialchars($c['name'] . ($c['company'] !== '' && $c['company'] !== $c['name'] ? ' — ' . $c['company'] : '')) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Purchase Order # (D&H) *</label>
+                                    <input type="text" name="dh_po" required maxlength="30" placeholder="e.g. BM-20260902" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono">
+                                    <p class="text-xs text-gray-400 mt-1">Max 30 characters — this is the customer PO sent to D&H.</p>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">D&H Branch <span class="text-gray-400 font-normal">(optional)</span></label>
+                                    <input type="text" name="dh_branch" placeholder="BR01" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Invoice Due Date</label>
+                                    <input type="date" name="dh_due_date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Tax Rate %</label>
+                                    <input type="number" name="dh_tax_rate" value="0" step="0.01" min="0" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                                    <input type="text" name="dh_notes" placeholder="Optional note on invoice" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between pt-2">
+                                <p class="text-xs text-gray-400"><i class="fas fa-info-circle mr-1"></i>Submits order to D&H <strong><?= $dh_env_label ?></strong> and creates an unpaid invoice for the client.</p>
+                                <button type="submit" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition"><i class="fas fa-paper-plane mr-1"></i> Place Order with D&H</button>
+                            </div>
+                        </form>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
             <?php endif; ?>
 
             <!-- ── TAB: Order Tracking ────────────────────────────────── -->

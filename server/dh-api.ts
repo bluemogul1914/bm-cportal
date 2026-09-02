@@ -176,3 +176,43 @@ export async function dhSearchCatalog(
 }
 
 export function clearDhTokenCache() { cachedToken = null; }
+
+// ── Sales order creation ────────────────────────────────────────────
+
+export interface DhOrderLine {
+  item: string;              // D&H item number (e.g. "TI83PLUS")
+  orderQuantity: number;
+  unitPrice?: string;        // optional requested price
+}
+
+export interface DhOrderInput {
+  customerPurchaseOrder: string;  // max 30 chars
+  branch?: string;                // e.g. "BR01"
+  lines: DhOrderLine[];
+  enrollDevices?: boolean;
+}
+
+/**
+ * POST /customers/{account}/salesOrders — submit an order to D&H.
+ * Returns { orderNumber, ... } on success.
+ */
+export async function dhCreateSalesOrder(pool: Pool, input: DhOrderInput): Promise<any> {
+  const creds = await getDhCredentials(pool);
+  const lines = input.lines.map((l) => {
+    const line: Record<string, unknown> = { item: l.item, orderQuantity: l.orderQuantity };
+    if (l.unitPrice) line.unitPrice = l.unitPrice;
+    return line;
+  });
+  const body: Record<string, unknown> = {
+    customerPurchaseOrder: input.customerPurchaseOrder,
+    shipments: [{ lines }],
+  };
+  if (input.branch) (body.shipments as any)[0].branch = input.branch;
+  if (input.enrollDevices) body.enrollDevices = true;
+  return dhRequest(pool, `/customers/${creds.account}/salesOrders`, { method: "POST", body });
+}
+
+// ── Order history (tracking list, optional orderNumber filter) ──────
+export async function dhOrdersList(pool: Pool, orderNumber?: string) {
+  return dhOrderTracking(pool, orderNumber);
+}

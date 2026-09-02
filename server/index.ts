@@ -17,7 +17,7 @@ import pg from "pg";
 import bcrypt from "bcryptjs";
 import connectPgSimple from "connect-pg-simple";
 
-import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInquiry, dhOrderTracking, dhSearchCatalog } from "./dh-api";
+import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInquiry, dhOrderTracking, dhSearchCatalog, dhCreateSalesOrder, dhOrdersList } from "./dh-api";
 
 const webhookPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 // Persistent session store backed by Neon Postgres so admin/dealer sessions
@@ -2434,6 +2434,82 @@ app.get("/api/dh/item-inquiry/:itemId", async (req, res) => {
 app.get("/api/dh/tracking", async (_req, res) => {
   try {
     const result = await dhOrderTracking(webhookPool);
+    res.json(result);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Create a sales order with D&H (optionally auto-creates a portal invoice)
+app.post("/api/dh/create-order", express.json(), async (req, res) => {
+  try {
+    // Require authenticated admin session for order placement / invoice creation
+    const sess: any = (req as any).session;
+    if (!sess?.user_id || (sess?.is_admin ?? false) !== true) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const { poNumber, branch, lines, clientId, invoiceNotes } = req.body;
+    if (!poNumber || typeof poNumber !== "string" || !poNumber.trim()) {
+      return res.status(400).json({ error: "poNumber is required" });
+    }
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return res.status(400).json({ error: "lines (line items) are required" });
+    }
+    if (poNumber.length > 30) return res.status(400).json({ error: "poNumber max 30 chars" });
+
+    // Submit to D&H
+    const orderResult: any = await dhCreateSalesOrder(webhookPool, {
+      customerPurchaseOrder: poNumber.trim(),
+      branch: branch || undefined,
+      lines: lines.map((l: any) => ({
+        item: l.item,
+        orderQuantity: parseInt(l.orderQuantity) || 1,
+        unitPrice: l.unitPrice ? String(l.unitPrice) : undefined,
+      })),
+    });
+    const dhOrderNumber = orderResult?.orderNumber || orderResult?.salesOrderNumber || null;
+
+    let invoiceId: number | null = null;
+    let invoiceNumber: string | null = null;
+
+    // Auto-create portal invoice for the client
+    if (clientId) {
+      const amount = lines.reduce((sum: number, l: any) => {
+        const price = parseFloat(l.unitPrice || l.price || "0");
+        return sum + (isNaN(price) ? 0 : price * (parseInt(l.orderQuantity) || 1));
+      }, 0);
+      const tax = parseFloat(req.body.tax) || 0;
+      const total = amount + tax;
+      const invNum = `INV-${Date.now()}`;
+      const itemsJson = lines.map((l: any) => ({
+        description: l.description || l.item,
+        item: l.item,
+        quantity: parseInt(l.orderQuantity) || 1,
+        unit_price: l.unitPrice || l.price || "0",
+      }));
+      const r = await webhookPool.query(
+        `INSERT INTO invoices (client_id, invoice_number, amount, tax, total, status, due_date, notes, items, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()) RETURNING id, invoice_number`,
+        [clientId, invNum, amount, tax, total, 'unpaid', req.body.dueDate || null, invoiceNotes || `D&H Order ${dhOrderNumber || poNumber}\nPO: ${poNumber}`, JSON.stringify(itemsJson)]
+      );
+      if (r.rows && r.rows[0]) {
+        invoiceId = r.rows[0].id;
+        invoiceNumber = r.rows[0].invoice_number;
+      }
+    }
+
+    res.json({
+      success: true,
+      dhOrderNumber,
+      order: orderResult,
+      invoice_id: invoiceId,
+      invoice_number: invoiceNumber,
+    });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Order history (optional orderNumber filter)
+app.get("/api/dh/orders", async (req, res) => {
+  try {
+    const result = await dhOrdersList(webhookPool, typeof req.query.orderNumber === 'string' ? String(req.query.orderNumber) : undefined);
     res.json(result);
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
