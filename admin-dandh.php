@@ -257,7 +257,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $dh_cart[$key]['qty'] += $qty;
             if ($price !== '') $dh_cart[$key]['unit_price'] = $price;
-            $api_success = "Added {$qty} × {$item} to order.";
+            $api_success = "Added {$qty} × {$item} to cart. <a href=\"?tab=orders\" class=\"underline font-semibold ml-1\">View Cart &rarr;</a>";
         } else {
             $api_error = 'Item number required to add to order.';
         }
@@ -349,22 +349,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
-}
-
-// ── GET add-to-cart (from catalog search links) ────────────────────
-$get_add = trim($_GET['add'] ?? '');
-if ($get_add !== '') {
-    $desc  = trim($_GET['desc'] ?? '');
-    $qty   = max(1, (int)($_GET['qty'] ?? 1));
-    $price = trim($_GET['price'] ?? '');
-    $key = $get_add;
-    if (!isset($dh_cart[$key])) {
-        $dh_cart[$key] = ['item' => $get_add, 'description' => $desc, 'qty' => 0, 'unit_price' => $price];
-    }
-    $dh_cart[$key]['qty'] += $qty;
-    if ($price !== '') $dh_cart[$key]['unit_price'] = $price;
-    $api_success = "Added {$qty} × {$get_add} to the order cart. <a href=\"?tab=orders\" class=\"underline font-semibold\">View Cart →</a>";
-    $tab = 'orders';
 }
 
 // ── GET deep-link from search results (price/avail) ─────────────────
@@ -680,7 +664,7 @@ include 'includes/admin-header.php';
                                 <td class="py-2 pr-3 font-mono text-xs text-gray-400"><?= htmlspecialchars($vid) ?></td>
                                 <td class="py-2 pr-3 text-right font-medium"><?= $retail ? '$' . number_format((float)$retail, 2) : '-' ?></td>
                                 <td class="py-2 text-right whitespace-nowrap">
-                                    <a href="?tab=orders&add=<?= urlencode($id) ?>&desc=<?= urlencode($desc) ?>&price=<?= $retail ? urlencode(number_format((float)$retail, 2, '.', '')) : '' ?>" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium" title="Add to order cart"><i class="fas fa-cart-plus mr-0.5"></i>Add</a>
+                                    <button onclick="addToCart('<?= htmlspecialchars($id, ENT_QUOTES) ?>','<?= htmlspecialchars($desc, ENT_QUOTES) ?>','<?= $retail ? htmlspecialchars(number_format((float)$retail, 2, '.', ''), ENT_QUOTES) : '' ?>')" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium bg-transparent border-0 cursor-pointer" title="Add to order cart"><i class="fas fa-cart-plus mr-0.5"></i>Add</button>
                                     <a href="?tab=price&dh_item_id=<?= urlencode($id) ?>&dh_lookup=price" class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2">Price</a>
                                     <a href="?tab=price&dh_item_id=<?= urlencode($id) ?>&dh_lookup=avail" class="text-emerald-600 hover:text-emerald-800 text-xs font-medium ml-2">Avail</a>
                                 </td>
@@ -985,6 +969,27 @@ include 'includes/admin-header.php';
             <?php endif; ?>
 
         </main>
+
+        <!-- Hidden POST form for JS-driven Add to Cart -->
+        <form id="add-to-cart-form" method="POST" style="display:none">
+            <input type="hidden" name="action" value="add_to_cart">
+            <?= csrf_field() ?>
+            <input type="hidden" name="dh_item" value="">
+            <input type="hidden" name="dh_desc" value="">
+            <input type="hidden" name="dh_qty" value="1">
+            <input type="hidden" name="dh_price" value="">
+        </form>
+
+        <script>
+        function addToCart(item, desc, price) {
+            var f = document.getElementById('add-to-cart-form');
+            f.querySelector('[name=dh_item]').value = item;
+            f.querySelector('[name=dh_desc]').value = desc;
+            f.querySelector('[name=dh_price]').value = price;
+            f.submit();
+        }
+        </script>
+
     </div>
 </div>
 <?php include 'includes/admin-footer.php'; ?>
