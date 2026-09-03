@@ -268,7 +268,7 @@ try {
                                     <?php foreach ($clients as $client): ?>
                                         <?php
                                             $company_name = !empty($client['company']) ? $client['company'] : $client['name'];
-                                            $company_initial = strtoupper(substr($company_name, 0, 1));
+                                            $company_initial = strtoupper(substr($company_name, 0, 1) ?: '?');
                                             $location_parts = [];
                                             if (!empty($client['address'])) $location_parts[] = $client['address'];
                                             $city_state = [];
@@ -284,7 +284,7 @@ try {
                                             <td class="px-6 py-4">
                                                 <div class="flex items-start">
                                                     <div class="bg-blue-100 rounded-lg h-10 w-10 flex items-center justify-center font-bold text-sm text-blue-600 mr-3 flex-shrink-0 mt-0.5">
-                                                        <?php echo $company_initial; ?>
+                                                        <?php echo htmlspecialchars($company_initial); ?>
                                                     </div>
                                                     <div>
                                                         <a href="admin-client-detail.php?id=<?php echo $client['id']; ?>" class="font-semibold text-blue-600 hover:text-blue-800 hover:underline" data-testid="link-client-<?php echo $client['id']; ?>">
@@ -306,7 +306,7 @@ try {
                                                                 <span class="text-[10px] text-gray-400">ID: #<?php echo $client['id']; ?></span>
                                                             <?php endif; ?>
                                                         </div>
-                                                        <p class="text-[10px] text-gray-400 mt-0.5">Created: <?php echo date('Y-m-d', strtotime($client['created_at'])); ?></p>
+                                                        <p class="text-[10px] text-gray-400 mt-0.5">Created: <?php echo $client['created_at'] ? date('Y-m-d', strtotime($client['created_at'])) : '—'; ?></p>
                                                     </div>
                                                 </div>
                                             </td>
@@ -392,13 +392,8 @@ try {
     </div>
 
     <script>
-        function deleteClient(id) {
-            if (confirm('Are you sure you want to delete this client? This action cannot be undone.')) {
-                fetch('/api/clients.php?id=' + id, { method: 'DELETE' })
-                .then(r => r.json())
-                .then(d => { if (d.success) location.reload(); else alert('Error deleting client'); });
-            }
-        }
+        // NOTE: client deletion intentionally not exposed — no admin API route exists
+        // for it (see /api/crm/* for the guarded pattern if ever needed).
     </script>
 
 <!-- ── New Person Modal ──────────────────────────────────────────────────── -->
