@@ -74,7 +74,7 @@ try {
     $mkt_social_week = 0;
     $mkt_leads = 0;
     $mkt_blog_posts = 0;
-    $mkt_unsubscribe_rate = 0;
+    $mkt_reply_rate = 0;
     try {
         $r = $pdo->query("SELECT COUNT(DISTINCT sequence_name) FROM email_sequences")->fetchColumn();
         $mkt_active_sequences = intval($r);
@@ -84,10 +84,23 @@ try {
         $mkt_social_week = intval($r);
         $r = $pdo->query("SELECT COUNT(*) FROM blog_posts")->fetchColumn();
         $mkt_blog_posts = intval($r);
+        // Leads in pipeline = open leads (not won/lost) — matches admin-leads-dashboard
+        $r = $pdo->query("SELECT COUNT(*) FROM crm_leads WHERE status NOT IN ('won','lost')")->fetchColumn();
+        $mkt_leads = intval($r);
+        // Reply rate from real engagement data (replied / sent sequences)
         $total_seq = intval($pdo->query("SELECT COUNT(*) FROM email_sequences")->fetchColumn());
-        $unsub = intval($pdo->query("SELECT COUNT(*) FROM email_sequences WHERE replied = true")->fetchColumn());
-        $mkt_unsubscribe_rate = $total_seq > 0 ? round($unsub / $total_seq * 100, 1) : 0;
+        $replied = intval($pdo->query("SELECT COUNT(*) FROM email_sequences WHERE replied = true")->fetchColumn());
+        $mkt_reply_rate = $total_seq > 0 ? round($replied / $total_seq * 100, 1) : 0;
     } catch (PDOException $e) {}
+
+    // Revenue trend selector support: this month's revenue vs previous month (MoM)
+    $revenue_mom = 0;
+    $rc = count($revenue_by_month);
+    if ($rc >= 2) {
+        $last_rev = (float)($revenue_by_month[$rc - 1]['revenue'] ?? 0);
+        $prev_rev = (float)($revenue_by_month[$rc - 2]['revenue'] ?? 0);
+        if ($prev_rev > 0) $revenue_mom = round(($last_rev - $prev_rev) / $prev_rev * 100, 1);
+    }
 
     $stmt = $pdo->query("
         SELECT COUNT(*) as count 
@@ -109,6 +122,7 @@ try {
     $new_clients_month = 0;
     $churn_rate = 0;
     $growth_rate = 0;
+    $revenue_mom = 0;
     $revenue_by_month = [];
     $top_products = [];
     $recent_clients = [];
@@ -160,13 +174,13 @@ try {
                             <p class="text-sm text-gray-600 mt-1">Overview of your business metrics</p>
                         </div>
                         <div class="flex items-center space-x-3">
-                            <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition">
+                            <button onclick="exportReport()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition">
                                 <i class="fas fa-download mr-2"></i>Export Report
                             </button>
                             <div class="relative">
                                 <button onclick="toggleAdminProfile()" class="flex items-center space-x-2 text-gray-700 hover:bg-gray-100 rounded-md px-3 py-2 transition">
                                     <div class="bg-blue-600 text-white rounded-full h-8 w-8 flex items-center justify-center font-semibold text-sm">
-                                        <?php echo strtoupper(substr($user_name, 0, 1)); ?>
+                                        <?php echo htmlspecialchars(strtoupper(substr($user_name, 0, 1) ?: 'U')); ?>
                                     </div>
                                     <span class="text-sm font-medium"><?php echo htmlspecialchars($user_name); ?></span>
                                     <i class="fas fa-chevron-down text-xs"></i>
@@ -198,8 +212,8 @@ try {
                             <div class="bg-blue-100 rounded-lg p-3">
                                 <i class="fas fa-dollar-sign text-blue-600 text-xl"></i>
                             </div>
-                            <span class="text-xs font-semibold text-green-600 bg-green-100 px-2 py-1 rounded-full">
-                                <i class="fas fa-arrow-up mr-1"></i><?php echo $growth_rate; ?>%
+                            <span class="text-xs font-semibold px-2 py-1 rounded-full <?php echo $revenue_mom >= 0 ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'; ?>">
+                                <i class="fas fa-arrow-<?php echo $revenue_mom >= 0 ? 'up' : 'down'; ?> mr-1"></i><?php echo $revenue_mom; ?>% MoM
                             </span>
                         </div>
                         <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Monthly Recurring Revenue</p>
@@ -218,7 +232,7 @@ try {
                         </div>
                         <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Total Clients</p>
                         <p class="text-3xl font-bold text-gray-900"><?php echo $total_clients; ?></p>
-                        <p class="text-sm text-gray-600 mt-2">Churn: <?php echo $churn_rate; ?>%</p>
+                        <p class="text-sm text-gray-600 mt-2">Churn: <?php echo $churn_rate; ?>% &middot; Growth: <?php echo $growth_rate; ?>%</p>
                     </div>
 
                     <div class="bg-white rounded-lg border border-gray-200 p-6">
@@ -279,8 +293,8 @@ try {
                             <p class="text-xs text-gray-500 mt-1">Blog Posts</p>
                         </div>
                         <div class="text-center p-3 bg-red-50 rounded-lg">
-                            <p class="text-2xl font-bold text-red-600"><?php echo $mkt_unsubscribe_rate; ?>%</p>
-                            <p class="text-xs text-gray-500 mt-1">Unsubscribe Rate</p>
+                            <p class="text-2xl font-bold text-red-600"><?php echo $mkt_reply_rate; ?>%</p>
+                            <p class="text-xs text-gray-500 mt-1">Reply Rate</p>
                         </div>
                     </div>
                 </div>
@@ -290,10 +304,10 @@ try {
                     <div class="bg-white rounded-lg border border-gray-200 p-6">
                         <div class="flex items-center justify-between mb-6">
                             <h2 class="text-lg font-semibold text-gray-900">Revenue Trend</h2>
-                            <select class="text-sm border border-gray-300 rounded-md px-3 py-1">
-                                <option>Last 12 Months</option>
-                                <option>Last 6 Months</option>
-                                <option>Last 3 Months</option>
+                            <select id="revenueRange" class="text-sm border border-gray-300 rounded-md px-3 py-1">
+                                <option value="12">Last 12 Months</option>
+                                <option value="6">Last 6 Months</option>
+                                <option value="3">Last 3 Months</option>
                             </select>
                         </div>
                         <div style="height: 300px;">
@@ -307,6 +321,9 @@ try {
                             <a href="admin-products.php" class="text-sm text-blue-600 hover:text-blue-700 font-medium">View All &rarr;</a>
                         </div>
                         <div class="space-y-4">
+                            <?php if (empty($top_products)): ?>
+                                <p class="text-sm text-gray-500 py-6 text-center">No products with subscriptions yet. <a href="admin-products.php" class="text-blue-600 hover:underline">Add products</a> to see revenue here.</p>
+                            <?php else: ?>
                             <?php foreach ($top_products as $index => $product): ?>
                                 <?php if ($index < 5): ?>
                                     <div class="flex items-center justify-between">
@@ -315,17 +332,18 @@ try {
                                                 <span class="text-lg font-bold text-gray-400">#<?php echo $index + 1; ?></span>
                                                 <div>
                                                     <p class="font-medium text-gray-900 text-sm"><?php echo htmlspecialchars($product['name']); ?></p>
-                                                    <p class="text-xs text-gray-600"><?php echo $product['subscriber_count']; ?> subscribers</p>
+                                                    <p class="text-xs text-gray-600"><?php echo (int)$product['subscriber_count']; ?> subscribers</p>
                                                 </div>
                                             </div>
                                         </div>
                                         <div class="text-right">
-                                            <p class="font-bold text-gray-900">$<?php echo number_format($product['total_revenue'], 2); ?></p>
+                                            <p class="font-bold text-gray-900">$<?php echo number_format((float)$product['total_revenue'], 2); ?></p>
                                             <p class="text-xs text-gray-600">/month</p>
                                         </div>
                                     </div>
                                 <?php endif; ?>
                             <?php endforeach; ?>
+                            <?php endif; ?>
                         </div>
                     </div>
 
@@ -351,14 +369,19 @@ try {
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-200">
+                                <?php if (empty($recent_clients)): ?>
+                                    <tr>
+                                        <td colspan="6" class="px-6 py-10 text-center text-sm text-gray-500">No clients yet. <a href="admin-client-add.php" class="text-blue-600 hover:underline">Add your first client</a>.</td>
+                                    </tr>
+                                <?php else: ?>
                                 <?php foreach ($recent_clients as $client): ?>
                                     <tr class="hover:bg-gray-50">
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="flex items-center">
                                                 <div class="bg-blue-100 rounded-full h-8 w-8 flex items-center justify-center font-semibold text-sm text-blue-600 mr-3">
-                                                    <?php echo strtoupper(substr($client['name'], 0, 1)); ?>
+                                                    <?php echo htmlspecialchars(strtoupper(substr($client['name'] ?? '?', 0, 1))); ?>
                                                 </div>
-                                                <span class="font-medium text-gray-900"><?php echo htmlspecialchars($client['name']); ?></span>
+                                                <span class="font-medium text-gray-900"><?php echo htmlspecialchars($client['name'] ?? ''); ?></span>
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
@@ -368,7 +391,7 @@ try {
                                             <?php echo htmlspecialchars($client['company'] ?? 'N/A'); ?>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                            <?php echo date('M d, Y', strtotime($client['created_at'])); ?>
+                                            <?php echo $client['created_at'] ? date('M d, Y', strtotime($client['created_at'])) : '—'; ?>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <span class="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">
@@ -381,6 +404,7 @@ try {
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
@@ -392,47 +416,93 @@ try {
 
     <script>
         const revenueData = <?php echo json_encode($revenue_by_month); ?>;
-        const months = revenueData.map(item => {
+        const allMonths = revenueData.map(item => {
             const date = new Date(item.month + '-01');
             return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
         });
-        const revenues = revenueData.map(item => parseFloat(item.revenue || 0));
+        const allRevenues = revenueData.map(item => parseFloat(item.revenue || 0));
+        let revenueChart = null;
 
-        const ctx = document.getElementById('revenueChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: months,
-                datasets: [{
-                    label: 'Revenue',
-                    data: revenues,
-                    borderColor: '#1a56db',
-                    backgroundColor: 'rgba(26, 86, 219, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
+        function renderRevenueChart(monthsCount) {
+            const months = allMonths.slice(-monthsCount);
+            const revenues = allRevenues.slice(-monthsCount);
+            const ctx = document.getElementById('revenueChart').getContext('2d');
+            if (revenueChart) revenueChart.destroy();
+            revenueChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: months,
+                    datasets: [{
+                        label: 'Revenue',
+                        data: revenues,
+                        borderColor: '#1a56db',
+                        backgroundColor: 'rgba(26, 86, 219, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return '$' + value.toLocaleString();
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return '$' + value.toLocaleString();
+                                }
                             }
                         }
                     }
                 }
-            }
+            });
+        }
+
+        renderRevenueChart(12);
+        document.getElementById('revenueRange').addEventListener('change', function() {
+            renderRevenueChart(parseInt(this.value, 10));
         });
+
+        function csvEscape(value) {
+            const s = String(value ?? '');
+            return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+        }
+
+        function exportReport() {
+            const rows = [
+                ['Metric', 'Value'],
+                ['MRR', <?php echo json_encode($mrr); ?>],
+                ['ARR', <?php echo json_encode($arr); ?>],
+                ['MRR MoM %', <?php echo json_encode($revenue_mom); ?>],
+                ['Active Clients', <?php echo json_encode($total_clients); ?>],
+                ['New Clients This Month', <?php echo json_encode($new_clients_month); ?>],
+                ['Churn Rate %', <?php echo json_encode($churn_rate); ?>],
+                ['Growth Rate %', <?php echo json_encode($growth_rate); ?>],
+                ['Open Tickets', <?php echo json_encode($open_tickets); ?>],
+                ['Unpaid Invoices', <?php echo json_encode($unpaid_invoices_count); ?>],
+                ['Unpaid Total', <?php echo json_encode($unpaid_invoices_total); ?>],
+                ['Leads in Pipeline', <?php echo json_encode($mkt_leads); ?>],
+                [],
+                ['Month', 'Revenue']
+            ];
+            revenueData.forEach(item => rows.push([item.month, item.revenue]));
+            const csv = rows.map(r => r.map(csvEscape).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            const d = new Date();
+            a.href = URL.createObjectURL(blob);
+            a.download = 'blue-mogul-dashboard-report-' + d.toISOString().slice(0, 10) + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+        }
 
         function toggleAdminProfile() {
             const dropdown = document.getElementById('admin-profile-dropdown');
