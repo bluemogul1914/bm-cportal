@@ -6,12 +6,12 @@ require_once 'includes/leads-db-bootstrap.php';
 try { leads_bootstrap($pdo); } catch (Exception $e) {}
 
 $lead_id = (int)($_GET['id'] ?? 0);
-if (!$lead_id) { header("Location: admin-leads-list.php"); exit; }
+if (!$lead_id) { portal_redirect("admin-leads-list.php"); }
 
 $lead = $pdo->prepare("SELECT * FROM leads WHERE id=?");
 $lead->execute([$lead_id]);
 $lead = $lead->fetch(PDO::FETCH_ASSOC);
-if (!$lead) { header("Location: admin-leads-list.php"); exit; }
+if (!$lead) { portal_redirect("admin-leads-list.php"); }
 
 $active_tab = $_GET['tab'] ?? 'information';
 $success_msg = ''; $error_msg = '';

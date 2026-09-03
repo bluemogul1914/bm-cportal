@@ -47,8 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare("UPDATE leads SET lead_number=LPAD(id::text,6,'0') WHERE id=?")->execute([$lead_id]);
                 // Log activity
                 $pdo->prepare("INSERT INTO lead_activities (lead_id,action,actor) VALUES (?,?,?)")->execute([$lead_id,"Create lead with name: $full_name",$_SESSION['user_name']??'Admin']);
-                header("Location: admin-leads-view.php?id=$lead_id&added=1");
-                exit;
+                portal_redirect("admin-leads-view.php?id=$lead_id&added=1");
             } catch (Exception $e) {
                 $error_msg = $e->getMessage();
             }
