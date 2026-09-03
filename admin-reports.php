@@ -44,7 +44,7 @@ try {
             (p.price * COUNT(s.id)) as monthly_revenue
         FROM products p
         LEFT JOIN subscriptions s ON p.id = s.product_id AND s.status = 'active'
-        WHERE p.status = 'active'
+        WHERE p.active = true
         GROUP BY p.id, p.name, p.category, p.price
         ORDER BY monthly_revenue DESC
         LIMIT 10
