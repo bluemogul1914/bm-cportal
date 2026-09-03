@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Blue Mogul Client Portal - Access your MSP and fiber services dashboard">
-    <title>Login - Blue Mogul Client Portal</title>
+    <meta name="description" content="Blue Mogul Suite - Unified MSP, fiber, and operations platform for staff, dealers, and clients">
+    <title>Login - Blue Mogul Suite</title>
     <link rel="icon" type="image/png" href="/client/public/favicon.png">
     <link rel="stylesheet" href="/assets/css/tailwind.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -46,6 +46,26 @@
         .animate-fadeInUp { animation: fadeInUp 0.5s ease both; }
         .animate-delay-100 { animation-delay: 0.1s; }
         .animate-delay-200 { animation-delay: 0.2s; }
+
+        /* Role tab styling */
+        .role-tab {
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        .role-tab.active {
+            background: #5271FD;
+            color: white;
+            border-color: #5271FD;
+        }
+        .role-tab:not(.active) {
+            background: transparent;
+            color: #A0A0A0;
+            border-color: #374151;
+        }
+        .role-tab:not(.active):hover {
+            color: white;
+            border-color: #5271FD;
+        }
     </style>
 </head>
 <body id="login-page" class="min-h-screen flex flex-wrap bg-white font-sans">
@@ -69,14 +89,33 @@
                 <!-- Desktop: logo + heading -->
                 <div id="login-head-desktop" class="hidden lg:block text-center mb-8 animate-fadeInUp">
                     <img src="/assets/img/logo.png" alt="Blue Mogul" class="mx-auto mb-5 h-14">
-                    <h1 class="text-3xl font-bold text-white mb-1">Welcome back</h1>
-                    <p class="text-white text-sm">Sign in to your client portal</p>
+                    <h1 class="text-3xl font-bold text-white mb-1">Welcome to Blue Mogul Suite</h1>
+                    <p id="login-subtitle" class="text-white text-sm">Staff · Operations · Administration</p>
                 </div>
 
                 <!-- Mobile heading -->
                 <div id="login-head-mobile" class="lg:hidden text-center mb-8">
-                    <h1 class="text-3xl font-bold text-white mb-1">Client Portal</h1>
+                    <h1 class="text-3xl font-bold text-white mb-1">Blue Mogul Suite</h1>
                     <p class="text-white text-sm">Unified MSP &amp; Fiber Services</p>
+                </div>
+
+                <!-- Role Tabs -->
+                <div class="flex gap-2 mb-6 animate-fadeInUp" role="tablist" aria-label="Select your role">
+                    <button role="tab" aria-selected="true" data-role="staff"
+                        class="role-tab active flex-1 px-4 py-2.5 text-sm font-medium rounded-lg border text-center"
+                        onclick="selectRole('staff')">
+                        <i class="fas fa-user-tie mr-1.5"></i>Staff
+                    </button>
+                    <button role="tab" aria-selected="false" data-role="dealer"
+                        class="role-tab flex-1 px-4 py-2.5 text-sm font-medium rounded-lg border text-center"
+                        onclick="selectRole('dealer')">
+                        <i class="fas fa-handshake mr-1.5"></i>Dealer
+                    </button>
+                    <button role="tab" aria-selected="false" data-role="client"
+                        class="role-tab flex-1 px-4 py-2.5 text-sm font-medium rounded-lg border text-center"
+                        onclick="selectRole('client')">
+                        <i class="fas fa-user mr-1.5"></i>Client
+                    </button>
                 </div>
 
                 <!-- Card wrapper (desktop only visual card) -->
@@ -92,6 +131,7 @@
                     <!-- Login Form -->
                     <form id="login-form" method="POST" action="/portal/login-handler.php">
                         <?= csrf_field() ?>
+                        <input type="hidden" name="role_hint" id="role-hint" value="staff">
 
                         <div class="mb-5">
                             <label for="email" class="block text-sm font-semibold text-[#A0A0A0] mb-2">
@@ -168,7 +208,7 @@
                                 class="w-full bg-[#5271FD] text-white font-semibold py-3 rounded-xl hover:bg-[#6B8AFF] transition-all duration-300 shadow-lg hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5271FD]/50 focus-visible:ring-offset-2"
                             >
                                 <i class="fas fa-sign-in-alt mr-2"></i>
-                                Sign In
+                                <span id="btn-label">Staff Sign In</span>
                             </button>
                             <button
                                 type="button"
@@ -183,7 +223,6 @@
                         </div>
 
                     </form>
-
 
                 </div>
 
@@ -205,37 +244,58 @@
     </div>
 
     <!-- Right panel — brand visual (hidden on mobile, shown on lg+) -->
-        <div id="login-right" class="hidden lg:flex lg:w-1/2 relative flex-col overflow-hidden">
-            <img
-                src="/assets/img/blue-mogul-banner.png"
-                alt="Blue Mogul banner"
-                class="absolute inset-0 w-full h-full object-cover"
-            />
-            <div class="absolute inset-0 bg-blue-mogul-secondary/20"></div>
-            <!-- Text overlay -->
-            <div class="absolute bottom-0 left-0 right-0 p-8 bg-blue-mogul-secondary/85">
-                <p class="text-white text-sm font-semibold tracking-wider uppercase mb-2">Blue Mogul</p>
-                <p class="text-white text-3xl font-extrabold leading-tight mb-3">High Speed Internet</p>
-                <p class="text-white/80 text-sm font-medium tracking-wide italic break-words">Unparalleled coverage and no contractual obligations</p>
-            </div>
+    <div id="login-right" class="hidden lg:flex lg:w-1/2 relative flex-col overflow-hidden">
+        <img
+            src="/assets/img/blue-mogul-banner.png"
+            alt="Blue Mogul banner"
+            class="absolute inset-0 w-full h-full object-cover"
+        />
+        <div class="absolute inset-0 bg-blue-mogul-secondary/20"></div>
+        <!-- Text overlay -->
+        <div class="absolute bottom-0 left-0 right-0 p-8 bg-blue-mogul-secondary/85">
+            <p class="text-white text-sm font-semibold tracking-wider uppercase mb-2">Blue Mogul</p>
+            <p class="text-white text-3xl font-extrabold leading-tight mb-3">High Speed Internet</p>
+            <p class="text-white/80 text-sm font-medium tracking-wide italic break-words">Unparalleled coverage and no contractual obligations</p>
         </div>
+    </div>
 
-        <!-- Mobile hero (visible below form, hidden on lg+) -->
-        <div id="login-mobile-hero" class="lg:hidden w-full relative overflow-hidden" style="height: 220px;">
-            <img
-                src="/assets/img/blue-mogul-banner.png"
-                alt="Blue Mogul banner"
-                class="absolute inset-0 w-full h-full object-cover"
-            />
-            <div class="absolute inset-0 bg-blue-mogul-secondary/30"></div>
-            <div class="absolute bottom-0 left-0 right-0 p-6 bg-blue-mogul-secondary/85">
-                <p class="text-white text-lg font-extrabold leading-tight">High Speed Internet</p>
-                <p class="text-white/80 text-xs font-medium tracking-wide italic break-words">Unparalleled coverage and no contractual obligations</p>
-            </div>
+    <!-- Mobile hero (visible below form, hidden on lg+) -->
+    <div id="login-mobile-hero" class="lg:hidden w-full relative overflow-hidden" style="height: 220px;">
+        <img
+            src="/assets/img/blue-mogul-banner.png"
+            alt="Blue Mogul banner"
+            class="absolute inset-0 w-full h-full object-cover"
+        />
+        <div class="absolute inset-0 bg-blue-mogul-secondary/30"></div>
+        <div class="absolute bottom-0 left-0 right-0 p-6 bg-blue-mogul-secondary/85">
+            <p class="text-white text-lg font-extrabold leading-tight">High Speed Internet</p>
+            <p class="text-white/80 text-xs font-medium tracking-wide italic break-words">Unparalleled coverage and no contractual obligations</p>
         </div>
+    </div>
 
     <script src="/assets/js/login.js"></script>
     <script>
+        // Role tab selector
+        function selectRole(role) {
+            // Update tabs
+            document.querySelectorAll('[role="tab"]').forEach(t => {
+                t.classList.toggle('active', t.dataset.role === role);
+                t.setAttribute('aria-selected', t.dataset.role === role ? 'true' : 'false');
+            });
+            // Update hidden field
+            document.getElementById('role-hint').value = role;
+
+            // Update subtitle and button label
+            const labels = {
+                staff:  { subtitle: 'Staff · Operations · Administration',   btn: 'Staff Sign In' },
+                dealer: { subtitle: 'Partner · Dealer · Reseller Portal',    btn: 'Dealer Sign In' },
+                client: { subtitle: 'Client · Billing · Support Portal',     btn: 'Sign In' },
+            };
+            document.getElementById('login-subtitle').textContent = labels[role].subtitle;
+            document.getElementById('btn-label').textContent = labels[role].btn;
+        }
+
+        // Parse URL params for error messages (existing behavior)
         const urlParams = new URLSearchParams(window.location.search);
         const message = urlParams.get('message');
         const messageType = urlParams.get('type');
