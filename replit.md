@@ -14,7 +14,7 @@ The application is built with a React frontend using Tailwind CSS and shadcn/ui 
 
 **Frontend:**
 - React, Tailwind CSS, shadcn/ui, wouter routing.
-- Client Portal: Dashboard, ticketing, billing, service management, product catalog, document management, profile settings, VoIP services, chat, and project tracking.
+- Blue Mogul Suite: Dashboard, ticketing, billing, service management, product catalog, document management, profile settings, VoIP services, chat, and project tracking.
 - Admin Portal: Comprehensive CRM-style client management, ticket management, invoicing, product/service management, network documentation, knowledge base, AI agent command center, automation, reporting, system settings, and various third-party integrations dashboards.
 - Shared Components: Client and admin sidebars, email helpers, configuration, authentication handlers, and database initialization.
 - Branding: Primary color #1a56db, secondary #0d1b3e, accent #3b82f6, Inter font, custom logo.

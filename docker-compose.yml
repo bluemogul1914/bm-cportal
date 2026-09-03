@@ -1,0 +1,69 @@
+# Blue Mogul Portal — Standalone Deployment
+#
+# One-command bring-up: app + its own PostgreSQL, no external DB needed.
+# The app auto-migrates (runPortalMigrations) and seeds on first boot.
+#
+#   cp .env.example .env      # edit secrets
+#   docker compose up -d --build
+#   open http://localhost:3000
+#
+# Production target on the BM fleet: hills-01 (manual compose since Coolify
+# backend is down) or any Docker host. Edge TLS via Cloudflare tunnel.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bluemogul_portal
+      POSTGRES_USER: portal
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - portal_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portal -d bluemogul_portal"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [portal]
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Point the app at the bundled Postgres (no Neon/external DB).
+      DATABASE_URL: postgres://portal:${POSTGRES_PASSWORD}@db:5432/bluemogul_portal
+      # Public URL for links, redirects, and payments. Change to your domain.
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      # Optional: override AI/knowledge defaults. AnythingLLM is optional;
+      # without it the assistant uses the configured Ollama endpoint.
+      ANYTHINGLLM_URL: ${ANYTHINGLLM_URL:-}
+      # Optional provider keys (most are stored in system_settings instead).
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLIC_KEY: ${STRIPE_PUBLIC_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      TWENTY_CRM_API_KEY: ${TWENTY_CRM_API_KEY:-}
+      TWENTY_API_URL: ${TWENTY_API_URL:-}
+    ports:
+      - "${PORT:-3000}:3000"
+    healthcheck:
+      # Built-in health route: GET /?health → 200 {"status":"ok"}
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/?health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks: [portal]
+
+volumes:
+  portal_pgdata:
+
+networks:
+  portal:
+    driver: bridge

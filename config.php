@@ -32,7 +32,7 @@ define('DB_PORT', '3306');
 // ============================================
 // APPLICATION SETTINGS
 // ============================================
-define('SITE_NAME', 'Blue Mogul Client Portal');
+define('SITE_NAME', 'Blue Mogul Suite');
 define('ADMIN_EMAIL', 'contact@bluemogul.biz');
 
 /**
