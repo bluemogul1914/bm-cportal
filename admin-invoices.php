@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'includes/email.php'; // send_email() for reminders
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
     portal_redirect('/portal');
@@ -22,7 +23,32 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $error_message = "Error updating invoice: " . $e->getMessage();
         }
     } elseif ($action === 'send_reminder') {
-        $success_message = "Payment reminder sent!";
+        try {
+            $pdo = getDB();
+            $inv_id = (int)($_POST['invoice_id'] ?? 0);
+            $stmt = $pdo->prepare("SELECT i.invoice_number, i.total, i.due_date, i.status, c.email AS client_email, c.name AS client_name FROM invoices i LEFT JOIN clients c ON i.client_id = c.id WHERE i.id=?");
+            $stmt->execute([$inv_id]);
+            $inv = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$inv) {
+                $error_message = "Invoice not found.";
+            } elseif (empty($inv['client_email'])) {
+                $error_message = "No email on file for this client — reminder not sent.";
+            } else {
+                $subject = "Payment reminder — Invoice {$inv['invoice_number']}";
+                $html = "<p>Hi " . htmlspecialchars($inv['client_name'] ?: 'there') . ",</p>"
+                      . "<p>This is a friendly reminder that invoice <strong>{$inv['invoice_number']}</strong>"
+                      . " for <strong>\$" . number_format((float)$inv['total'], 2) . "</strong> is "
+                      . ($inv['due_date'] ? "due on " . date('M j, Y', strtotime($inv['due_date'])) . " and currently " . htmlspecialchars($inv['status']) : "currently " . htmlspecialchars($inv['status'])) . ".</p>"
+                      . "<p>You can view and pay it anytime from your Blue Mogul portal.</p>"
+                      . "<p>&mdash; Blue Mogul Team</p>";
+                $result = send_email($inv['client_email'], $subject, $html);
+                $success_message = !empty($result['success'])
+                    ? "Reminder sent to " . htmlspecialchars($inv['client_email']) . "."
+                    : "Reminder NOT sent: " . htmlspecialchars($result['error'] ?? 'mail unavailable (SMTP not configured?)');
+            }
+        } catch (Exception $e) {
+            $error_message = "Error sending reminder: " . $e->getMessage();
+        }
     }
 }
 
@@ -377,11 +403,14 @@ try {
             }
         }
 
+        const CSRF_TOKEN = <?php echo json_encode(csrf_token()); ?>;
+
         function sendReminder(id) {
             if (confirm('Send payment reminder to client?')) {
                 const form = document.createElement('form');
                 form.method = 'POST';
                 form.innerHTML = `
+                    <input type="hidden" name="csrf_token" value="${CSRF_TOKEN}">
                     <input type="hidden" name="action" value="send_reminder">
                     <input type="hidden" name="invoice_id" value="${id}">
                 `;
@@ -391,7 +420,26 @@ try {
         }
 
         function exportInvoices() {
-            window.location.href = '/api/export-invoices.php';
+            // client-side CSV of the table as rendered
+            const rows = [];
+            const table = document.querySelector('table');
+            if (!table) return;
+            table.querySelectorAll('tr').forEach(tr => {
+                const cells = Array.from(tr.querySelectorAll('th, td')).map(td => {
+                    const txt = (td.innerText || '').trim();
+                    return /[",\n]/.test(txt) ? '"' + txt.replace(/"/g, '""') + '"' : txt;
+                });
+                if (cells.length) rows.push(cells.join(','));
+            });
+            const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            const d = new Date();
+            a.href = URL.createObjectURL(blob);
+            a.download = 'blue-mogul-invoices-' + d.toISOString().slice(0, 10) + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
         }
     </script>
 
