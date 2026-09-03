@@ -5,6 +5,13 @@
  * Include this directly in pages that need functions but not the sidebar HTML.
  */
 
+// Load config.php up front so portal_redirect()/require_csrf()/getDB() exist
+// unconditionally — dealer_auth() redirects BEFORE the first get_db() call.
+$__cfg_file = dirname(__FILE__) . '/../config.php';
+if (file_exists($__cfg_file) && !function_exists('portal_redirect')) {
+    require_once $__cfg_file;
+}
+
 if (!function_exists('get_db')) {
     function get_db() {
         static $pdo;
@@ -33,8 +40,9 @@ if (!function_exists('dealer_auth')) {
         $is_dealer = (!empty($_SESSION['role'])      && $_SESSION['role']      === 'dealer')
                   || (!empty($_SESSION['user_role']) && $_SESSION['user_role'] === 'dealer');
         if (!$is_dealer) {
-            header('Location: /portal/index.php?session_expired=1');
-            exit;
+            // portal_redirect (NOT raw header()) — the Node execFile wrapper only
+            // honors the __REDIRECT__: marker; native header() is swallowed in CLI mode
+            portal_redirect('/portal/index.php?session_expired=1');
         }
         if (empty($_SESSION['dealer_id']) && !empty($_SESSION['user_id'])) {
             try {
@@ -52,8 +60,7 @@ if (!function_exists('dealer_me')) {
         if (!empty($_SESSION['dealer_cache'])) return $_SESSION['dealer_cache'];
         $dealer_id = $_SESSION['dealer_id'] ?? null;
         if (!$dealer_id) {
-            header('Location: /portal/index.php?session_expired=1');
-            exit;
+            portal_redirect('/portal/index.php?session_expired=1');
         }
         $pdo  = get_db();
         $stmt = $pdo->prepare(
@@ -72,8 +79,7 @@ if (!function_exists('dealer_me')) {
         $dealer = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$dealer) {
             session_destroy();
-            header('Location: /portal/index.php?session_expired=1');
-            exit;
+            portal_redirect('/portal/index.php?session_expired=1');
         }
         $_SESSION['dealer_cache'] = $dealer;
         return $dealer;

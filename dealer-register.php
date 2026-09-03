@@ -7,17 +7,15 @@
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 
+require_once __DIR__ . '/includes/dealer-functions.php';
+require_once __DIR__ . '/config.php'; // defines portal_redirect() + require_csrf()
+
 if (!empty($_SESSION['role']) && $_SESSION['role'] === 'dealer') {
-    header('Location: /portal/dealer-dashboard.php');
-    exit;
+    portal_redirect('/portal/dealer-dashboard.php');
 }
 if (!empty($_SESSION['user_role']) && $_SESSION['user_role'] === 'dealer') {
-    header('Location: /portal/dealer-dashboard.php');
-    exit;
+    portal_redirect('/portal/dealer-dashboard.php');
 }
-
-require_once __DIR__ . '/includes/dealer-functions.php';
-require_once __DIR__ . '/config.php'; // needed for require_csrf() before first get_db() call
 
 $success = $error = '';
 $submitted = false;
