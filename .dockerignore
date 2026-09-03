@@ -1,0 +1,23 @@
+# Docker build context — keep the image lean and the install reproducible.
+# node_modules MUST NOT be copied: the Dockerfile runs `npm ci` fresh
+# (host modules can be platform-mismatched and silently break the build).
+node_modules
+dist
+
+# VCS & local state
+.git
+.gitignore
+.dockerignore
+uploads
+attached_assets
+*.tar.gz
+*.md.bak
+
+# Local env — never bake secrets into the image
+.env
+.env.*
+!.env.example
+
+# Editor / OS noise
+.DS_Store
+*.swp
