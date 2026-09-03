@@ -153,6 +153,7 @@ $errmsg = '';
 
 // ── Handle POST saves ─────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     $action = $_POST['action'] ?? '';
 
     if ($action === 'save_vultr') {
@@ -509,6 +510,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
       <div class="card-title">☁️ Vultr Credentials <?= statusBadge($vultr_ok) ?></div>
       <form method="POST">
         <input type="hidden" name="action" value="save_vultr">
+        <?= csrf_field() ?>
         <div class="form-group" style="margin-bottom:12px;">
           <label>API Key</label>
           <input type="password" name="api_key" value="<?= htmlspecialchars($vultr_key) ?>" placeholder="Vultr API Key" autocomplete="off">
@@ -529,6 +531,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
         <h4>💳 Log Fund Addition</h4>
         <form method="POST">
           <input type="hidden" name="action" value="log_fund">
+          <?= csrf_field() ?>
           <input type="hidden" name="provider" value="vultr">
           <input type="hidden" name="from_tab" value="vultr">
           <div class="form-row">
@@ -551,6 +554,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
       <div class="card-title">📞 VoIP.ms Credentials <?= statusBadge($voip_ok) ?></div>
       <form method="POST">
         <input type="hidden" name="action" value="save_voip">
+        <?= csrf_field() ?>
         <div class="form-row">
           <div class="form-group"><label>Account Username</label><input type="text" name="account_username" value="<?= htmlspecialchars($voip_account) ?>" placeholder="voip.ms login email"></div>
           <div class="form-group"><label>API Username</label><input type="text" name="api_username" value="<?= htmlspecialchars($voip_user) ?>" placeholder="API-enabled username"></div>
@@ -573,6 +577,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
         <h4>💳 Log Fund Addition</h4>
         <form method="POST">
           <input type="hidden" name="action" value="log_fund">
+          <?= csrf_field() ?>
           <input type="hidden" name="provider" value="voip">
           <input type="hidden" name="from_tab" value="voip">
           <div class="form-row">
@@ -601,6 +606,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
       <div class="card-title">🌐 Enom Credentials <?= statusBadge($enom_ok) ?></div>
       <form method="POST">
         <input type="hidden" name="action" value="save_enom">
+        <?= csrf_field() ?>
         <div class="form-row">
           <div class="form-group"><label>UID (Reseller Username)</label><input type="text" name="uid" value="<?= htmlspecialchars($enom_uid) ?>" placeholder="YourEnomUID"></div>
           <div class="form-group"><label>API Password (PW)</label><input type="password" name="pw" value="<?= htmlspecialchars($enom_pw) ?>" placeholder="Enom API password"></div>
@@ -619,6 +625,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
         <h4>💳 Log Fund Addition</h4>
         <form method="POST">
           <input type="hidden" name="action" value="log_fund">
+          <?= csrf_field() ?>
           <input type="hidden" name="provider" value="enom">
           <input type="hidden" name="from_tab" value="enom">
           <div class="form-row">
@@ -643,6 +650,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
       <?php else: ?>
       <form method="POST">
         <input type="hidden" name="action" value="enom_register">
+        <?= csrf_field() ?>
         <div class="form-row">
           <div class="form-group"><label>Domain Name (without TLD)</label><input type="text" name="domain_name" placeholder="example" required></div>
           <div class="form-group">
@@ -694,6 +702,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
       <div class="card-title">🏢 Hostwinds Credentials <?= statusBadge($hw_ok) ?></div>
       <form method="POST">
         <input type="hidden" name="action" value="save_hostwinds">
+        <?= csrf_field() ?>
         <div class="form-row">
           <div class="form-group"><label>API Key</label><input type="password" name="api_key" value="<?= htmlspecialchars($hw_key) ?>" placeholder="Hostwinds API Key" autocomplete="off"></div>
           <div class="form-group"><label>Client ID (optional)</label><input type="text" name="client_id" value="<?= htmlspecialchars($hw_cid) ?>" placeholder="Your Hostwinds Client ID"></div>
@@ -721,6 +730,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
         <h4>💳 Log Fund Addition</h4>
         <form method="POST">
           <input type="hidden" name="action" value="log_fund">
+          <?= csrf_field() ?>
           <input type="hidden" name="provider" value="hostwinds">
           <input type="hidden" name="from_tab" value="hostwinds">
           <div class="form-row">
@@ -762,6 +772,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
       <div class="card-title">📱 VidaPay Credentials <?= statusBadge($vp_ok) ?></div>
       <form method="POST">
         <input type="hidden" name="action" value="save_vidapay">
+        <?= csrf_field() ?>
         <div class="form-row">
           <div class="form-group"><label>Username</label><input type="text" name="username" value="<?= htmlspecialchars($vp_user) ?>" placeholder="VidaPay username"></div>
           <div class="form-group"><label>API Key</label><input type="password" name="api_key" value="<?= htmlspecialchars($vp_key) ?>" placeholder="API Key" autocomplete="off"></div>
@@ -783,6 +794,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
         <h4>💳 Log Fund Addition</h4>
         <form method="POST">
           <input type="hidden" name="action" value="log_fund">
+          <?= csrf_field() ?>
           <input type="hidden" name="provider" value="vidapay">
           <input type="hidden" name="from_tab" value="vidapay">
           <div class="form-row">
@@ -807,6 +819,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
       <?php else: ?>
       <form method="POST">
         <input type="hidden" name="action" value="vidapay_reload">
+        <?= csrf_field() ?>
         <div class="form-group" style="margin-bottom:10px;"><label>Phone Number (MDN)</label><input type="text" name="mdn" placeholder="5551234567" required></div>
         <div class="form-group" style="margin-bottom:10px;"><label>Plan ID / Amount</label><input type="text" name="plan_id" placeholder="e.g. TF30 or plan code" required></div>
         <button class="btn btn-primary" type="submit">🔄 Process Reload</button>
@@ -822,6 +835,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
       <?php else: ?>
       <form method="POST">
         <input type="hidden" name="action" value="vidapay_activate">
+        <?= csrf_field() ?>
         <div class="form-row">
           <div class="form-group"><label>Phone Number (MDN)</label><input type="text" name="mdn" placeholder="5551234567" required></div>
           <div class="form-group"><label>SIM/ICCID</label><input type="text" name="iccid" placeholder="89010..." required></div>
@@ -895,6 +909,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
     </div>
     <form method="POST">
       <input type="hidden" name="action" value="save_social_api">
+      <?= csrf_field() ?>
       <div class="form-row">
         <?php foreach ($plat_fields as $label => $field):
           $key = "social_{$plat}_{$field}";

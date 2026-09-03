@@ -16,6 +16,9 @@ if (!$cust) { portal_redirect('/portal/dealer-customers.php'); }
 
 $success = ''; $error = '';
 
+// CSRF guard for all POST actions on this page
+if ($_SERVER['REQUEST_METHOD'] === 'POST') require_csrf();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
     $pdo->prepare("UPDATE dealer_customers SET type=?,name=?,email=?,phone=?,company=?,address=?,notes=?,updated_at=NOW() WHERE id=? AND dealer_id=?")
         ->execute([$_POST['type']??$cust['type'],trim($_POST['name']??''),trim($_POST['email']??''),trim($_POST['phone']??''),trim($_POST['company']??''),trim($_POST['address']??''),trim($_POST['notes']??''),$cid,$dealer_id]);
@@ -56,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
 
 <div class="bg-white rounded-xl border border-gray-200 p-6">
     <form method="post" class="space-y-4">
+        <?= csrf_field() ?>
         <input type="hidden" name="update" value="1">
         <div class="flex gap-6 mb-2">
             <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="type" value="lead" <?= $cust['type']==='lead'?'checked':'' ?> class="accent-blue-600"> <span class="text-sm font-medium text-gray-700">Lead</span></label>

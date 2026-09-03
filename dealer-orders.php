@@ -18,6 +18,7 @@ $product_labels = [
 
 // ── Handle POST ───────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     $client_name  = trim($_POST['client_name']    ?? '');
     $client_email = trim($_POST['client_email']   ?? '');
     $client_phone = trim($_POST['client_phone']   ?? '');
@@ -224,6 +225,7 @@ $all_orders = $history->fetchAll();
         <div class="card-title" style="margin-bottom:16px;">New order</div>
 
         <form method="POST">
+        <?= csrf_field() ?>
           <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-lt);margin-bottom:10px;">Client information</div>
 
           <div class="form-group">

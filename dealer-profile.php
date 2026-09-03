@@ -14,6 +14,9 @@ $user_row = $pdo->prepare("SELECT * FROM users WHERE id=?"); $user_row->execute(
 
 $success = ''; $error = '';
 
+// CSRF guard for all POST actions on this page
+if ($_SERVER['REQUEST_METHOD'] === 'POST') require_csrf();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
     $name    = trim($_POST['name'] ?? '');
     $company = trim($_POST['company'] ?? '');
@@ -101,6 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
 <div class="bg-white rounded-xl border border-gray-200 p-6">
     <h3 class="font-semibold text-gray-900 mb-5">Edit Profile</h3>
     <form method="post" class="space-y-4">
+        <?= csrf_field() ?>
         <input type="hidden" name="update_profile" value="1">
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>

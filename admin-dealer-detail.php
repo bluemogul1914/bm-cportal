@@ -11,6 +11,7 @@ if (!$d) portal_redirect('/portal/admin-dealers.php');
 $success = ''; $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     if (isset($_POST['update_dealer'])) {
         $pdo->prepare("UPDATE dealers SET company_name=?,commission_rate=?,status=?,notes=?,full_name=? WHERE id=?")
             ->execute([trim($_POST['company_name']??''), max(0,min(100,(float)($_POST['commission_rate']??10))), $_POST['status']??'active', trim($_POST['notes']??''), trim($_POST['user_name']??''), $did]);
@@ -103,6 +104,7 @@ $ord_cfg=['pending'=>'bg-yellow-100 text-yellow-800','in_progress'=>'bg-blue-100
     <div class="bg-white rounded-xl border border-gray-200 p-5">
         <h3 class="font-semibold text-gray-900 mb-4">Dealer Settings</h3>
         <form method="post" class="space-y-3">
+        <?= csrf_field() ?>
             <input type="hidden" name="update_dealer" value="1">
             <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">Name</label>
@@ -171,10 +173,12 @@ $ord_cfg=['pending'=>'bg-yellow-100 text-yellow-800','in_progress'=>'bg-blue-100
                         <td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full font-medium <?= $status_cfg[$c['status']]??'bg-gray-100 text-gray-600' ?>"><?= ucfirst($c['status']) ?></span></td>
                         <td class="px-4 py-2">
                             <?php if ($c['status']==='pending'): ?>
-                            <form method="post" class="inline"><input type="hidden" name="approve_commission" value="1"><input type="hidden" name="commission_id" value="<?= $c['id'] ?>">
+                            <form method="post" class="inline">
+        <?= csrf_field() ?><input type="hidden" name="approve_commission" value="1"><input type="hidden" name="commission_id" value="<?= $c['id'] ?>">
                             <button class="text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 px-2 py-0.5 rounded transition" data-testid="button-approve-<?= $c['id'] ?>">Approve</button></form>
                             <?php elseif ($c['status']==='approved'): ?>
-                            <form method="post" class="inline"><input type="hidden" name="set_comm_paid" value="1"><input type="hidden" name="commission_id" value="<?= $c['id'] ?>">
+                            <form method="post" class="inline">
+        <?= csrf_field() ?><input type="hidden" name="set_comm_paid" value="1"><input type="hidden" name="commission_id" value="<?= $c['id'] ?>">
                             <button class="text-xs bg-green-100 text-green-700 hover:bg-green-200 px-2 py-0.5 rounded transition" data-testid="button-paid-<?= $c['id'] ?>">Mark Paid</button></form>
                             <?php endif; ?>
                         </td>
@@ -231,7 +235,8 @@ $ord_cfg=['pending'=>'bg-yellow-100 text-yellow-800','in_progress'=>'bg-blue-100
                     <p class="text-xs text-gray-500"><?= date('M j, Y', strtotime($p['created_at'])) ?><?= $p['notes'] ? ' · '.htmlspecialchars($p['notes']) : '' ?></p>
                 </div>
                 <?php if ($p['status']==='pending'): ?>
-                <form method="post" class="inline"><input type="hidden" name="mark_paid" value="1"><input type="hidden" name="payout_id" value="<?= $p['id'] ?>">
+                <form method="post" class="inline">
+        <?= csrf_field() ?><input type="hidden" name="mark_paid" value="1"><input type="hidden" name="payout_id" value="<?= $p['id'] ?>">
                 <button class="text-xs bg-emerald-100 text-emerald-700 hover:bg-emerald-200 px-2.5 py-1 rounded transition font-medium">Mark Paid</button></form>
                 <?php else: ?>
                 <span class="text-xs px-2.5 py-1 rounded-full bg-green-100 text-green-800 font-semibold"><?= ucfirst($p['status']) ?></span>

@@ -7,6 +7,9 @@ $pdo    = get_db();
 
 $success = $error = '';
 
+// CSRF guard for all POST actions on this page
+if ($_SERVER['REQUEST_METHOD'] === 'POST') require_csrf();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'request_payout') {
     try {
         $pdo->beginTransaction();
@@ -134,6 +137,7 @@ $has_bank = !empty($dealer['ach_routing']);
             </div>
             <?php else: ?>
             <form method="POST">
+        <?= csrf_field() ?>
               <input type="hidden" name="action" value="request_payout">
               <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
                 Request payout — $<?= dollars($avail['cents']) ?>
@@ -166,6 +170,7 @@ $has_bank = !empty($dealer['ach_routing']);
           <?php endif; ?>
 
           <form method="POST">
+        <?= csrf_field() ?>
             <input type="hidden" name="action" value="update_bank">
             <div class="form-group">
               <label class="form-label">Routing number (9 digits)</label>

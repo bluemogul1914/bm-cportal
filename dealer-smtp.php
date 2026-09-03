@@ -16,6 +16,9 @@ $smtp = $pdo->prepare("SELECT * FROM dealer_smtp_settings WHERE dealer_id=?"); $
 
 $success = ''; $error = ''; $test_result = '';
 
+// CSRF guard for all POST actions on this page
+if ($_SERVER['REQUEST_METHOD'] === 'POST') require_csrf();
+
 // Test SMTP
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['test_smtp'])) {
     // Just validate settings are present
@@ -89,6 +92,7 @@ $enc_check = fn($v) => ($smtp['encryption']??'tls') === $v ? 'selected' : '';
 <div class="bg-white rounded-xl border border-gray-200 p-6">
     <h3 class="font-semibold text-gray-900 mb-5">SMTP Configuration</h3>
     <form method="post" class="space-y-4">
+        <?= csrf_field() ?>
         <input type="hidden" name="save" value="1">
         <div class="grid grid-cols-2 gap-4">
             <div class="col-span-2 sm:col-span-1">
@@ -137,6 +141,7 @@ $enc_check = fn($v) => ($smtp['encryption']??'tls') === $v ? 'selected' : '';
     <h3 class="font-semibold text-gray-900 mb-3">Send Test Email</h3>
     <p class="text-sm text-gray-500 mb-4">Sends a test message to <strong><?= htmlspecialchars($user_email) ?></strong> to verify your settings.</p>
     <form method="post">
+        <?= csrf_field() ?>
         <input type="hidden" name="test_smtp" value="1">
         <button type="submit" class="border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium px-5 py-2.5 rounded-xl transition text-sm flex items-center gap-2" data-testid="button-test-smtp">
             <i class="fas fa-paper-plane text-cyan-500"></i> Send Test Email

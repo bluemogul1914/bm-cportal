@@ -17,11 +17,13 @@ if (!empty($_SESSION['user_role']) && $_SESSION['user_role'] === 'dealer') {
 }
 
 require_once __DIR__ . '/includes/dealer-functions.php';
+require_once __DIR__ . '/config.php'; // needed for require_csrf() before first get_db() call
 
 $success = $error = '';
 $submitted = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     $full_name = trim($_POST['full_name'] ?? '');
     $email     = trim($_POST['email']     ?? '');
     $phone     = trim($_POST['phone']     ?? '');
@@ -190,6 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <?php endif; ?>
 
       <form method="POST" novalidate>
+        <?= csrf_field() ?>
         <div class="form-grid-2">
           <div class="form-group">
             <label class="form-label">Full name <span style="color:var(--red);">*</span></label>

@@ -14,6 +14,9 @@ $dealer_id = $dealer['id'];
 
 $success = ''; $error = '';
 
+// CSRF guard for all POST actions on this page
+if ($_SERVER['REQUEST_METHOD'] === 'POST') require_csrf();
+
 // Add customer
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_customer'])) {
     $name    = trim($_POST['name'] ?? '');
@@ -115,6 +118,7 @@ $show_form = isset($_GET['new']);
 <div class="bg-white rounded-xl border border-gray-200 p-6">
     <h3 class="font-semibold text-gray-900 mb-4"><i class="fas fa-user-plus text-purple-500 mr-2"></i>Add Customer / Lead</h3>
     <form method="post" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <?= csrf_field() ?>
         <input type="hidden" name="add_customer" value="1">
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Type *</label>
@@ -186,6 +190,7 @@ $show_form = isset($_GET['new']);
                 <span class="text-xs px-2.5 py-1 rounded-full font-semibold <?= $c['type']==='client' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800' ?>"><?= ucfirst($c['type']) ?></span>
                 <a href="dealer-customer-detail.php?id=<?= $c['id'] ?>" class="text-gray-400 hover:text-blue-600 text-sm" title="View"><i class="fas fa-eye"></i></a>
                 <form method="post" class="inline" onsubmit="return confirm('Remove this customer?')">
+        <?= csrf_field() ?>
                     <input type="hidden" name="delete_id" value="<?= $c['id'] ?>">
                     <button type="submit" class="text-gray-400 hover:text-red-600 text-sm" data-testid="button-delete-customer-<?= $c['id'] ?>"><i class="fas fa-trash"></i></button>
                 </form>
