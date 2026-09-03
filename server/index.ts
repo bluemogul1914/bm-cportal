@@ -2442,7 +2442,24 @@ app.get("/api/bmai/test", async (_req, res) => {
 });
 
 // D&H Customer Order Management API — settings, search, price, tracking
-app.get("/api/dh/settings", async (_req, res) => {
+// All /api/dh/* routes are admin-only (dashboard is PHP-native; these exist
+// for API/seeding use). Guarded 2026-09-03 — previously all unauthenticated.
+function requireDhAdmin(req: Request, res: Response): boolean {
+  const sess = (req.session as any)?.portalUser;
+  if (!sess?.user_id) { res.status(401).json({ error: "Not authenticated" }); return false; }
+  if (sess.is_admin !== true) { res.status(403).json({ error: "Admin only" }); return false; }
+  return true;
+}
+
+function requireDhCsrf(req: Request, res: Response): boolean {
+  const post = String((req.body as any)?.csrf_token || "");
+  const sessionToken = String((req.session as any)?.csrfToken || "");
+  if (!post || post !== sessionToken) { res.status(403).json({ error: "CSRF validation failed" }); return false; }
+  return true;
+}
+
+app.get("/api/dh/settings", async (req, res) => {
+  if (!requireDhAdmin(req, res)) return;
   try {
     const raw = await webhookPool.query(
       `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('dh_client_id','dh_client_secret','dh_account','dh_env','dh_tenant')`
@@ -2459,6 +2476,8 @@ app.get("/api/dh/settings", async (_req, res) => {
 });
 
 app.post("/api/dh/settings", express.json(), async (req, res) => {
+  if (!requireDhAdmin(req, res)) return;
+  if (!requireDhCsrf(req, res)) return;
   try {
     const upsert = async (k: string, v: string) => webhookPool.query(
       `INSERT INTO system_settings (setting_key, setting_value) VALUES ($1,$2)
@@ -2474,7 +2493,8 @@ app.post("/api/dh/settings", express.json(), async (req, res) => {
 });
 
 // Test D&H connectivity: get token, then call /carriers
-app.get("/api/dh/test", async (_req, res) => {
+app.get("/api/dh/test", async (req, res) => {
+  if (!requireDhAdmin(req, res)) return;
   try {
     const creds = await getDhCredentials(webhookPool);
     await getDhToken(creds);
@@ -2485,6 +2505,7 @@ app.get("/api/dh/test", async (_req, res) => {
 
 // Price & Availability for a specific item (single itemId)
 app.get("/api/dh/price-availability/:itemId", async (req, res) => {
+  if (!requireDhAdmin(req, res)) return;
   try {
     const { itemId } = req.params;
     const qty = req.query.quantity ? parseInt(req.query.quantity as string) : undefined;
@@ -2495,6 +2516,7 @@ app.get("/api/dh/price-availability/:itemId", async (req, res) => {
 
 // Item inquiry (single itemId)
 app.get("/api/dh/item-inquiry/:itemId", async (req, res) => {
+  if (!requireDhAdmin(req, res)) return;
   try {
     const { itemId } = req.params;
     const result = await dhItemInquiry(webhookPool, itemId);
@@ -2504,6 +2526,7 @@ app.get("/api/dh/item-inquiry/:itemId", async (req, res) => {
 
 // Order tracking
 app.get("/api/dh/tracking", async (req, res) => {
+  if (!requireDhAdmin(req, res)) return;
   try {
     const orderNumber = typeof req.query.orderNumber === 'string' ? String(req.query.orderNumber) : undefined;
     const result = await dhOrderTracking(webhookPool, orderNumber);
@@ -2515,9 +2538,14 @@ app.get("/api/dh/tracking", async (req, res) => {
 app.post("/api/dh/create-order", express.json(), async (req, res) => {
   try {
     // Require authenticated admin session for order placement / invoice creation
-    const sess: any = (req as any).session;
-    if (!sess?.user_id || (sess?.is_admin ?? false) !== true) {
+    const sess: any = (req.session as any)?.portalUser;
+    if (!sess?.user_id || sess.is_admin !== true) {
       return res.status(401).json({ error: "Not authenticated" });
+    }
+    const csrfToken = String((req.body as any)?.csrf_token || "");
+    const sessionCsrf = String((req.session as any)?.csrfToken || "");
+    if (!csrfToken || csrfToken !== sessionCsrf) {
+      return res.status(403).json({ error: "CSRF validation failed" });
     }
     const { poNumber, branch, lines, clientId, invoiceNotes } = req.body;
     if (!poNumber || typeof poNumber !== "string" || !poNumber.trim()) {
@@ -2581,6 +2609,7 @@ app.post("/api/dh/create-order", express.json(), async (req, res) => {
 
 // Order history (optional orderNumber filter)
 app.get("/api/dh/orders", async (req, res) => {
+  if (!requireDhAdmin(req, res)) return;
   try {
     const result = await dhOrdersList(webhookPool, typeof req.query.orderNumber === 'string' ? String(req.query.orderNumber) : undefined);
     res.json(result);
@@ -2589,6 +2618,7 @@ app.get("/api/dh/orders", async (req, res) => {
 
 // Catalog search — pages through items and filters by keyword
 app.post("/api/dh/search-items", express.json(), async (req, res) => {
+  if (!requireDhAdmin(req, res)) return;
   try {
     const { query, scrollId, maxPages = 5, pageSize = 200 } = req.body;
     if (!query || typeof query !== "string" || !query.trim()) {
