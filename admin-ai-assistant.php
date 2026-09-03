@@ -310,34 +310,86 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
       </label>
     </div>
     <div class="fr">
-      <label>Ollama Server URL</label>
-      <input type="url" id="settingUrl" placeholder="http://localhost:11434" data-testid="input-ollama-url">
-      <div class="hint">URL of your Ollama instance. Use a public hostname if Ollama runs on a different machine or server.</div>
+      <label for="settingEngine">AI Engine</label>
+      <select id="settingEngine" class="ai-input" onchange="onEngineChange()">
+        <option value="bmai">BM AI (recommended — OpenRouter + AnythingLLM tools)</option>
+        <option value="anythingllm">AnythingLLM (direct)</option>
+        <option value="ollama">Ollama (legacy)</option>
+      </select>
+      <div class="hint">BM AI routes through Blue Mogul AI (LibreChat) → OpenRouter, with AnythingLLM available as a knowledge tool. The role-specific system prompts live in the BM AI agents themselves.</div>
     </div>
-    <div class="fr">
-      <label>Model Name</label>
-      <input type="text" id="settingModel" placeholder="llama3" data-testid="input-ollama-model">
-      <div class="hint">Must be pulled in Ollama first. e.g., <code>ollama pull llama3</code></div>
-    </div>
-    <div class="fr">
-      <label>
-        Available Models
-        <button onclick="loadModels()" style="margin-left:8px;background:none;border:1px solid #d1d5db;padding:2px 8px;border-radius:6px;cursor:pointer;font-size:11px;color:#374151;">
-          <i class="fas fa-sync-alt"></i> Refresh
-        </button>
-      </label>
-      <div class="model-chips" id="modelChips">
-        <span style="color:#94a3b8;font-size:12px;">Click Refresh to load available models</span>
+
+    <!-- BM AI fields (engine = bmai) -->
+    <div id="bmaiFields">
+      <div class="fr">
+        <label>BM AI URL</label>
+        <input type="url" id="bmaiUrl" placeholder="https://bmai.bluemogul.us" data-testid="input-bmai-url">
+      </div>
+      <div class="fr">
+        <label>Service Account Email</label>
+        <input type="email" id="bmaiEmail" placeholder="portal-bot@bluemogul.biz" data-testid="input-bmai-email">
+      </div>
+      <div class="fr">
+        <label>Service Account Password</label>
+        <input type="password" id="bmaiPassword" placeholder="••••••••" autocomplete="new-password" data-testid="input-bmai-password">
+        <div class="hint" id="bmaiPassHint"></div>
+      </div>
+      <div class="fr">
+        <label>Model (display)</label>
+        <input type="text" id="bmaiModel" placeholder="deepseek/deepseek-v4-flash" data-testid="input-bmai-model">
       </div>
     </div>
+
+    <!-- AnythingLLM fields (engine = anythingllm) -->
+    <div id="aillmFields" style="display:none">
+      <div class="fr">
+        <label>AnythingLLM URL</label>
+        <input type="url" id="aillmUrl" placeholder="https://anythingllm.bluemogul.us">
+      </div>
+      <div class="fr">
+        <label>API Key</label>
+        <input type="password" id="aillmKey" placeholder="••••••••">
+        <div class="hint" id="aillmKeyHint"></div>
+      </div>
+      <div class="fr">
+        <label>Workspace</label>
+        <input type="text" id="aillmWorkspace" placeholder="customer-support-kb">
+      </div>
+    </div>
+
+    <!-- Ollama fields (engine = ollama) -->
+    <div id="ollamaFields" style="display:none">
+      <div class="fr">
+        <label>Ollama Server URL</label>
+        <input type="url" id="settingUrl" placeholder="http://localhost:11434" data-testid="input-ollama-url">
+        <div class="hint">URL of your Ollama instance. Use a public hostname if Ollama runs on a different machine or server.</div>
+      </div>
+      <div class="fr">
+        <label>Model Name</label>
+        <input type="text" id="settingModel" placeholder="llama3" data-testid="input-ollama-model">
+        <div class="hint">Must be pulled in Ollama first. e.g., <code>ollama pull llama3</code></div>
+      </div>
+      <div class="fr">
+        <label>
+          Available Models
+          <button onclick="loadModels()" style="margin-left:8px;background:none;border:1px solid #d1d5db;padding:2px 8px;border-radius:6px;cursor:pointer;font-size:11px;color:#374151;">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+        </label>
+        <div class="model-chips" id="modelChips">
+          <span style="color:#94a3b8;font-size:12px;">Click Refresh to load available models</span>
+        </div>
+      </div>
+    </div>
+
     <div class="fr">
       <label>System Prompt</label>
       <textarea id="settingSystemPrompt" rows="3" placeholder="You are a helpful MSP support assistant for Blue Mogul. Be concise and professional."></textarea>
-      <div class="hint">Instructions that shape the AI's behaviour in every conversation.</div>
+      <div class="hint">Used by AnythingLLM / Ollama engines. BM AI agents carry their own instructions per role (Staff / Dealer / Client).</div>
     </div>
     <div class="fr">
       <label>Connection Test</label>
-      <div id="testResult" style="font-size:12.5px;color:#6b7280;margin-bottom:8px;">Click Test to check your Ollama connection.</div>
+      <div id="testResult" style="font-size:12.5px;color:#6b7280;margin-bottom:8px;">Click Test to check your connection.</div>
       <button onclick="testConn()" style="background:#f3f4f6;border:1px solid #d1d5db;padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">
         <i class="fas fa-plug"></i> Test Connection
       </button>
@@ -363,14 +415,49 @@ async function init() {
 
 async function loadSettings() {
   try {
-    const r = await fetch('/api/ollama/settings');
-    aiSettings = await r.json();
-    document.getElementById('modelBadge').textContent = aiSettings.model || 'llama3';
-    document.getElementById('settingUrl').value = aiSettings.url || '';
-    document.getElementById('settingModel').value = aiSettings.model || '';
-    document.getElementById('settingEnabled').checked = aiSettings.enabled !== false;
-    document.getElementById('settingSystemPrompt').value = aiSettings.system_prompt || '';
+    const [ollamaR, aillmR, bmaiR] = await Promise.all([
+      fetch('/api/ollama/settings'),
+      fetch('/api/anythingllm/settings'),
+      fetch('/api/bmai/settings'),
+    ]);
+    const ollama = await ollamaR.json();
+    const aillm = await aillmR.json();
+    const bmai = await bmaiR.json();
+
+    aiSettings = { ...ollama, ...aillm, ...bmai };
+    document.getElementById('modelBadge').textContent = bmai.enabled ? (bmai.model || 'BM AI') : (ollama.model || 'llama3');
+
+    // Ollama fields
+    document.getElementById('settingUrl').value = ollama.url || '';
+    document.getElementById('settingModel').value = ollama.model || '';
+    document.getElementById('settingEnabled').checked = ollama.enabled !== false;
+    document.getElementById('settingSystemPrompt').value = ollama.system_prompt || '';
+
+    // AnythingLLM fields
+    document.getElementById('aillmUrl').value = aillm.url || '';
+    document.getElementById('aillmKey').value = '';
+    document.getElementById('aillmKeyHint').textContent = aillm.keySet ? 'Key is set (leave blank to keep)' : 'No API key stored';
+    document.getElementById('aillmWorkspace').value = aillm.workspace || 'customer-support-kb';
+
+    // BM AI fields
+    document.getElementById('bmaiUrl').value = bmai.url || 'https://bmai.bluemogul.us';
+    document.getElementById('bmaiEmail').value = bmai.email || '';
+    document.getElementById('bmaiPassword').value = '';
+    document.getElementById('bmaiPassHint').textContent = bmai.passwordSet ? 'Password is set (leave blank to keep)' : 'No password stored';
+    document.getElementById('bmaiModel').value = bmai.model || 'deepseek/deepseek-v4-flash';
+
+    // Engine detection: BM AI takes precedence, then AnythingLLM, then Ollama.
+    const engine = bmai.enabled ? 'bmai' : (aillm.enabled ? 'anythingllm' : 'ollama');
+    document.getElementById('settingEngine').value = engine;
+    onEngineChange();
   } catch(e) { console.error('Settings load failed:', e); }
+}
+
+function onEngineChange() {
+  const engine = document.getElementById('settingEngine').value;
+  document.getElementById('bmaiFields').style.display = engine === 'bmai' ? '' : 'none';
+  document.getElementById('aillmFields').style.display = engine === 'anythingllm' ? '' : 'none';
+  document.getElementById('ollamaFields').style.display = engine === 'ollama' ? '' : 'none';
 }
 
 async function checkStatus() {
@@ -378,18 +465,32 @@ async function checkStatus() {
   const bar = document.getElementById('offlineBar');
   dot.className = 'status-dot checking';
   try {
+    // BM AI engine check
+    const bmaiR = await fetch('/api/bmai/settings');
+    const bmai = await bmaiR.json();
+    if (bmai.enabled && bmai.email && bmai.passwordSet) {
+      const test = await (await fetch('/api/bmai/test')).json();
+      if (test.ok) {
+        dot.className = 'status-dot online'; dot.title = 'BM AI connected ✓';
+        bar.classList.add('hidden');
+        return;
+      } else {
+        dot.className = 'status-dot offline'; dot.title = 'BM AI: ' + (test.message || 'connect failed');
+        bar.classList.add('hidden');
+        return;
+      }
+    }
+    // Fall back to Ollama/AnythingLLM check
     const r = await fetch('/api/ollama/models');
     if (r.ok) {
-      dot.className = 'status-dot online'; dot.title = 'Ollama connected ✓';
+      dot.className = 'status-dot online'; dot.title = 'AI engine connected ✓';
       bar.classList.add('hidden');
     } else {
-      // HTTP error from our API (e.g. Ollama is down) — show warning dot but no intrusive banner
-      dot.className = 'status-dot offline'; dot.title = 'Ollama: server returned ' + r.status;
+      dot.className = 'status-dot offline'; dot.title = 'AI engine: server returned ' + r.status;
       bar.classList.add('hidden');
     }
   } catch {
-    // True network exception — can't reach our Node server at all
-    dot.className = 'status-dot offline'; dot.title = 'Ollama offline';
+    dot.className = 'status-dot offline'; dot.title = 'AI engine offline';
     bar.classList.remove('hidden');
   }
 }
@@ -651,22 +752,43 @@ function closeSettings() {
 }
 
 async function saveSettings() {
-  const url = document.getElementById('settingUrl').value.trim();
-  const model = document.getElementById('settingModel').value.trim();
+  const engine = document.getElementById('settingEngine').value;
   const enabled = document.getElementById('settingEnabled').checked;
   const system_prompt = document.getElementById('settingSystemPrompt').value.trim();
-  if (!url) { alert('Ollama URL is required'); return; }
-  if (!model) { alert('Model name is required'); return; }
   try {
-    const r = await fetch('/api/ollama/settings', {
+    // Always save Ollama settings (baseline)
+    await fetch('/api/ollama/settings', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ url, model, enabled, system_prompt })
+      body: JSON.stringify({
+        url: document.getElementById('settingUrl').value.trim(),
+        model: document.getElementById('settingModel').value.trim(),
+        enabled: false, // engine selection below decides what's active
+        system_prompt
+      })
     });
-    const d = await r.json();
-    if (d.success) {
-      closeSettings(); await loadSettings(); checkStatus();
-      notify('Settings saved!', 'ok');
-    } else notify('Failed to save', 'err');
+    // Save AnythingLLM settings
+    await fetch('/api/anythingllm/settings', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        url: document.getElementById('aillmUrl').value.trim(),
+        api_key: document.getElementById('aillmKey').value.trim(),
+        workspace: document.getElementById('aillmWorkspace').value.trim(),
+        enabled: engine === 'anythingllm' && enabled
+      })
+    });
+    // Save BM AI settings
+    await fetch('/api/bmai/settings', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        url: document.getElementById('bmaiUrl').value.trim(),
+        email: document.getElementById('bmaiEmail').value.trim(),
+        password: document.getElementById('bmaiPassword').value.trim(),
+        model: document.getElementById('bmaiModel').value.trim(),
+        enabled: engine === 'bmai' && enabled
+      })
+    });
+    closeSettings(); await loadSettings(); checkStatus();
+    notify(`Settings saved — engine: ${engine}.`, 'ok');
   } catch(e) { notify('Error: '+e.message, 'err'); }
 }
 
@@ -694,20 +816,43 @@ function pickModel(name) {
 
 async function testConn() {
   const el = document.getElementById('testResult');
-  const tmpUrl = document.getElementById('settingUrl').value.trim();
+  const engine = document.getElementById('settingEngine').value;
   el.textContent = 'Testing connection…'; el.style.color='#6b7280';
-  if (tmpUrl) await fetch('/api/ollama/settings', {
-    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:tmpUrl})
-  });
   try {
-    const r = await fetch('/api/ollama/models');
-    const d = await r.json();
-    if (r.ok&&d.models) {
-      el.textContent = `✅ Connected! ${d.models.length} model(s) available: ${d.models.slice(0,3).join(', ')}${d.models.length>3?'…':''}`;
-      el.style.color='#059669';
+    if (engine === 'bmai') {
+      const r = await fetch('/api/bmai/test');
+      const d = await r.json();
+      if (d.ok) {
+        el.textContent = `✅ ${d.message} (${d.model || 'model'})`;
+        el.style.color='#059669';
+      } else {
+        el.textContent='❌ '+(d.message||'Connection failed');
+        el.style.color='#dc2626';
+      }
+    } else if (engine === 'anythingllm') {
+      const r = await fetch('/api/anythingllm/settings');
+      const d = await r.json();
+      if (d.url && d.keySet) {
+        el.textContent = `✅ AnythingLLM configured — workspace: ${d.workspace || 'customer-support-kb'}`;
+        el.style.color='#059669';
+      } else {
+        el.textContent='❌ AnythingLLM not configured (URL + API key required)';
+        el.style.color='#dc2626';
+      }
     } else {
-      el.textContent='❌ '+( d.error||'Connection failed');
-      el.style.color='#dc2626';
+      const tmpUrl = document.getElementById('settingUrl').value.trim();
+      if (tmpUrl) await fetch('/api/ollama/settings', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:tmpUrl})
+      });
+      const r = await fetch('/api/ollama/models');
+      const d = await r.json();
+      if (r.ok&&d.models) {
+        el.textContent = `✅ Connected! ${d.models.length} model(s) available: ${d.models.slice(0,3).join(', ')}${d.models.length>3?'…':''}`;
+        el.style.color='#059669';
+      } else {
+        el.textContent='❌ '+(d.error||'Connection failed');
+        el.style.color='#dc2626';
+      }
     }
   } catch(e) { el.textContent='❌ '+e.message; el.style.color='#dc2626'; }
 }

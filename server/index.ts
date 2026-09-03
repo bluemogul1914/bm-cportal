@@ -18,6 +18,7 @@ import bcrypt from "bcryptjs";
 import connectPgSimple from "connect-pg-simple";
 
 import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInquiry, dhOrderTracking, dhSearchCatalog, dhCreateSalesOrder, dhOrdersList } from "./dh-api";
+import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat } from "./bmai";
 
 const webhookPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 // Persistent session store backed by Neon Postgres so admin/dealer sessions
@@ -2400,6 +2401,46 @@ app.post("/api/anythingllm/settings", express.json(), async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// BM AI (LibreChat) chat-backend settings. When bmai_enabled=true, the AI
+// Assistant routes through BM AI → OpenRouter (AnythingLLM is available to
+// BM AI as an MCP tool on port 3122 — no direct portal↔AnythingLLM call).
+app.get("/api/bmai/settings", async (_req, res) => {
+  try {
+    const s = await getBmaiSettings(webhookPool);
+    res.json({
+      url: s.url,
+      email: s.email,
+      passwordSet: !!s.password,
+      enabled: s.enabled,
+      model: s.model,
+    });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/bmai/settings", express.json(), async (req, res) => {
+  try {
+    const { url, email, password, enabled, model } = req.body;
+    const upsert = async (k: string, v: string) => webhookPool.query(
+      `INSERT INTO system_settings (setting_key, setting_value) VALUES ($1,$2)
+       ON CONFLICT (setting_key) DO UPDATE SET setting_value=$2`, [k, v]
+    );
+    if (url !== undefined) await upsert('bmai_url', String(url));
+    if (email !== undefined) await upsert('bmai_email', String(email));
+    if (password !== undefined && password !== '') await upsert('bmai_password', String(password));
+    if (enabled !== undefined) await upsert('bmai_enabled', String(enabled));
+    if (model !== undefined) await upsert('bmai_model', String(model));
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// BM AI connectivity test: token → /api/endpoints.
+app.get("/api/bmai/test", async (_req, res) => {
+  try {
+    const result = await bmaiTest(webhookPool);
+    res.json(result);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 // D&H Customer Order Management API — settings, search, price, tracking
 app.get("/api/dh/settings", async (_req, res) => {
   try {
@@ -2586,17 +2627,86 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
   };
   if (!messages?.length) return res.status(400).json({ error: 'messages required' });
 
+  // Role for BM AI system-prompt selection (from the portal session).
+  const reqRole: 'staff' | 'dealer' | 'client' =
+    (req as any).session?.user_role === 'dealer' ? 'dealer'
+    : (req as any).session?.user_role === 'client' ? 'client'
+    : 'staff';
+
   let settingsRows: any;
   try {
     settingsRows = await webhookPool.query(
-      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('ollama_url','ollama_model','ollama_system_prompt','ollama_enabled','anythingllm_url','anythingllm_api_key','anythingllm_workspace','anythingllm_enabled')`
+      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('ollama_url','ollama_model','ollama_system_prompt','ollama_enabled','anythingllm_url','anythingllm_api_key','anythingllm_workspace','anythingllm_enabled','bmai_url','bmai_email','bmai_password','bmai_enabled','bmai_model')`
     );
   } catch (e: any) {
     return res.status(500).json({ error: 'DB error: ' + e.message });
   }
   const s: Record<string, string> = {};
   for (const r of settingsRows.rows) s[r.setting_key] = r.setting_value;
-  // AnythingLLM takes precedence when enabled and configured.
+
+  // BM AI (LibreChat → OpenRouter) takes precedence when enabled + configured.
+  const bmaiEnabled = (s['bmai_enabled'] === 'true') &&
+    !!s['bmai_url'] && !!s['bmai_email'] && !!s['bmai_password'];
+
+  if (bmaiEnabled) {
+    // SSE headers — keep connection alive for streaming
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    try {
+      let fullReply = '';
+      await bmaiStreamChat(webhookPool, {
+        messages,
+        role: reqRole,
+        conversationId: conversation_id,
+        res,
+        onDone: (reply) => { fullReply = reply; },
+      });
+
+      // Persist conversation to DB (same table as the existing AI chat).
+      await webhookPool.query(`CREATE TABLE IF NOT EXISTS ai_conversations (
+        id serial PRIMARY KEY,
+        title text NOT NULL DEFAULT 'New Chat',
+        messages jsonb NOT NULL DEFAULT '[]',
+        model text,
+        created_at timestamptz DEFAULT now(),
+        updated_at timestamptz DEFAULT now()
+      )`);
+
+      const model = s['bmai_model'] || 'deepseek/deepseek-v4-flash';
+      const allMsgs = [...messages, { role: 'assistant', content: fullReply }];
+      let convId = conversation_id;
+      if (convId) {
+        await webhookPool.query(
+          `UPDATE ai_conversations SET messages=$1, updated_at=now() WHERE id=$2`,
+          [JSON.stringify(allMsgs), convId]
+        );
+      } else {
+        const convTitle = title || (messages[0]?.content?.substring(0, 60) || 'New Chat');
+        const ins = await webhookPool.query(
+          `INSERT INTO ai_conversations (title, messages, model) VALUES ($1,$2,$3) RETURNING id`,
+          [convTitle, JSON.stringify(allMsgs), model]
+        );
+        convId = ins.rows[0].id;
+      }
+
+      res.write(`data: ${JSON.stringify({ done: true, conversation_id: convId, model, engine: 'bmai' })}\n\n`);
+      res.end();
+    } catch (e: any) {
+      if (!res.headersSent) {
+        res.status(503).json({ error: e.message });
+      } else {
+        res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+        res.end();
+      }
+    }
+    return;
+  }
+
+  // AnythingLLM takes precedence when enabled and configured (legacy direct path).
   const anythingLLMEnabled = (s['anythingllm_enabled'] === 'true') &&
     !!s['anythingllm_url'] && !!s['anythingllm_api_key'];
   const anythingLLMUrl = (s['anythingllm_url'] || '').replace(/\/$/, '');
