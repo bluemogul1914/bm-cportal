@@ -160,8 +160,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $success_msg = ucfirst($type) . ' logged.';
         }
         $tab = 'companies';
-        header("Location: ?tab=companies&cid=$cid&cv=activities");
-        exit;
+        portal_redirect("?tab=companies&cid=$cid&cv=activities");
     }
 
     if ($action === 'delete_company_comm') {
@@ -169,8 +168,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $cid = intval($_POST['comm_company_id'] ?? 0);
         if ($comm_id) { $pdo->prepare("DELETE FROM crm_communications WHERE id = ? AND entity_type = 'company'")->execute([$comm_id]); }
         $tab = 'companies';
-        header("Location: ?tab=companies&cid=$cid&cv=activities");
-        exit;
+        portal_redirect("?tab=companies&cid=$cid&cv=activities");
     }
 
     if ($action === 'add_lead_comm') {
@@ -185,26 +183,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         if ($lid && $body) {
             $pdo->prepare("INSERT INTO crm_communications (entity_type, entity_id, type, subject, body, direction, duration_minutes, outcome, scheduled_at, created_by) VALUES ('lead',?,?,?,?,?,?,?,?,?)")
                 ->execute([$lid, $type, $subject ?: null, $body, $direction, $duration, $outcome ?: null, $scheduled_at, $_SESSION['user_id']]);
-            // if email, try to send
-            if ($type === 'email') {
-                foreach ($leads as $ll) {
-                    if ($ll['id'] == $lid && !empty($ll['email'])) {
-                        try { send_email($ll['email'], $subject ?: 'Message from Blue Mogul', nl2br(htmlspecialchars($body))); } catch(\Exception $e) {}
-                        break;
-                    }
+            // if email, try to send — direct lookup (no reliance on page-level $leads list
+            // which is not loaded in the POST handler scope)
+            if ($type === 'email' && $lid) {
+                $lead_recipient = null;
+                try {
+                    $lr = $pdo->prepare("SELECT email FROM crm_leads WHERE id=?");
+                    $lr->execute([$lid]);
+                    $lead_recipient = $lr->fetchColumn();
+                } catch (Exception $e) {}
+                if ($lead_recipient) {
+                    try { send_email($lead_recipient, $subject ?: 'Message from Blue Mogul', nl2br(htmlspecialchars($body))); } catch (Exception $e) {}
                 }
             }
         }
-        header("Location: ?tab=leads&lid=$lid&lv=activities");
-        exit;
+        portal_redirect("?tab=leads&lid=$lid&lv=activities");
     }
 
     if ($action === 'delete_lead_comm') {
         $comm_id = intval($_POST['comm_id'] ?? 0);
         $lid = intval($_POST['comm_lead_id'] ?? 0);
         if ($comm_id) { $pdo->prepare("DELETE FROM crm_communications WHERE id = ? AND entity_type = 'lead'")->execute([$comm_id]); }
-        header("Location: ?tab=leads&lid=$lid&lv=activities");
-        exit;
+        portal_redirect("?tab=leads&lid=$lid&lv=activities");
     }
 
     if ($action === 'post_to_platform') {
@@ -261,9 +261,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             } elseif ($platform === 'youtube') {
                 $error_msg = 'YouTube video uploads require the YouTube Data API v3 upload flow. Please use YouTube Studio to post videos.';
             }
-            // save to post log
+            // save to post log — status 'posted' (matches marketing-stats filter)
             if (!$error_msg) {
-                try { $pdo->prepare("INSERT INTO crm_social_posts (platform, content, scheduled_at, status, created_by) VALUES (?,?,NOW(),'published',?)")->execute([$platform, $content, $_SESSION['user_id']]); } catch(\Exception $e) {}
+                try { $pdo->prepare("INSERT INTO crm_social_posts (platform, content, scheduled_at, status, created_by) VALUES (?,?,NOW(),'posted',?)")->execute([$platform, $content, $_SESSION['user_id']]); } catch(\Exception $e) {}
             }
         }
         $tab = 'marketing';
@@ -2094,7 +2094,7 @@ if ($lid_param && $tab === 'leads') {
                                 <td class="px-4 py-3 text-sm font-medium text-gray-900"><?= htmlspecialchars($m['title']) ?></td>
                                 <td class="px-4 py-3 text-sm text-gray-600"><?= htmlspecialchars($m['client_name'] ?? 'N/A') ?></td>
                                 <td class="px-4 py-3"><span class="text-xs bg-<?= $tc ?>-100 text-<?= $tc ?>-700 px-2 py-0.5 rounded"><?= ucfirst($m['meeting_type']) ?></span></td>
-                                <td class="px-4 py-3 text-sm text-gray-600"><?= date('M d, Y g:i A', strtotime($m['scheduled_at'])) ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-600"><?= $m['scheduled_at'] ? date('M d, Y g:i A', strtotime($m['scheduled_at'])) : '—' ?></td>
                                 <td class="px-4 py-3 text-xs text-gray-500"><?= (int)$m['duration_minutes'] ?> min</td>
                                 <td class="px-4 py-3">
                                     <form method="POST" class="inline">
@@ -2220,7 +2220,7 @@ if ($lid_param && $tab === 'leads') {
                                 <p class="text-sm font-medium text-gray-900 truncate"><?= htmlspecialchars($t['subject']) ?></p>
                                 <span class="text-xs bg-<?= $sc ?>-100 text-<?= $sc ?>-700 px-2 py-0.5 rounded ml-2 flex-shrink-0"><?= ucfirst(str_replace('_',' ',$t['status'])) ?></span>
                             </div>
-                            <p class="text-xs text-gray-500 mt-1"><?= htmlspecialchars($t['client_name'] ?? 'Unknown') ?> &middot; <?= date('M d, g:i A', strtotime($t['created_at'])) ?></p>
+                            <p class="text-xs text-gray-500 mt-1"><?= htmlspecialchars($t['client_name'] ?? 'Unknown') ?> &middot; <?= $t['created_at'] ? date('M d, g:i A', strtotime($t['created_at'])) : '—' ?></p>
                         </a>
                         <?php endforeach; ?>
                     </div>
@@ -2242,7 +2242,7 @@ if ($lid_param && $tab === 'leads') {
                                 <span class="text-xs text-gray-400">#<?= htmlspecialchars($msg['channel_name'] ?? $msg['room'] ?? '') ?></span>
                             </div>
                             <p class="text-sm text-gray-600 mt-1 truncate"><?= htmlspecialchars(substr($msg['message'] ?? '', 0, 100)) ?></p>
-                            <p class="text-xs text-gray-400 mt-1"><?= date('M d, g:i A', strtotime($msg['created_at'])) ?></p>
+                            <p class="text-xs text-gray-400 mt-1"><?= $msg['created_at'] ? date('M d, g:i A', strtotime($msg['created_at'])) : '—' ?></p>
                         </div>
                         <?php endforeach; ?>
                     </div>
