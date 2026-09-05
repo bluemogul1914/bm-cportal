@@ -185,6 +185,12 @@ define('HUBSPOT_TOKEN', getenv('HUBSPOT_TOKEN') ?: '');
 define('HUBSPOT_API_URL', 'https://api.hubapi.com');
 
 // ============================================
+// MISSION CONTROL CONFIGURATION (fleet status feed)
+// ============================================
+define('MC_URL', getenv('MC_URL') ?: 'https://mission-control.bluemogul.us');
+define('MC_AUTH_TOKEN', getenv('MC_AUTH_TOKEN') ?: '');
+
+// ============================================
 // MATRIX SYNAPSE CONFIGURATION
 // ============================================
 define('MATRIX_SERVER', 'https://matrix.bluemogul.us');

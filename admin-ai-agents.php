@@ -101,6 +101,36 @@ try {
     $total_errors = 0;
 }
 
+// ── Live Mission Control fleet status feed (2026-09-05) ─────────────
+// Reads the Hermes agent fleet's heartbeats from Mission Control so the
+// Agent Army page shows real agent state, not just portal DB config.
+$mc_fleet = null;
+$mc_fleet_error = null;
+if (MC_AUTH_TOKEN !== '') {
+    $mc_ch = curl_init(MC_URL . '/api/status');
+    curl_setopt_array($mc_ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 5,
+        CURLOPT_HTTPHEADER     => ['x-mc-token: ' . MC_AUTH_TOKEN, 'Accept: application/json'],
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $mc_resp = curl_exec($mc_ch);
+    $mc_err  = curl_error($mc_ch);
+    curl_close($mc_ch);
+    if ($mc_resp !== false) {
+        $mc_data = json_decode($mc_resp, true);
+        if (is_array($mc_data)) {
+            $mc_fleet = $mc_data['agents'] ?? (is_array($mc_data) && array_key_exists('agent_name', $mc_data) ? [$mc_data] : $mc_data);
+        } else {
+            $mc_fleet_error = 'Mission Control returned non-JSON';
+        }
+    } else {
+        $mc_fleet_error = 'Mission Control unreachable: ' . ($mc_err ?: 'timeout');
+    }
+} else {
+    $mc_fleet_error = 'MC_AUTH_TOKEN not configured';
+}
+
 $agent_blueprints = [
     'network_monitor' => [
         'codename' => 'SENTINEL',
@@ -914,6 +944,54 @@ if ($view_agent) {
                         <p class="text-3xl font-bold">$7,800-26,400</p>
                         <p class="text-blue-200 text-sm">annual savings</p>
                     </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg border border-gray-200 mb-6">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-satellite-dish text-blue-600 mr-2"></i>Live Mission Control Fleet</h2>
+                    <?php if ($mc_fleet_error): ?>
+                        <span class="text-xs font-medium text-amber-600"><i class="fas fa-exclamation-triangle mr-1"></i><?php echo htmlspecialchars($mc_fleet_error); ?></span>
+                    <?php elseif ($mc_fleet !== null): ?>
+                        <span class="text-xs font-medium text-green-600"><i class="fas fa-circle-check mr-1"></i><?php echo count($mc_fleet); ?> agents reporting</span>
+                    <?php endif; ?>
+                </div>
+                <div class="p-6">
+                    <?php if ($mc_fleet_error): ?>
+                        <div class="text-sm text-gray-500">
+                            <p class="mb-1">Live heartbeat feed unavailable — showing portal config only.</p>
+                            <p class="text-xs text-gray-400"><?php echo htmlspecialchars($mc_fleet_error); ?></p>
+                        </div>
+                    <?php elseif ($mc_fleet !== null && count($mc_fleet) > 0): ?>
+                        <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+                            <?php foreach ($mc_fleet as $fleet_agent): ?>
+                                <?php
+                                    $fa_name   = $fleet_agent['agent_name'] ?? '?';
+                                    $fa_status = strtolower($fleet_agent['status'] ?? 'unknown');
+                                    $fa_task   = $fleet_agent['current_task'] ?? '';
+                                    $fa_secs   = $fleet_agent['seconds_since_heartbeat'] ?? null;
+                                    $fa_color  = ['idle' => 'bg-green-500', 'busy' => 'bg-blue-500 animate-pulse', 'blocked' => 'bg-red-500', 'unknown' => 'bg-gray-400'][$fa_status] ?? 'bg-gray-400';
+                                    $fa_label  = ucfirst($fa_status);
+                                    if ($fa_secs !== null && $fa_secs > 3600) { $fa_color = 'bg-amber-500'; $fa_label .= ' (stale)'; }
+                                ?>
+                                <div class="border border-gray-200 rounded-lg p-4" data-testid="mc-agent-<?php echo htmlspecialchars($fa_name); ?>">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-sm font-semibold text-gray-800"><?php echo htmlspecialchars($fa_name); ?></span>
+                                        <span class="flex items-center gap-1.5">
+                                            <span class="w-2.5 h-2.5 rounded-full <?php echo $fa_color; ?>"></span>
+                                            <span class="text-[10px] font-medium text-gray-500 uppercase"><?php echo $fa_label; ?></span>
+                                        </span>
+                                    </div>
+                                    <p class="text-xs text-gray-500 line-clamp-2"><?php echo htmlspecialchars($fa_task ?: 'No active task'); ?></p>
+                                    <?php if ($fa_secs !== null): ?>
+                                        <p class="text-[10px] text-gray-400 mt-1.5">hb <?php echo $fa_secs; ?>s ago</p>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <div class="text-sm text-gray-500">No fleet agents reporting yet.</div>
+                    <?php endif; ?>
                 </div>
             </div>
 
