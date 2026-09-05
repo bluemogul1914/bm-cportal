@@ -3338,6 +3338,10 @@ async function bootstrapPortalDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    // Migrate missing columns (added 2026-09-03) — ran at every boot, safe no-op if present
+    await webhookPool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS assigned_to VARCHAR(255) DEFAULT NULL`);
+    await webhookPool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_by INTEGER DEFAULT NULL`);
+    await webhookPool.query(`ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'medium'`);
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS project_notes (
         id SERIAL PRIMARY KEY,
