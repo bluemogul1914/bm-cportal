@@ -58,7 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'disco
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/css/admin.css">
     <link rel="stylesheet" href="/assets/css/style.css">
-    <script>tailwind.config={theme:{extend:{colors:{primary:'#1a56db',secondary:'#0d1b3e',xero:'#13B5EA'},fontFamily:{sans:['Inter','sans-serif']}}}}</script>
+    <script src="/assets/js/tailwind-shared.js"></script>
+    <script>tailwind.config = window.bmTailwindConfig;</script>
 </head>
 <body class="bg-gray-50 font-sans">
 <div class="flex h-screen overflow-hidden">

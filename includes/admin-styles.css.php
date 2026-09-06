@@ -1,20 +1,21 @@
 /* Blue Mogul Dealer Admin — Shared CSS (included inside <style> tag) */
+@import url('/assets/css/_tokens.css');
 *{margin:0;padding:0;box-sizing:border-box;}
 :root{
-  --navy:#0a1628;--navy2:#0d1f3c;--navy3:#112347;
-  --blue:#1a56a0;--blue-lt:#4a9eff;
-  --white:#ffffff;--bg:#f4f6f9;
-  --border:#e2e8f0;--border-dark:#1e3a5f;
-  --text:#1a202c;--text-m:#4a5568;--text-lt:#718096;
-  --green:#15893e;--green-bg:#e6f4ec;--green-text:#14532d;
-  --amber:#b45309;--amber-bg:#fef3e2;--amber-text:#7a4f0d;
-  --red:#c53030;--red-bg:#fff5f5;--red-text:#742a2a;
+  --navy:var(--bm-primary-dark);--navy2:var(--bm-primary-dark);--navy3:var(--bm-primary-dark);
+  --blue:var(--bm-primary);--blue-lt:var(--bm-primary-light);
+  --white:#ffffff;--bg:var(--bm-bg-dark);
+  --border:var(--bm-border-dark);--border-dark:var(--bm-primary-dark);
+  --text:var(--bm-text);--text-m:var(--bm-text-secondary);--text-lt:var(--bm-text-light);
+  --green:var(--bm-success);--green-bg:#e6f4ec;--green-text:#14532d;
+  --amber:var(--bm-warning);--amber-bg:#fef3e2;--amber-text:#7a4f0d;
+  --red:var(--bm-danger);--red-bg:#fff5f5;--red-text:#742a2a;
   --blue-bg:#e6f1fb;--blue-text:#0c447c;
   --teal:#0d9488;--teal-bg:#e6f7f6;--teal-text:#0f4c48;
   --silver-bg:#f1f5f9;--silver-text:#475569;
   --gold-bg:#fef3c7;--gold-text:#92400e;
-  --font:'DM Sans',system-ui,sans-serif;
-  --radius:8px;--radius-lg:12px;
+  --font:var(--bm-font-sans);
+  --radius:var(--bm-radius-lg);--radius-lg:12px;
 }
 body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:flex;}
 

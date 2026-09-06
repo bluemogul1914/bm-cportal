@@ -354,6 +354,7 @@ function fmtBalance($b, $currency = '$') {
     return '<strong style="color:' . ($b >= 0 ? '#10b981' : '#ef4444') . '">' . $currency . number_format((float)$b, 2) . '</strong>';
 }
 ?>
+<!-- TODO: Refactor to use shared styles -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
