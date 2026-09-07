@@ -166,7 +166,7 @@ $total_invoices = $paid_count + $unpaid_count;
                                 <tbody class="divide-y divide-gray-200">
                                     <?php foreach ($recent_payments as $index => $payment): ?>
                                         <tr class="hover:bg-gray-50 transition" data-testid="payment-row-<?php echo $index; ?>">
-                                            <td class="px-4 py-3 text-sm text-gray-600"><?php echo date('M d, Y', strtotime($payment['payment_date'])); ?></td>
+                                            <td class="px-4 py-3 text-sm text-gray-600"><?php echo fmt_date($payment['payment_date'] ?? null, 'M d, Y'); ?></td>
                                             <td class="px-4 py-3 text-sm font-medium text-gray-900"><?php echo htmlspecialchars($payment['invoice_number'] ?? 'N/A'); ?></td>
                                             <td class="px-4 py-3 text-sm text-gray-600"><?php echo htmlspecialchars($payment['client_company'] ?: ($payment['client_name'] ?? 'N/A')); ?></td>
                                             <td class="px-4 py-3 text-sm font-semibold text-gray-900">$<?php echo number_format($payment['amount'] ?? 0, 2); ?></td>

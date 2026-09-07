@@ -239,6 +239,7 @@ $status_badge = ['active'=>'bg-green-100 text-green-800','pending'=>'bg-yellow-1
                 <td class="px-5 py-3 text-gray-500 text-xs"><?= date('M j', strtotime($c['created_at'])) ?></td>
                 <td class="px-5 py-3">
                     <form method="post" class="inline">
+                        <?= csrf_field() ?>
                         <input type="hidden" name="approve_commission" value="1">
                         <input type="hidden" name="commission_id" value="<?= $c['id'] ?>">
                         <button type="submit" class="bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition" data-testid="button-approve-comm-<?= $c['id'] ?>">
@@ -271,6 +272,7 @@ $status_badge = ['active'=>'bg-green-100 text-green-800','pending'=>'bg-yellow-1
         <div class="flex items-center gap-3">
             <span class="font-bold text-emerald-700 text-lg">$<?= number_format($p['amount'],2) ?></span>
             <form method="post" class="inline">
+                <?= csrf_field() ?>
                 <input type="hidden" name="mark_paid" value="1">
                 <input type="hidden" name="payout_id" value="<?= $p['id'] ?>">
                 <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition" data-testid="button-mark-paid-<?= $p['id'] ?>">
@@ -323,6 +325,7 @@ $status_badge = ['active'=>'bg-green-100 text-green-800','pending'=>'bg-yellow-1
                 <td class="px-5 py-3 text-gray-700"><?= $d['total_orders'] ?> <span class="text-xs text-gray-400">(<?= $d['completed_orders'] ?> done)</span></td>
                 <td class="px-5 py-3">
                     <form method="post" class="flex items-center gap-1">
+                        <?= csrf_field() ?>
                         <input type="hidden" name="dealer_id" value="<?= $d['id'] ?>">
                         <input type="hidden" name="set_commission" value="1">
                         <input type="number" name="commission_rate" value="<?= $d['commission_rate'] ?>" step="0.5" min="0" max="100" class="w-16 border border-gray-300 rounded-md px-2 py-1 text-xs text-center" data-testid="input-commission-<?= $d['id'] ?>">
@@ -334,6 +337,7 @@ $status_badge = ['active'=>'bg-green-100 text-green-800','pending'=>'bg-yellow-1
                 <td class="px-5 py-3 text-yellow-700">$<?= number_format($d['pending_amount'],2) ?></td>
                 <td class="px-5 py-3">
                     <form method="post" class="flex items-center gap-1">
+                        <?= csrf_field() ?>
                         <input type="hidden" name="dealer_id" value="<?= $d['id'] ?>">
                         <input type="hidden" name="set_status" value="1">
                         <select name="status" class="border border-gray-300 rounded-md px-2 py-1 text-xs" onchange="this.form.submit()" data-testid="select-status-<?= $d['id'] ?>">

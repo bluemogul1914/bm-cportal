@@ -140,7 +140,7 @@ $ord_cfg=['pending'=>'bg-yellow-100 text-yellow-800','in_progress'=>'bg-blue-100
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg transition text-sm" data-testid="button-update-dealer">Save Changes</button>
         </form>
         <div class="mt-4 pt-4 border-t border-gray-100 space-y-1 text-xs text-gray-500">
-            <p><i class="fas fa-calendar mr-1"></i>Joined: <?= date('M j, Y', strtotime($d['created_at'])) ?></p>
+            <p><i class="fas fa-calendar mr-1"></i>Joined: <?= fmt_date($d['created_at'] ?? null, 'M j, Y') ?></p>
             <p><i class="fas fa-users mr-1"></i>Customers: <?= $total_customers ?></p>
             <p><i class="fas fa-star mr-1 text-yellow-500"></i>Tier: <?= $tier ?> (<?= $month_acts ?> this month)</p>
             <?php if ($smtp): ?><p class="text-green-600"><i class="fas fa-check-circle mr-1"></i>SMTP configured: <?= htmlspecialchars($smtp['from_email']??'') ?></p><?php endif; ?>
@@ -211,7 +211,7 @@ $ord_cfg=['pending'=>'bg-yellow-100 text-yellow-800','in_progress'=>'bg-blue-100
                     <tr data-testid="row-order-<?= $o['id'] ?>">
                         <td class="px-4 py-2 text-gray-800"><?= htmlspecialchars($o['customer_name']) ?></td>
                         <td class="px-4 py-2 text-gray-600"><?= htmlspecialchars($o['product_line']) ?></td>
-                        <td class="px-4 py-2 text-gray-500"><?= date('M j', strtotime($o['created_at'])) ?></td>
+                        <td class="px-4 py-2 text-gray-500"><?= fmt_date($o['created_at'] ?? null, 'M j') ?></td>
                         <td class="px-4 py-2 text-green-700 font-bold">$<?= number_format($o['commission_amount'],2) ?></td>
                         <td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full font-medium <?= $ord_cfg[$o['status']]??'bg-gray-100 text-gray-600' ?>"><?= ucfirst(str_replace('_',' ',$o['status'])) ?></span></td>
                     </tr>
@@ -233,7 +233,7 @@ $ord_cfg=['pending'=>'bg-yellow-100 text-yellow-800','in_progress'=>'bg-blue-100
             <div class="px-5 py-3 flex items-center justify-between gap-3" data-testid="row-payout-<?= $p['id'] ?>">
                 <div>
                     <p class="text-sm font-medium text-gray-900">$<?= number_format($p['amount'],2) ?></p>
-                    <p class="text-xs text-gray-500"><?= date('M j, Y', strtotime($p['created_at'])) ?><?= $p['notes'] ? ' · '.htmlspecialchars($p['notes']) : '' ?></p>
+                    <p class="text-xs text-gray-500"><?= fmt_date($p['created_at'] ?? null, 'M j, Y') ?><?= $p['notes'] ? ' · '.htmlspecialchars($p['notes']) : '' ?></p>
                 </div>
                 <?php if ($p['status']==='pending'): ?>
                 <form method="post" class="inline">

@@ -497,7 +497,7 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                     <?php endif; ?>
                     <span class="text-xs text-gray-400"><?php echo $ord['created_at'] ? date('M d, Y', strtotime($ord['created_at'])) : '—'; ?></span>
                     <?php if ($ord['desired_due_date']): ?>
-                    <span class="text-[10px] text-gray-400">Due <?php echo date('M d, Y', strtotime($ord['desired_due_date'])); ?></span>
+                    <span class="text-[10px] text-gray-400">Due <?php echo fmt_date($ord['desired_due_date'] ?? null, 'M d, Y'); ?></span>
                     <?php endif; ?>
                 </div>
                 <i class="fas fa-chevron-down text-gray-400 text-xs transition-transform order-chevron-<?php echo (int)$ord['id']; ?>"></i>
@@ -535,7 +535,7 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
 
                             <?php if ($ord['desired_due_date']): ?>
                             <dt class="text-gray-500">Desired Due</dt>
-                            <dd class="text-gray-800"><?php echo date('M d, Y', strtotime($ord['desired_due_date'])); ?></dd>
+                            <dd class="text-gray-800"><?php echo fmt_date($ord['desired_due_date'] ?? null, 'M d, Y'); ?></dd>
                             <?php endif; ?>
 
                             <?php if ($ord['contact_name']): ?>

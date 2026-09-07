@@ -232,7 +232,7 @@ if ($edit_id > 0) {
                             <div class="px-5 py-3 border-t border-gray-100 bg-gray-50 rounded-b-lg">
                                 <div class="flex items-center justify-between text-xs text-gray-500">
                                     <span>By <?php echo htmlspecialchars($tpl['creator_name'] ?? 'Admin'); ?></span>
-                                    <span><?php echo date('M j, Y', strtotime($tpl['updated_at'] ?? $tpl['created_at'])); ?></span>
+                                    <span><?php echo fmt_date($tpl['updated_at'] ?? $tpl['created_at'] ?? null, 'M j, Y'); ?></span>
                                 </div>
                             </div>
                         </div>

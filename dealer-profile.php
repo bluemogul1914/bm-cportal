@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once __DIR__ . '/includes/dealer-functions.php';
 if (!isset($_SESSION['user_id']) || ($_SESSION['user_role'] !== 'dealer' && !($_SESSION['is_admin'] ?? false))) {
     portal_redirect('/portal');
 }
@@ -95,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
         </div>
         <div class="bg-white/10 rounded-xl px-4 py-2">
             <p class="text-blue-200 text-xs">Member Since</p>
-            <p class="font-bold text-white text-sm"><?= date('M Y', strtotime($dealer['created_at'])) ?></p>
+            <p class="font-bold text-white text-sm"><?= dealer_fmt_date($dealer['created_at'] ?? null, 'M Y') ?></p>
         </div>
     </div>
 </div>

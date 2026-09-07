@@ -384,6 +384,17 @@ function sanitize($data) {
     return htmlspecialchars(strip_tags(trim($data)), ENT_QUOTES, 'UTF-8');
 }
 
+/**
+ * Null-safe date formatting for any page that loads config.php. Returns
+ * $fallback when the value is empty or not a valid date, so null dates
+ * never render as "Dec 31, 1969" or emit strtotime() deprecation warnings.
+ */
+function fmt_date($value, $format = 'M d, Y g:i a', $fallback = '—') {
+    if ($value === null || $value === '') return $fallback;
+    $ts = strtotime((string)$value);
+    return ($ts === false) ? $fallback : date($format, $ts);
+}
+
 // ============================================
 // SECURITY: CSRF PROTECTION
 // ============================================

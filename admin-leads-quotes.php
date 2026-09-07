@@ -221,6 +221,7 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
                     <td class="px-4 py-3" onclick="event.stopPropagation()">
                       <?php if (in_array($q['status'], ['new','sent','on_review'])): ?>
                       <form method="POST" action="/portal/admin-leads-quotes.php" style="display:inline;">
+                        <?= csrf_field() ?>
                         <input type="hidden" name="action" value="convert_invoice">
                         <input type="hidden" name="quote_id" value="<?= $q['id'] ?>">
                         <button type="submit" class="text-xs text-green-600 hover:text-green-800 border border-green-300 rounded px-2 py-0.5 font-medium" title="Convert to Invoice" onclick="return confirm('Convert this quote to an invoice?')">→ Invoice</button>

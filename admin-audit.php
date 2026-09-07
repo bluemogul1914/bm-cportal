@@ -333,7 +333,7 @@ function get_entity_icon($entity) {
                                     </div>
                                     <div class="min-w-0 flex-1">
                                         <p class="text-sm font-medium text-gray-900 truncate"><?php echo htmlspecialchars($ru['name'] ?? 'Unknown'); ?></p>
-                                        <p class="text-xs text-gray-500 truncate"><?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $ru['action'] ?? ''))); ?> &middot; <?php echo date('M d, g:ia', strtotime($ru['created_at'])); ?></p>
+                                        <p class="text-xs text-gray-500 truncate"><?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $ru['action'] ?? ''))); ?> &middot; <?php echo fmt_date($ru['created_at'] ?? null, 'M d, g:ia'); ?></p>
                                     </div>
                                 </div>
                                 <?php endforeach; ?>

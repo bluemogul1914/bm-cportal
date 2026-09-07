@@ -115,7 +115,7 @@ $tier_pct  = min(100, round(($act_mtd / max($tier_next,1)) * 100));
             <tr>
               <td>
                 <div style="font-weight:500;"><?= htmlspecialchars($o['client_name'] ?? '—') ?></div>
-                <div style="font-size:11px;color:var(--text-lt);"><?= date('M j', strtotime($o['created_at'])) ?></div>
+                <div style="font-size:11px;color:var(--text-lt);"><?= dealer_fmt_date($o['created_at'] ?? null, 'M j') ?></div>
               </td>
               <td style="font-size:12px;color:var(--text-m);"><?= htmlspecialchars(str_replace('_',' ', $o['product_line'])) ?></td>
               <td style="font-weight:600;color:<?= $o['comm_status'] === 'paid' ? 'var(--teal)' : 'var(--green)' ?>;">

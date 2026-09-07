@@ -6,21 +6,23 @@
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 
+require_once __DIR__ . '/../includes/dealer-functions.php';
+
 $is_admin = (!empty($_SESSION['role']) && $_SESSION['role'] === 'admin')
          || (!empty($_SESSION['is_admin']) && $_SESSION['is_admin'] === true)
          || (!empty($_SESSION['is_admin']) && $_SESSION['is_admin'] === 1);
 
 if (!$is_admin) {
-    header('Location: /portal/index.php?session_expired=1');
+    portal_redirect('/portal/index.php?session_expired=1');
     exit;
 }
 
-require_once __DIR__ . '/../includes/dealer-functions.php';
 $pdo = get_db();
 
 $success = $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     $action = $_POST['action'] ?? '';
 
     if ($action === 'approve_commission') {
@@ -152,6 +154,7 @@ $current_page = basename(__FILE__);
     <div class="topbar-right">
       <?php if ((int)$approved_ready['total'] > 0): ?>
       <form method="POST" action="/portal/admin/admin-dealer-payouts.php" onsubmit="return confirm('Run payout for all dealers with approved commissions?');">
+        <?= csrf_field() ?>
         <input type="hidden" name="action" value="run_payout">
         <button type="submit" class="btn btn-primary">
           Run payout — $<?= dollars($approved_ready['total']) ?> to <?= $approved_ready['dealer_count'] ?> dealer<?= $approved_ready['dealer_count']!=1?'s':'' ?>
@@ -191,6 +194,7 @@ $current_page = basename(__FILE__);
       <div style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
         <span class="card-title">Pending commission review (<?= count($pending_comms) ?>)</span>
         <form method="POST" action="/portal/admin/admin-dealer-payouts.php">
+          <?= csrf_field() ?>
           <input type="hidden" name="action" value="approve_all">
           <button type="submit" class="btn btn-primary btn-sm"
                   onclick="return confirm('Approve all <?= count($pending_comms) ?> pending commissions?');">
@@ -208,7 +212,7 @@ $current_page = basename(__FILE__);
         <tbody>
           <?php foreach ($pending_comms as $c): ?>
           <tr>
-            <td style="font-size:12px;"><?= date('M j, Y', strtotime($c['created_at'])) ?></td>
+            <td style="font-size:12px;"><?= dealer_fmt_date($c['created_at'] ?? null) ?></td>
             <td>
               <div style="font-weight:500;font-size:13px;"><?= htmlspecialchars($c['dealer_name']) ?></div>
               <div style="font-size:11px;color:var(--text-lt);font-family:monospace;"><?= htmlspecialchars($c['dealer_code'] ?? '') ?></div>
@@ -219,6 +223,7 @@ $current_page = basename(__FILE__);
             <td style="font-weight:600;color:var(--amber);">$<?= dollars($c['amount_cents']) ?></td>
             <td>
               <form method="POST" action="/portal/admin/admin-dealer-payouts.php" style="display:inline;">
+                <?= csrf_field() ?>
                 <input type="hidden" name="action"        value="approve_commission">
                 <input type="hidden" name="commission_id" value="<?= $c['id'] ?>">
                 <button type="submit" class="btn btn-primary btn-sm">Approve</button>
@@ -245,7 +250,7 @@ $current_page = basename(__FILE__);
           <tr>
             <td>
               <div style="font-weight:500;"><?= htmlspecialchars($p['dealer_name']) ?></div>
-              <div style="font-size:11px;color:var(--text-lt);"><?= date('M j, Y', strtotime($p['created_at'])) ?></div>
+              <div style="font-size:11px;color:var(--text-lt);"><?= dealer_fmt_date($p['created_at'] ?? null) ?></div>
             </td>
             <td style="font-size:12px;color:var(--text-m);">
               <?= $p['ach_routing'] ? 'Routing •'.substr($p['ach_routing'],-4) : '<span style="color:var(--red);">No bank on file</span>' ?>
@@ -255,6 +260,7 @@ $current_page = basename(__FILE__);
             <td><?= status_badge($p['status']) ?></td>
             <td>
               <form method="POST" action="/portal/admin/admin-dealer-payouts.php" style="display:inline;">
+                <?= csrf_field() ?>
                 <input type="hidden" name="action"    value="mark_paid">
                 <input type="hidden" name="payout_id" value="<?= $p['id'] ?>">
                 <button type="submit" class="btn btn-primary btn-sm">Mark sent</button>
@@ -282,7 +288,7 @@ $current_page = basename(__FILE__);
             <td style="font-weight:500;"><?= htmlspecialchars($p['dealer_name']) ?></td>
             <td style="font-weight:600;color:var(--teal);">$<?= dollars($p['amount_cents']) ?></td>
             <td style="text-align:center;"><?= $p['commission_count'] ?></td>
-            <td style="font-size:12px;color:var(--text-lt);"><?= $p['sent_at'] ? date('M j, Y', strtotime($p['sent_at'])) : '—' ?></td>
+            <td style="font-size:12px;color:var(--text-lt);"><?= dealer_fmt_date($p['sent_at'] ?? null) ?></td>
           </tr>
           <?php endforeach; ?>
         </tbody>

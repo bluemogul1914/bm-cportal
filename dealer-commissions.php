@@ -110,7 +110,7 @@ $product_labels = [
             </td>
             <td>
               <div style="font-weight:500;font-size:13px;"><?= htmlspecialchars($c['client_name'] ?? '—') ?></div>
-              <div style="font-size:11px;color:var(--text-lt);"><?= $c['order_date'] ? date('M j, Y', strtotime($c['order_date'])) : '—' ?></div>
+              <div style="font-size:11px;color:var(--text-lt);"><?= dealer_fmt_date($c['order_date'] ?? null) ?></div>
             </td>
             <td style="font-size:12px;color:var(--text-m);">
               <?= $product_labels[$c['product_line']] ?? htmlspecialchars($c['product_line']) ?>
@@ -128,10 +128,10 @@ $product_labels = [
             </td>
             <td><?= status_badge($c['status']) ?></td>
             <td style="font-size:12px;color:var(--text-lt);">
-              <?= $c['approved_at'] ? date('M j', strtotime($c['approved_at'])) : '—' ?>
+              <?= dealer_fmt_date($c['approved_at'] ?? null, 'M j') ?>
             </td>
             <td style="font-size:12px;color:var(--text-lt);">
-              <?= $c['paid_at'] ? date('M j', strtotime($c['paid_at'])) : '—' ?>
+              <?= dealer_fmt_date($c['paid_at'] ?? null, 'M j') ?>
             </td>
           </tr>
           <?php endforeach; ?>

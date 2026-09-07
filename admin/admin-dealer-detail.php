@@ -6,19 +6,21 @@
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 
+require_once __DIR__ . '/../includes/dealer-functions.php';
+
 $is_admin = (!empty($_SESSION['role']) && $_SESSION['role'] === 'admin')
          || (!empty($_SESSION['is_admin']) && $_SESSION['is_admin'] === true)
          || (!empty($_SESSION['is_admin']) && $_SESSION['is_admin'] === 1);
 
 if (!$is_admin) {
-    echo "__REDIRECT__:/portal/index.php?session_expired=1\n"; exit;
+    portal_redirect('/portal/index.php?session_expired=1');
+    exit;
 }
 
-require_once __DIR__ . '/../includes/dealer-functions.php';
 $pdo = get_db();
 
 $id = (int)($_GET['id'] ?? 0);
-if (!$id) { echo "__REDIRECT__:/portal/admin/admin-dealers.php\n"; exit; }
+if (!$id) { portal_redirect('/portal/admin/admin-dealers.php'); exit; }
 
 $dealer = $pdo->prepare(
     "SELECT d.*, COALESCE(d.full_name, u.name) AS full_name, COALESCE(d.email, u.email) AS email
@@ -36,11 +38,12 @@ $stmt = $pdo->prepare(
 $stmt->execute([$id]);
 $dealer = $stmt->fetch();
 
-if (!$dealer) { echo "__REDIRECT__:/portal/admin/admin-dealers.php?error=not_found\n"; exit; }
+if (!$dealer) { portal_redirect('/portal/admin/admin-dealers.php?error=not_found'); exit; }
 
 $success = $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     $action = $_POST['action'] ?? '';
 
     if ($action === 'update_dealer') {
@@ -238,6 +241,7 @@ $current_page = basename(__FILE__);
       <div class="card">
         <div class="card-title" style="margin-bottom:14px;">Edit profile</div>
         <form method="POST" action="/portal/admin/admin-dealer-detail.php?id=<?= $id ?>">
+          <?= csrf_field() ?>
           <input type="hidden" name="action" value="update_dealer">
           <div class="form-grid-2">
             <div class="form-group">
@@ -294,6 +298,7 @@ $current_page = basename(__FILE__);
         <div class="card">
           <div class="card-title" style="margin-bottom:12px;">Add manual commission</div>
           <form method="POST" action="/portal/admin/admin-dealer-detail.php?id=<?= $id ?>">
+            <?= csrf_field() ?>
             <input type="hidden" name="action" value="add_commission">
             <div class="form-group">
               <label class="form-label">Amount ($)</label>
@@ -342,7 +347,7 @@ $current_page = basename(__FILE__);
           <?php endif; ?>
           <?php foreach ($comms as $c): ?>
           <tr>
-            <td style="font-size:12px;"><?= date('M j, Y', strtotime($c['created_at'])) ?></td>
+            <td style="font-size:12px;"><?= dealer_fmt_date($c['created_at'] ?? null) ?></td>
             <td style="font-family:monospace;font-size:11px;"><?= htmlspecialchars($c['order_ref'] ?? '—') ?></td>
             <td style="font-size:12px;"><?= htmlspecialchars($c['client_name'] ?? '—') ?></td>
             <td style="font-size:12px;"><?= $product_labels[$c['product_line'] ?? ''] ?? htmlspecialchars($c['product_line'] ?? '—') ?></td>
@@ -351,12 +356,13 @@ $current_page = basename(__FILE__);
             <td>
               <?php if ($c['status'] === 'pending'): ?>
               <form method="POST" action="/portal/admin/admin-dealer-detail.php?id=<?= $id ?>" style="display:inline;">
+                <?= csrf_field() ?>
                 <input type="hidden" name="action"        value="approve_commission">
                 <input type="hidden" name="commission_id" value="<?= $c['id'] ?>">
                 <button type="submit" class="btn btn-primary btn-sm">Approve</button>
               </form>
               <?php else: ?>
-              <span style="font-size:11px;color:var(--text-lt);"><?= $c['status'] === 'paid' ? 'Paid '.date('M j', strtotime($c['paid_at'])) : '—' ?></span>
+              <span style="font-size:11px;color:var(--text-lt);"><?= $c['status'] === 'paid' ? 'Paid '.dealer_fmt_date($c['paid_at'] ?? null, 'M j') : '—' ?></span>
               <?php endif; ?>
             </td>
           </tr>
@@ -370,6 +376,7 @@ $current_page = basename(__FILE__);
     <div class="card" style="margin-bottom:18px;">
       <div class="card-title" style="margin-bottom:14px;">Create Order for this Dealer</div>
       <form method="POST" action="/portal/admin/admin-dealer-detail.php?id=<?= $id ?>&tab=orders">
+        <?= csrf_field() ?>
         <input type="hidden" name="action" value="create_order">
         <div class="form-grid-2">
           <div class="form-group">
@@ -434,7 +441,7 @@ $current_page = basename(__FILE__);
           <?php endif; ?>
           <?php foreach ($orders as $o): ?>
           <tr>
-            <td style="font-size:12px;"><?= date('M j, Y', strtotime($o['created_at'])) ?></td>
+            <td style="font-size:12px;"><?= dealer_fmt_date($o['created_at'] ?? null) ?></td>
             <td style="font-family:monospace;font-size:11px;"><?= htmlspecialchars($o['order_ref'] ?? '—') ?></td>
             <td style="font-size:12px;"><?= htmlspecialchars($o['client_name'] ?? '—') ?></td>
             <td style="font-size:12px;"><?= $product_labels[$o['product_line'] ?? ''] ?? htmlspecialchars($o['product_line'] ?? '—') ?></td>
@@ -478,19 +485,20 @@ $current_page = basename(__FILE__);
           <?php endif; ?>
           <?php foreach ($payout_hist as $p): ?>
           <tr>
-            <td style="font-size:12px;"><?= date('M j, Y', strtotime($p['created_at'])) ?></td>
+            <td style="font-size:12px;"><?= dealer_fmt_date($p['created_at'] ?? null) ?></td>
             <td style="text-align:center;"><?= $p['commission_count'] ?></td>
             <td style="font-weight:600;">$<?= dollars($p['amount_cents']) ?></td>
             <td><?= status_badge($p['status']) ?></td>
             <td>
               <?php if (in_array($p['status'], ['pending','processing'])): ?>
               <form method="POST" action="/portal/admin/admin-dealer-detail.php?id=<?= $id ?>" style="display:inline;">
+                <?= csrf_field() ?>
                 <input type="hidden" name="action"    value="mark_paid">
                 <input type="hidden" name="payout_id" value="<?= $p['id'] ?>">
                 <button type="submit" class="btn btn-primary btn-sm">Mark sent</button>
               </form>
               <?php else: ?>
-              <span style="font-size:11px;color:var(--text-lt);"><?= $p['sent_at'] ? date('M j', strtotime($p['sent_at'])) : '—' ?></span>
+              <span style="font-size:11px;color:var(--text-lt);"><?= $p['sent_at'] ? 'Sent '.dealer_fmt_date($p['sent_at'], 'M j') : '—' ?></span>
               <?php endif; ?>
             </td>
           </tr>

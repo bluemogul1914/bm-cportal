@@ -92,6 +92,19 @@ if (!function_exists('dollars')) {
     }
 }
 
+if (!function_exists('dealer_fmt_date')) {
+    /**
+     * Null-safe date formatting for dealer pages. Returns $fallback when the
+     * value is empty or not a valid date, so null dates never render as
+     * "Dec 31, 1969" or emit strtotime() deprecation warnings.
+     */
+    function dealer_fmt_date($value, $format = 'M j, Y', $fallback = '—') {
+        if ($value === null || $value === '') return $fallback;
+        $ts = strtotime((string)$value);
+        return ($ts === false) ? $fallback : date($format, $ts);
+    }
+}
+
 if (!function_exists('tier_badge')) {
     function tier_badge($tier) {
         $map = [

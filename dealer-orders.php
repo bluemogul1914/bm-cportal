@@ -166,7 +166,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($ticket_id)  $msg .= " Ticket #<strong>{$ticket_id}</strong> created.";
         if ($invoice_id) $msg .= " Invoice <strong>" . (isset($inv_number) ? $inv_number : "#{$invoice_id}") . "</strong> drafted.";
 
-        header("Location: /portal/dealer-orders.php?success=" . urlencode($msg));
+        portal_redirect('/portal/dealer-orders.php?success=' . urlencode($msg));
         exit;
     }
 }
@@ -374,7 +374,7 @@ $all_orders = $history->fetchAll();
               <?= $o['invoice_id'] ? '<span class="badge badge-teal">#'.$o['invoice_id'].'</span>' : '<span style="color:var(--text-lt);">—</span>' ?>
             </td>
             <td><?= status_badge($o['status']) ?></td>
-            <td style="font-size:12px;color:var(--text-lt);"><?= date('M j, Y', strtotime($o['created_at'])) ?></td>
+            <td style="font-size:12px;color:var(--text-lt);"><?= dealer_fmt_date($o['created_at'] ?? null) ?></td>
           </tr>
           <?php endforeach; ?>
         </tbody>

@@ -7,32 +7,36 @@
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 
+require_once __DIR__ . '/../includes/dealer-functions.php';
+
 $is_admin = (!empty($_SESSION['role']) && $_SESSION['role'] === 'admin')
          || (!empty($_SESSION['is_admin']) && $_SESSION['is_admin'] === true)
          || (!empty($_SESSION['is_admin']) && $_SESSION['is_admin'] === 1);
 
 if (!$is_admin) {
-    header('Location: /portal/index.php?session_expired=1');
+    portal_redirect('/portal/index.php?session_expired=1');
     exit;
 }
 
-require_once __DIR__ . '/../includes/dealer-functions.php';
 $pdo = get_db();
 
 $success = $error = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_dealer') {
-    $id     = (int)$_POST['dealer_id'];
-    $status = in_array($_POST['status'], ['pending','active','suspended']) ? $_POST['status'] : 'pending';
-    $tier   = in_array($_POST['tier'],   ['base','silver','gold'])         ? $_POST['tier']   : 'base';
-    $pdo->prepare("UPDATE dealers SET status=?,tier=?,updated_at=NOW() WHERE id=?")->execute([$status,$tier,$id]);
-    $success = "Dealer #{$id} updated.";
-}
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
+    if (($_POST['action'] ?? '') === 'update_dealer') {
+        $id     = (int)$_POST['dealer_id'];
+        $status = in_array($_POST['status'], ['pending','active','suspended']) ? $_POST['status'] : 'pending';
+        $tier   = in_array($_POST['tier'],   ['base','silver','gold'])         ? $_POST['tier']   : 'base';
+        $pdo->prepare("UPDATE dealers SET status=?,tier=?,updated_at=NOW() WHERE id=?")->execute([$status,$tier,$id]);
+        $success = "Dealer #{$id} updated.";
+    }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'approve_commission') {
-    $cid = (int)$_POST['commission_id'];
-    $pdo->prepare("UPDATE commissions SET status='approved',approved_at=NOW() WHERE id=? AND status='pending'")->execute([$cid]);
-    $success = "Commission approved.";
+    if (($_POST['action'] ?? '') === 'approve_commission') {
+        $cid = (int)$_POST['commission_id'];
+        $pdo->prepare("UPDATE commissions SET status='approved',approved_at=NOW() WHERE id=? AND status='pending'")->execute([$cid]);
+        $success = "Commission approved.";
+    }
 }
 
 $search   = trim($_GET['q']      ?? '');
@@ -160,6 +164,7 @@ $current_page = basename(__FILE__);
                    class="btn btn-outline btn-sm">Detail</a>
                 <?php if ($d['status'] === 'pending'): ?>
                 <form method="POST" action="/portal/admin/admin-dealers.php" style="display:inline;">
+                  <?= csrf_field() ?>
                   <input type="hidden" name="action"    value="update_dealer">
                   <input type="hidden" name="dealer_id" value="<?= $d['id'] ?>">
                   <input type="hidden" name="status"    value="active">

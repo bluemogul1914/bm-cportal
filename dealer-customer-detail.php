@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once __DIR__ . '/includes/dealer-functions.php';
 if (!isset($_SESSION['user_id']) || ($_SESSION['user_role'] !== 'dealer' && !($_SESSION['is_admin'] ?? false))) {
     portal_redirect('/portal');
 }
@@ -101,8 +102,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
 </div>
 
 <div class="mt-4 bg-white rounded-xl border border-gray-200 p-4 text-sm text-gray-500 flex items-center gap-4">
-    <span><i class="fas fa-clock mr-1"></i>Added: <?= date('M j, Y', strtotime($cust['created_at'])) ?></span>
-    <span><i class="fas fa-edit mr-1"></i>Updated: <?= date('M j, Y', strtotime($cust['updated_at'])) ?></span>
+    <span><i class="fas fa-clock mr-1"></i>Added: <?= dealer_fmt_date($cust['created_at'] ?? null) ?></span>
+    <span><i class="fas fa-edit mr-1"></i>Updated: <?= dealer_fmt_date($cust['updated_at'] ?? null) ?></span>
 </div>
 </div>
 </div>

@@ -354,7 +354,6 @@ function fmtBalance($b, $currency = '$') {
     return '<strong style="color:' . ($b >= 0 ? '#10b981' : '#ef4444') . '">' . $currency . number_format((float)$b, 2) . '</strong>';
 }
 ?>
-<!-- TODO: Refactor to use shared styles -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -496,7 +495,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
           <td style="color:#10b981;font-weight:600;">$<?= number_format($fl['amount'], 2) ?></td>
           <td><?= htmlspecialchars($fl['note']) ?></td>
           <td><?= htmlspecialchars($fl['admin_name'] ?? 'Admin') ?></td>
-          <td style="color:#64748b;"><?= date('M j, Y g:i a', strtotime($fl['created_at'])) ?></td>
+          <td style="color:#64748b;"><?= fmt_date($fl['created_at'] ?? null, 'M j, Y g:i a') ?></td>
         </tr>
         <?php endforeach; ?>
       </tbody>
@@ -972,7 +971,7 @@ body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;min-height:
           <td style="color:#10b981;font-weight:700;">$<?= number_format($fl['amount'], 2) ?></td>
           <td><?= htmlspecialchars($fl['note']) ?></td>
           <td><?= htmlspecialchars($fl['admin_name'] ?? 'Admin') ?></td>
-          <td style="color:#64748b;"><?= date('M j, Y g:i a', strtotime($fl['created_at'])) ?></td>
+          <td style="color:#64748b;"><?= fmt_date($fl['created_at'] ?? null, 'M j, Y g:i a') ?></td>
         </tr>
         <?php endforeach; ?>
       </tbody>

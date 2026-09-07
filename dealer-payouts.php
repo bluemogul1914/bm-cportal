@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reque
             $pdo->commit();
             unset($_SESSION['dealer_cache']);
 
-            header("Location: /portal/dealer-payouts.php?success=1&amount=" . urlencode(dollars($total)));
+            portal_redirect('/portal/dealer-payouts.php?success=1&amount=' . urlencode(dollars($total)));
             exit;
         }
     } catch (Exception $e) {
@@ -213,7 +213,7 @@ $has_bank = !empty($dealer['ach_routing']);
             <?php foreach ($payouts as $p): ?>
             <tr>
               <td style="font-size:12px;">
-                <?= date('M j, Y', strtotime($p['created_at'])) ?>
+                <?= dealer_fmt_date($p['created_at'] ?? null) ?>
               </td>
               <td style="font-size:12px;color:var(--text-m);">
                 <?= $p['commission_count'] ?> activation<?= $p['commission_count'] != 1 ? 's' : '' ?>

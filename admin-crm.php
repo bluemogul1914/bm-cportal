@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'includes/email.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
     portal_redirect('/portal');
@@ -8,6 +9,17 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
 $user_name = $_SESSION['user_name'] ?? 'Admin';
 $is_admin = true;
 $pdo = getDB();
+
+/**
+ * Format a DB date value safely for display. Returns $fallback when the
+ * value is empty or not a valid date, so null dates never render as
+ * "Dec 31, 1969" or emit strtotime() deprecation warnings.
+ */
+function crm_fmt_date($value, $format = 'M d, Y g:i a', $fallback = '—') {
+    if (empty($value)) return $fallback;
+    $ts = strtotime((string)$value);
+    return ($ts === false) ? $fallback : date($format, $ts);
+}
 
 $success_msg = '';
 $error_msg = '';
@@ -160,7 +172,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $success_msg = ucfirst($type) . ' logged.';
         }
         $tab = 'companies';
-        portal_redirect("?tab=companies&cid=$cid&cv=activities");
+        portal_redirect("admin-crm.php?tab=companies&cid=$cid&cv=activities");
     }
 
     if ($action === 'delete_company_comm') {
@@ -168,7 +180,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $cid = intval($_POST['comm_company_id'] ?? 0);
         if ($comm_id) { $pdo->prepare("DELETE FROM crm_communications WHERE id = ? AND entity_type = 'company'")->execute([$comm_id]); }
         $tab = 'companies';
-        portal_redirect("?tab=companies&cid=$cid&cv=activities");
+        portal_redirect("admin-crm.php?tab=companies&cid=$cid&cv=activities");
     }
 
     if ($action === 'add_lead_comm') {
@@ -180,12 +192,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $duration = intval($_POST['comm_duration'] ?? 0) ?: null;
         $outcome = trim($_POST['comm_outcome'] ?? '');
         $scheduled_at = trim($_POST['comm_scheduled_at'] ?? '') ?: null;
+        $email_notice = '';
         if ($lid && $body) {
             $pdo->prepare("INSERT INTO crm_communications (entity_type, entity_id, type, subject, body, direction, duration_minutes, outcome, scheduled_at, created_by) VALUES ('lead',?,?,?,?,?,?,?,?,?)")
                 ->execute([$lid, $type, $subject ?: null, $body, $direction, $duration, $outcome ?: null, $scheduled_at, $_SESSION['user_id']]);
-            // if email, try to send — direct lookup (no reliance on page-level $leads list
-            // which is not loaded in the POST handler scope)
-            if ($type === 'email' && $lid) {
+            // If this is an email, actually send it — direct lookup (no reliance
+            // on the page-level $leads list which is not loaded in POST scope).
+            // The result is surfaced honestly instead of silently swallowed.
+            if ($type === 'email') {
                 $lead_recipient = null;
                 try {
                     $lr = $pdo->prepare("SELECT email FROM crm_leads WHERE id=?");
@@ -193,18 +207,33 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     $lead_recipient = $lr->fetchColumn();
                 } catch (Exception $e) {}
                 if ($lead_recipient) {
-                    try { send_email($lead_recipient, $subject ?: 'Message from Blue Mogul', nl2br(htmlspecialchars($body))); } catch (Exception $e) {}
+                    try {
+                        $mail_result = send_email($lead_recipient, $subject ?: 'Message from Blue Mogul', nl2br(htmlspecialchars($body)));
+                        if (!empty($mail_result['success'])) {
+                            $email_notice = 'sent:' . $lead_recipient;
+                        } else {
+                            $email_notice = 'error:Email logged but could not be sent - ' . ($mail_result['error'] ?? 'unknown SMTP error');
+                        }
+                    } catch (Throwable $e) {
+                        $email_notice = 'error:Email logged but send failed - ' . $e->getMessage();
+                    }
+                } else {
+                    $email_notice = 'error:Email logged but this lead has no email address on file.';
                 }
             }
         }
-        portal_redirect("?tab=leads&lid=$lid&lv=activities");
+        $redirect_qs = 'admin-crm.php?tab=leads&lid=' . $lid . '&lv=activities';
+        if ($email_notice !== '') {
+            $redirect_qs .= '&' . http_build_query(['enotice' => $email_notice]);
+        }
+        portal_redirect($redirect_qs);
     }
 
     if ($action === 'delete_lead_comm') {
         $comm_id = intval($_POST['comm_id'] ?? 0);
         $lid = intval($_POST['comm_lead_id'] ?? 0);
         if ($comm_id) { $pdo->prepare("DELETE FROM crm_communications WHERE id = ? AND entity_type = 'lead'")->execute([$comm_id]); }
-        portal_redirect("?tab=leads&lid=$lid&lv=activities");
+        portal_redirect("admin-crm.php?tab=leads&lid=$lid&lv=activities");
     }
 
     if ($action === 'post_to_platform') {
@@ -261,9 +290,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             } elseif ($platform === 'youtube') {
                 $error_msg = 'YouTube video uploads require the YouTube Data API v3 upload flow. Please use YouTube Studio to post videos.';
             }
-            // save to post log — status 'posted' (matches marketing-stats filter)
-            if (!$error_msg) {
-                try { $pdo->prepare("INSERT INTO crm_social_posts (platform, content, scheduled_at, status, created_by) VALUES (?,?,NOW(),'posted',?)")->execute([$platform, $content, $_SESSION['user_id']]); } catch(\Exception $e) {}
+            // Save to post log. Successful sends are recorded as 'posted',
+            // failed attempts as 'failed' so the UI shows the real state
+            // instead of silently dropping the record.
+            $post_status = $error_msg ? 'failed' : 'posted';
+            if ($content) {
+                try { $pdo->prepare("INSERT INTO crm_social_posts (platform, content, scheduled_at, status, created_by) VALUES (?,?,NOW(),?,?)")->execute([$platform, $content, $post_status, $_SESSION['user_id']]); } catch(\Exception $e) {}
             }
         }
         $tab = 'marketing';
@@ -535,7 +567,7 @@ $recent_messages = [];
 try { $recent_messages = $pdo->query("SELECT cm.*, cc.name as channel_name FROM chat_messages cm LEFT JOIN chat_channels cc ON cm.room = cc.slug ORDER BY cm.created_at DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC); } catch (Exception $e) {}
 
 $lead_stats = ['new' => 0, 'contacted' => 0, 'qualified' => 0, 'lost' => 0, 'won' => 0];
-foreach ($leads as $l) { $lead_stats[$l['status']] = ($lead_stats[$l['status']] ?? 0) + 1; }
+foreach ($leads as $l) { $l_status = $l['status'] ?? 'new'; $lead_stats[$l_status] = ($lead_stats[$l_status] ?? 0) + 1; }
 
 // Lead detail data
 $detail_lead = null;
@@ -595,6 +627,18 @@ if ($lid_param && $tab === 'leads') {
                     <i class="fas fa-exclamation-circle mr-3"></i><?= htmlspecialchars($error_msg) ?>
                 </div>
             <?php endif; ?>
+            <?php
+            // Email send outcome carried over from the add_lead_comm POST handler.
+            // Prefix "sent:" renders a green confirmation; "error:" renders red.
+            $enotice = trim((string)($_GET['enotice'] ?? ''));
+            if ($enotice !== ''):
+                $en_is_error = strpos($enotice, 'error:') === 0;
+                $en_text = $en_is_error ? substr($enotice, 6) : 'Email sent to ' . substr($enotice, 5);
+            ?>
+                <div class="mb-4 <?= $en_is_error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700' ?> border px-4 py-3 rounded-lg flex items-center" data-testid="alert-email-notice">
+                    <i class="fas <?= $en_is_error ? 'fa-exclamation-circle' : 'fa-check-circle' ?> mr-3"></i><?= htmlspecialchars($en_text) ?>
+                </div>
+            <?php endif; ?>
 
             <?php if ($tab === 'leads'): ?>
             <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
@@ -624,7 +668,7 @@ if ($lid_param && $tab === 'leads') {
             $type_labels = ['note'=>'Note','email'=>'Email','call'=>'Call','meeting'=>'Meeting'];
             $filtered_lead_comms = $lead_comms;
             if ($lcomm_filter) $filtered_lead_comms = array_filter($lead_comms, fn($c) => $c['type'] === $lcomm_filter);
-            $sc_lead = ['new'=>'blue','contacted'=>'yellow','qualified'=>'purple','lost'=>'red','won'=>'green'][$detail_lead['status']] ?? 'gray';
+            $sc_lead = ['new'=>'blue','contacted'=>'yellow','qualified'=>'purple','lost'=>'red','won'=>'green'][$detail_lead['status'] ?? 'new'] ?? 'gray';
             ?>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div class="lg:col-span-2 space-y-4">
@@ -638,7 +682,7 @@ if ($lid_param && $tab === 'leads') {
                                     <h2 class="text-xl font-bold text-gray-900"><?= htmlspecialchars($detail_lead['name']) ?></h2>
                                     <?php if ($detail_lead['company']): ?><p class="text-sm text-gray-500"><?= htmlspecialchars($detail_lead['company']) ?></p><?php endif; ?>
                                 </div>
-                                <span class="ml-auto px-2.5 py-0.5 text-xs font-semibold bg-<?= $sc_lead ?>-100 text-<?= $sc_lead ?>-700 rounded-full"><?= ucfirst($detail_lead['status']) ?></span>
+                                <span class="ml-auto px-2.5 py-0.5 text-xs font-semibold bg-<?= $sc_lead ?>-100 text-<?= $sc_lead ?>-700 rounded-full"><?= ucfirst($detail_lead['status'] ?? 'new') ?></span>
                             </div>
                         </div>
                         <div class="p-6">
@@ -721,7 +765,7 @@ if ($lid_param && $tab === 'leads') {
                                                 <?php if ($cm['subject']): ?><span class="text-sm text-gray-700 truncate">· <?= htmlspecialchars($cm['subject']) ?></span><?php endif; ?>
                                             </div>
                                             <p class="text-sm text-gray-600 mt-1"><?= nl2br(htmlspecialchars($cm['body'])) ?></p>
-                                            <p class="text-xs text-gray-400 mt-1"><?= htmlspecialchars($cm['author_name'] ?? 'Admin') ?> · <?= date('M d, Y g:i a', strtotime($cm['created_at'])) ?></p>
+                                            <p class="text-xs text-gray-400 mt-1"><?= htmlspecialchars($cm['author_name'] ?? 'Admin') ?> · <?= crm_fmt_date($cm['created_at'] ?? null) ?></p>
                                         </div>
                                     </div>
                                     <form method="POST" class="flex-shrink-0" onsubmit="return confirm('Delete this entry?')">
@@ -777,7 +821,7 @@ if ($lid_param && $tab === 'leads') {
                             <?php if ($detail_lead['email']): ?><div><span class="text-gray-500">Email: </span><a href="mailto:<?= htmlspecialchars($detail_lead['email']) ?>" class="text-blue-600 hover:underline"><?= htmlspecialchars($detail_lead['email']) ?></a></div><?php endif; ?>
                             <?php if ($detail_lead['phone']): ?><div><span class="text-gray-500">Phone: </span><?= htmlspecialchars($detail_lead['phone']) ?></div><?php endif; ?>
                             <?php if ($detail_lead['source']): ?><div><span class="text-gray-500">Source: </span><?= htmlspecialchars(ucfirst($detail_lead['source'])) ?></div><?php endif; ?>
-                            <div><span class="text-gray-500">Created: </span><?= date('M d, Y', strtotime($detail_lead['created_at'])) ?></div>
+                            <div><span class="text-gray-500">Created: </span><?= crm_fmt_date($detail_lead['created_at'] ?? null, 'M d, Y') ?></div>
                             <div><span class="text-gray-500">Activities: </span><strong><?= count($lead_comms) ?></strong></div>
                         </div>
                     </div>
@@ -819,7 +863,7 @@ if ($lid_param && $tab === 'leads') {
                         </thead>
                         <tbody class="divide-y divide-gray-200">
                             <?php foreach ($leads as $lead):
-                                $sc = ['new'=>'blue','contacted'=>'yellow','qualified'=>'purple','lost'=>'red','won'=>'green'][$lead['status']] ?? 'gray';
+                                $sc = ['new'=>'blue','contacted'=>'yellow','qualified'=>'purple','lost'=>'red','won'=>'green'][$lead['status'] ?? 'new'] ?? 'gray';
                             ?>
                             <tr class="hover:bg-gray-50" data-testid="lead-row-<?= $lead['id'] ?>">
                                 <td class="px-4 py-3 text-sm font-medium text-gray-900"><?= htmlspecialchars($lead['name']) ?></td>
@@ -838,7 +882,7 @@ if ($lid_param && $tab === 'leads') {
                                         </select>
                                     </form>
                                 </td>
-                                <td class="px-4 py-3 text-xs text-gray-500"><?= date('M d, Y', strtotime($lead['created_at'])) ?></td>
+                                <td class="px-4 py-3 text-xs text-gray-500"><?= crm_fmt_date($lead['created_at'] ?? null, 'M d, Y') ?></td>
                                 <td class="px-4 py-3">
                                     <div class="flex items-center gap-2">
                                         <a href="?tab=leads&lid=<?= $lead['id'] ?>" class="text-blue-600 hover:text-blue-800 text-sm" title="View Lead" data-testid="button-view-lead-<?= $lead['id'] ?>"><i class="fas fa-eye"></i></a>
@@ -1115,7 +1159,7 @@ if ($lid_param && $tab === 'leads') {
                                             <?php endif; ?>
                                         </div>
                                         <div class="flex items-center gap-2">
-                                            <span class="text-[11px] text-gray-400"><?= date('M d, Y g:i A', strtotime($cm['created_at'])) ?></span>
+                                            <span class="text-[11px] text-gray-400"><?= crm_fmt_date($cm['created_at'] ?? null, 'M d, Y g:i A') ?></span>
                                             <form method="POST" class="inline" onsubmit="return confirm('Delete this entry?')">
                                                 <?= csrf_field() ?>
                                                 <input type="hidden" name="action" value="delete_company_comm">
@@ -1185,12 +1229,12 @@ if ($lid_param && $tab === 'leads') {
                         <h3 class="text-sm font-semibold text-gray-900 mb-4">Key Information</h3>
                         <div class="space-y-3">
                             <?php $kv = [
-                                'Company Owner' => $detail_company['company_owner'],
-                                'City' => $detail_company['city'],
+                                'Company Owner' => $detail_company['company_owner'] ?? '',
+                                'City' => $detail_company['city'] ?? '',
                                 'Lifecycle Stage' => ucfirst($detail_company['lifecycle_stage'] ?? ''),
-                                'Lead Status' => $detail_company['lead_status'],
-                                'Industry' => $detail_company['industry'],
-                                'Last Contacted' => $detail_company['last_contacted'] ? date('M d, Y', strtotime($detail_company['last_contacted'])) : null,
+                                'Lead Status' => $detail_company['lead_status'] ?? '',
+                                'Industry' => $detail_company['industry'] ?? '',
+                                'Last Contacted' => crm_fmt_date($detail_company['last_contacted'] ?? null, 'M d, Y', null),
                             ];
                             foreach ($kv as $k => $v): ?>
                             <div>
@@ -1324,7 +1368,7 @@ if ($lid_param && $tab === 'leads') {
                                         <a href="?tab=companies&cid=<?= $co['id'] ?>" class="text-sm font-semibold text-blue-600 hover:underline" data-testid="link-company-<?= $co['id'] ?>"><?= htmlspecialchars($co['name']) ?></a>
                                     </div>
                                 </td>
-                                <td class="px-4 py-3 text-sm text-gray-600"><?= date('M d, Y g:i A T', strtotime($co['created_at'])) ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-600"><?= crm_fmt_date($co['created_at'] ?? null, 'M d, Y g:i A T') ?></td>
                                 <td class="px-4 py-3 text-sm text-gray-600"><?= $co['phone'] ? htmlspecialchars($co['phone']) : '<span class="text-gray-300">—</span>' ?></td>
                                 <td class="px-4 py-3 text-sm text-gray-600"><?= $co['city'] ? htmlspecialchars($co['city']) : '<span class="text-gray-300">—</span>' ?></td>
                                 <td class="px-4 py-3 text-sm text-gray-600"><?= $co['country'] ? htmlspecialchars($co['country']) : '<span class="text-gray-300">—</span>' ?></td>
@@ -1730,9 +1774,9 @@ if ($lid_param && $tab === 'leads') {
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2 mb-1">
                                         <span class="text-xs font-semibold text-gray-700 capitalize"><?= htmlspecialchars(str_replace('_', ' ', $sp['platform'])) ?></span>
-                                        <span class="text-xs px-2 py-0.5 rounded-full <?= $sp['status'] === 'posted' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700' ?>"><?= ucfirst($sp['status']) ?></span>
-                                        <?php if ($sp['scheduled_at']): ?>
-                                        <span class="text-[10px] text-gray-400"><?= date('M d, g:i A', strtotime($sp['scheduled_at'])) ?></span>
+                                        <span class="text-xs px-2 py-0.5 rounded-full <?= $sp['status'] === 'posted' ? 'bg-green-100 text-green-700' : ($sp['status'] === 'failed' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700') ?>"><?= ucfirst($sp['status']) ?></span>
+                                        <?php if (!empty($sp['scheduled_at'])): ?>
+                                        <span class="text-[10px] text-gray-400"><?= crm_fmt_date($sp['scheduled_at'], 'M d, g:i A') ?></span>
                                         <?php endif; ?>
                                     </div>
                                     <p class="text-sm text-gray-700 line-clamp-2"><?= htmlspecialchars($sp['content']) ?></p>
@@ -1757,6 +1801,7 @@ if ($lid_param && $tab === 'leads') {
                         $total_posts = count($social_posts);
                         $posted = count(array_filter($social_posts, fn($p) => $p['status'] === 'posted'));
                         $scheduled_count = count(array_filter($social_posts, fn($p) => $p['status'] === 'scheduled'));
+                        $failed_posts = count(array_filter($social_posts, fn($p) => $p['status'] === 'failed'));
                         ?>
                         <div class="bg-white rounded-lg border border-gray-200 p-4">
                             <p class="text-xs font-semibold text-gray-500 uppercase">Total Posts</p>
@@ -1769,6 +1814,10 @@ if ($lid_param && $tab === 'leads') {
                         <div class="bg-white rounded-lg border border-gray-200 p-4">
                             <p class="text-xs font-semibold text-gray-500 uppercase">Posted</p>
                             <p class="text-2xl font-bold text-green-600"><?= $posted ?></p>
+                        </div>
+                        <div class="bg-white rounded-lg border border-gray-200 p-4">
+                            <p class="text-xs font-semibold text-gray-500 uppercase">Failed</p>
+                            <p class="text-2xl font-bold text-red-600"><?= $failed_posts ?></p>
                         </div>
                         <div class="bg-white rounded-lg border border-gray-200 p-4">
                             <p class="text-xs font-semibold text-gray-500 uppercase">Campaigns Active</p>
@@ -1924,7 +1973,7 @@ if ($lid_param && $tab === 'leads') {
                         <i class="fab <?= $spic ?> mt-0.5"></i>
                         <div class="flex-1 min-w-0">
                             <p class="text-sm text-gray-800 truncate"><?= htmlspecialchars($sp['content']) ?></p>
-                            <p class="text-xs text-gray-400 mt-0.5"><?= date('M d, Y g:i a', strtotime($sp['created_at'])) ?> · <?= ucfirst($sp['status']) ?></p>
+                            <p class="text-xs text-gray-400 mt-0.5"><?= crm_fmt_date($sp['created_at']) ?> · <?= ucfirst($sp['status']) ?></p>
                         </div>
                     </div>
                     <?php endforeach; ?>
@@ -1980,7 +2029,7 @@ if ($lid_param && $tab === 'leads') {
                                     </form>
                                 </td>
                                 <td class="px-4 py-3 text-xs text-gray-600"><?= str_replace('_', ' ', ucfirst($c['target_audience'])) ?></td>
-                                <td class="px-4 py-3 text-xs text-gray-500"><?= $c['start_date'] ? date('M d', strtotime($c['start_date'])) : 'N/A' ?><?= $c['end_date'] ? ' - ' . date('M d', strtotime($c['end_date'])) : '' ?></td>
+                                <td class="px-4 py-3 text-xs text-gray-500"><?= crm_fmt_date($c['start_date'] ?? null, 'M d', 'N/A') ?><?= !empty($c['end_date']) ? ' - ' . crm_fmt_date($c['end_date'], 'M d') : '' ?></td>
                                 <td class="px-4 py-3 text-xs text-gray-500">
                                     <span title="Sent"><?= (int)$c['sent_count'] ?> sent</span> /
                                     <span title="Opened"><?= (int)$c['open_count'] ?> opened</span>
@@ -2095,7 +2144,7 @@ if ($lid_param && $tab === 'leads') {
                                 <td class="px-4 py-3 text-sm font-medium text-gray-900"><?= htmlspecialchars($m['title']) ?></td>
                                 <td class="px-4 py-3 text-sm text-gray-600"><?= htmlspecialchars($m['client_name'] ?? 'N/A') ?></td>
                                 <td class="px-4 py-3"><span class="text-xs bg-<?= $tc ?>-100 text-<?= $tc ?>-700 px-2 py-0.5 rounded"><?= ucfirst($m['meeting_type']) ?></span></td>
-                                <td class="px-4 py-3 text-sm text-gray-600"><?= $m['scheduled_at'] ? date('M d, Y g:i A', strtotime($m['scheduled_at'])) : '—' ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-600"><?= crm_fmt_date($m['scheduled_at'] ?? null, 'M d, Y g:i A') ?></td>
                                 <td class="px-4 py-3 text-xs text-gray-500"><?= (int)$m['duration_minutes'] ?> min</td>
                                 <td class="px-4 py-3">
                                     <form method="POST" class="inline">
@@ -2221,7 +2270,7 @@ if ($lid_param && $tab === 'leads') {
                                 <p class="text-sm font-medium text-gray-900 truncate"><?= htmlspecialchars($t['subject']) ?></p>
                                 <span class="text-xs bg-<?= $sc ?>-100 text-<?= $sc ?>-700 px-2 py-0.5 rounded ml-2 flex-shrink-0"><?= ucfirst(str_replace('_',' ',$t['status'])) ?></span>
                             </div>
-                            <p class="text-xs text-gray-500 mt-1"><?= htmlspecialchars($t['client_name'] ?? 'Unknown') ?> &middot; <?= $t['created_at'] ? date('M d, g:i A', strtotime($t['created_at'])) : '—' ?></p>
+                            <p class="text-xs text-gray-500 mt-1"><?= htmlspecialchars($t['client_name'] ?? 'Unknown') ?> &middot; <?= crm_fmt_date($t['created_at'] ?? null, 'M d, g:i A') ?></p>
                         </a>
                         <?php endforeach; ?>
                     </div>
@@ -2243,7 +2292,7 @@ if ($lid_param && $tab === 'leads') {
                                 <span class="text-xs text-gray-400">#<?= htmlspecialchars($msg['channel_name'] ?? $msg['room'] ?? '') ?></span>
                             </div>
                             <p class="text-sm text-gray-600 mt-1 truncate"><?= htmlspecialchars(substr($msg['message'] ?? '', 0, 100)) ?></p>
-                            <p class="text-xs text-gray-400 mt-1"><?= $msg['created_at'] ? date('M d, g:i A', strtotime($msg['created_at'])) : '—' ?></p>
+                            <p class="text-xs text-gray-400 mt-1"><?= crm_fmt_date($msg['created_at'] ?? null, 'M d, g:i A') ?></p>
                         </div>
                         <?php endforeach; ?>
                     </div>
@@ -2288,7 +2337,7 @@ function saveDraftPost() {
     if (!content) { alert('Please enter post content first.'); return; }
     const f = document.createElement('form');
     f.method = 'POST';
-    f.innerHTML = `<input name="action" value="add_social_post"><input name="post_platform" value="${platform}"><input name="post_content" value="${content.replace(/"/g,'&quot;')}"><input name="_csrf_token" value="${document.querySelector('[name=_csrf_token]')?.value || ''}">`;
+    f.innerHTML = `<input name="action" value="add_social_post"><input name="post_platform" value="${platform}"><input name="post_content" value="${content.replace(/"/g,'&quot;')}"><input name="csrf_token" value="${document.querySelector('[name=csrf_token]')?.value || ''}">`;
     document.body.appendChild(f); f.submit();
 }
 </script>

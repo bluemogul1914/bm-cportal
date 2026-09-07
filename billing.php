@@ -149,7 +149,7 @@ try {
                                     <tr class="hover:bg-gray-50 transition" data-testid="invoice-row-<?php echo $invoice['id']; ?>">
                                         <td class="px-6 py-4">
                                             <p class="font-medium text-gray-900"><?php echo htmlspecialchars($invoice['invoice_number']); ?></p>
-                                            <p class="text-xs text-gray-500"><?php echo date('M d, Y', strtotime($invoice['created_at'])); ?></p>
+                                            <p class="text-xs text-gray-500"><?php echo fmt_date($invoice['created_at'] ?? null, 'M d, Y'); ?></p>
                                         </td>
                                         <td class="px-6 py-4 font-semibold text-gray-900">$<?php echo number_format($invoice['amount'], 2); ?></td>
                                         <td class="px-6 py-4 text-sm text-gray-600">
@@ -199,7 +199,7 @@ try {
                                 </div>
                                 <div>
                                     <p class="font-medium text-gray-900 text-sm">Payment of $<?php echo number_format($payment['amount'], 2); ?></p>
-                                    <p class="text-xs text-gray-500"><?php echo date('M d, Y g:i A', strtotime($payment['created_at'])); ?> via <?php echo ucfirst($payment['method'] ?? 'stripe'); ?></p>
+                                    <p class="text-xs text-gray-500"><?php echo fmt_date($payment['created_at'] ?? null, 'M d, Y g:i A'); ?> via <?php echo ucfirst($payment['method'] ?? 'stripe'); ?></p>
                                 </div>
                             </div>
                             <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium"><?php echo ucfirst($payment['status']); ?></span>
