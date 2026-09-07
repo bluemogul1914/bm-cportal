@@ -102,7 +102,7 @@ include 'includes/admin-header.php';
                                     </span>
                                 </td>
                                 <td class="px-6 py-3 text-gray-700 max-w-xs truncate"><?php echo htmlspecialchars(substr($p['content_preview'] ?? '', 0, 80)); ?></td>
-                                <td class="px-6 py-3 text-gray-500"><?php echo date('M d, Y H:i', strtotime($p['posted_at'])); ?></td>
+                                <td class="px-6 py-3 text-gray-500"><?php echo fmt_date($p['posted_at'] ?? null, 'M d, Y H:i'); ?></td>
                                 <td class="px-6 py-3 text-right text-red-500"><?php echo number_format(intval($p['likes'])); ?></td>
                                 <td class="px-6 py-3 text-right text-blue-500"><?php echo number_format(intval($p['comments'])); ?></td>
                                 <td class="px-6 py-3 text-right text-green-600"><?php echo number_format(intval($p['shares'])); ?></td>

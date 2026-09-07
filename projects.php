@@ -133,7 +133,7 @@ try {
                                         <span><i class="fas fa-tasks mr-1"></i><?php echo $project['tasks_done']; ?>/<?php echo $project['task_count']; ?> tasks</span>
                                     <?php endif; ?>
                                     <?php if ($project['due_date']): ?>
-                                        <span><i class="fas fa-calendar mr-1"></i>Due: <?php echo date('M d, Y', strtotime($project['due_date'])); ?></span>
+                                        <span><i class="fas fa-calendar mr-1"></i>Due: <?php echo fmt_date($project['due_date'] ?? null, 'M d, Y'); ?></span>
                                     <?php endif; ?>
                                 </div>
                                 <?php if ($project['assigned_to']): ?>

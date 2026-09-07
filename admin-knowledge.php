@@ -345,7 +345,7 @@ foreach ($articles as $a) {
                                 <div class="flex items-center gap-4 mt-1.5">
                                     <span class="text-[10px] text-gray-400"><i class="fas fa-user mr-1"></i><?php echo htmlspecialchars($article['author_name'] ?? 'Unknown'); ?></span>
                                     <span class="text-[10px] text-gray-400"><i class="fas fa-eye mr-1"></i><?php echo $article['view_count']; ?> views</span>
-                                    <span class="text-[10px] text-gray-400"><i class="fas fa-clock mr-1"></i><?php echo date('M d, Y', strtotime($article['updated_at'])); ?></span>
+                                    <span class="text-[10px] text-gray-400"><i class="fas fa-clock mr-1"></i><?php echo fmt_date($article['updated_at'] ?? null, 'M d, Y'); ?></span>
                                     <?php if ($article['tags']): ?>
                                         <?php foreach (explode(',', $article['tags']) as $tag): ?>
                                             <span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px]"><?php echo htmlspecialchars(trim($tag)); ?></span>

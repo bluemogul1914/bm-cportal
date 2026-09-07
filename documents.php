@@ -163,7 +163,7 @@ try {
                                         <h3 class="font-medium text-gray-900 text-sm truncate"><?php echo htmlspecialchars($doc['name']); ?></h3>
                                         <div class="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
                                             <span class="px-1.5 py-0.5 bg-gray-100 rounded text-xs"><?php echo ucfirst($doc['category']); ?></span>
-                                            <span><?php echo date('M d, Y', strtotime($doc['created_at'])); ?></span>
+                                            <span><?php echo fmt_date($doc['created_at'] ?? null, 'M d, Y'); ?></span>
                                             <?php if ($doc['description']): ?>
                                                 <span class="truncate max-w-xs"><?php echo htmlspecialchars($doc['description']); ?></span>
                                             <?php endif; ?>

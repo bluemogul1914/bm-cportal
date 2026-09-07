@@ -263,7 +263,7 @@ $success = $_GET['success'] ?? '';
                                             <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium"><?php echo htmlspecialchars($sub['category']); ?></span>
                                         </td>
                                         <td class="px-6 py-4 text-sm font-medium text-gray-900">$<?php echo number_format($sub['mrr'], 2); ?></td>
-                                        <td class="px-6 py-4 text-sm text-gray-600"><?php echo date('M d, Y', strtotime($sub['start_date'])); ?></td>
+                                        <td class="px-6 py-4 text-sm text-gray-600"><?php echo fmt_date($sub['start_date'] ?? null, 'M d, Y'); ?></td>
                                         <td class="px-6 py-4">
                                             <span class="px-2 py-1 rounded-full text-xs font-medium <?php
                                                 echo match($sub['status']) {

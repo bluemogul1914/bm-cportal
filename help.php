@@ -80,7 +80,7 @@ foreach ($articles as $a) {
                         <div class="flex items-center gap-3 mt-0.5">
                             <span class="text-xs text-gray-500"><i class="fas fa-folder mr-1"></i><?php echo htmlspecialchars($view_article['category']); ?></span>
                             <span class="text-xs text-gray-400"><i class="fas fa-eye mr-1"></i><?php echo $view_article['view_count']; ?> views</span>
-                            <span class="text-xs text-gray-400"><i class="fas fa-clock mr-1"></i>Updated <?php echo date('M d, Y', strtotime($view_article['updated_at'])); ?></span>
+                            <span class="text-xs text-gray-400"><i class="fas fa-clock mr-1"></i>Updated <?php echo fmt_date($view_article['updated_at'] ?? null, 'M d, Y'); ?></span>
                         </div>
                     </div>
                 </div>

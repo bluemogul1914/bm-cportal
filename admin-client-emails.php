@@ -856,7 +856,7 @@ try {
                                         <i class="fas fa-star text-xs mr-1"></i>Default
                                     </span>
                                     <?php endif; ?>
-                                    <span class="text-xs text-gray-400">Updated <?= date('M j, Y', strtotime($sig['updated_at'])) ?></span>
+                                    <span class="text-xs text-gray-400">Updated <?= fmt_date($sig['updated_at'] ?? null, 'M j, Y') ?></span>
                                 </div>
                                 <!-- Preview -->
                                 <div class="border border-gray-200 rounded-lg p-3 bg-white text-sm max-h-28 overflow-hidden relative">

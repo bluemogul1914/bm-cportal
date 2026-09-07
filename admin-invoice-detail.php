@@ -216,7 +216,7 @@ $total = $has_line_items ? ($subtotal + $tax_total) : floatval($invoice['amount'
                             <div class="flex items-center justify-between gap-3 flex-wrap">
                                 <div>
                                     <h2 class="text-2xl font-bold text-gray-900"><?php echo htmlspecialchars($invoice['invoice_number']); ?></h2>
-                                    <p class="text-sm text-gray-500 mt-1">Created <?php echo date('M d, Y', strtotime($invoice['created_at'])); ?></p>
+                                    <p class="text-sm text-gray-500 mt-1">Created <?php echo fmt_date($invoice['created_at'] ?? null, 'M d, Y'); ?></p>
                                 </div>
                                 <div class="text-right">
                                     <p class="text-4xl font-bold text-gray-900" data-testid="text-invoice-total">$<?php echo number_format($total, 2); ?></p>
@@ -247,7 +247,7 @@ $total = $has_line_items ? ($subtotal + $tax_total) : floatval($invoice['amount'
                                         <?php if ($invoice['paid_date']): ?>
                                         <div class="flex justify-between gap-2">
                                             <span class="text-gray-600">Paid Date:</span>
-                                            <span class="font-medium" data-testid="text-paid-date"><?php echo date('M d, Y', strtotime($invoice['paid_date'])); ?></span>
+                                            <span class="font-medium" data-testid="text-paid-date"><?php echo fmt_date($invoice['paid_date'] ?? null, 'M d, Y'); ?></span>
                                         </div>
                                         <?php endif; ?>
                                     </div>
@@ -355,7 +355,7 @@ $total = $has_line_items ? ($subtotal + $tax_total) : floatval($invoice['amount'
                                             <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium"><?php echo ucfirst($p['status']); ?></span>
                                         </div>
                                         <p class="text-xs text-gray-500">
-                                            <?php echo date('M d, Y g:i A', strtotime($p['created_at'])); ?> via <?php echo ucfirst($p['method'] ?? 'stripe'); ?>
+                                            <?php echo fmt_date($p['created_at'] ?? null, 'M d, Y g:i A'); ?> via <?php echo ucfirst($p['method'] ?? 'stripe'); ?>
                                         </p>
                                     </div>
                                 <?php endforeach; ?>

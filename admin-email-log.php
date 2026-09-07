@@ -139,8 +139,8 @@ $stats_today  = (int)$pdo->query("SELECT COUNT(*) FROM email_log WHERE sent_at >
                             <?php foreach ($emails as $row): ?>
                             <tr class="hover:bg-gray-50 transition" data-testid="row-email-<?php echo $row['id']; ?>">
                                 <td class="px-5 py-3 text-gray-500 whitespace-nowrap text-xs">
-                                    <?php echo date('M d, Y', strtotime($row['sent_at'])); ?><br>
-                                    <span class="text-gray-400"><?php echo date('g:i A', strtotime($row['sent_at'])); ?></span>
+                                    <?php echo fmt_date($row['sent_at'] ?? null, 'M d, Y'); ?><br>
+                                    <span class="text-gray-400"><?php echo fmt_date($row['sent_at'] ?? null, 'g:i A'); ?></span>
                                 </td>
                                 <td class="px-5 py-3 text-gray-900 font-medium max-w-[200px] truncate" title="<?php echo htmlspecialchars($row['recipient']); ?>" data-testid="text-recipient-<?php echo $row['id']; ?>">
                                     <?php echo htmlspecialchars($row['recipient']); ?>

@@ -558,7 +558,7 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
 
                             <?php if ($ord['updated_at'] && $ord['updated_at'] !== $ord['created_at']): ?>
                             <dt class="text-gray-500">Updated</dt>
-                            <dd class="text-gray-800"><?php echo date('M d, Y g:ia', strtotime($ord['updated_at'])); ?></dd>
+                            <dd class="text-gray-800"><?php echo fmt_date($ord['updated_at'] ?? null, 'M d, Y g:ia'); ?></dd>
                             <?php endif; ?>
                         </dl>
 
@@ -930,7 +930,7 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                     <tbody class="divide-y divide-gray-100 font-mono">
                         <?php foreach ($logs as $log): ?>
                         <tr class="hover:bg-gray-50">
-                            <td class="px-4 py-2 text-gray-400"><?php echo date('M d H:i:s', strtotime($log['created_at'])); ?></td>
+                            <td class="px-4 py-2 text-gray-400"><?php echo fmt_date($log['created_at'] ?? null, 'M d H:i:s'); ?></td>
                             <td class="px-4 py-2">
                                 <span class="px-1.5 py-0.5 rounded text-xs font-semibold <?php echo $log['level']==='error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'; ?>">
                                     <?php echo strtoupper($log['level']); ?>

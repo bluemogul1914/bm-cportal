@@ -157,7 +157,7 @@ include 'includes/admin-header.php';
                                 <td class="px-6 py-3 font-medium text-gray-800"><?php echo htmlspecialchars($r['sequence_name']); ?></td>
                                 <td class="px-6 py-3 text-gray-500">Step <?php echo intval($r['step_number']); ?></td>
                                 <td class="px-6 py-3 text-gray-500"><?php echo htmlspecialchars($r['client_name'] ?? 'Lead'); ?></td>
-                                <td class="px-6 py-3 text-gray-500"><?php echo date('M d, Y H:i', strtotime($r['sent_at'])); ?></td>
+                                <td class="px-6 py-3 text-gray-500"><?php echo fmt_date($r['sent_at'] ?? null, 'M d, Y H:i'); ?></td>
                                 <td class="px-6 py-3 text-center"><?php echo $r['opened'] ? '✓' : '—'; ?></td>
                                 <td class="px-6 py-3 text-center"><?php echo $r['clicked'] ? '✓' : '—'; ?></td>
                                 <td class="px-6 py-3 text-center"><?php echo $r['replied'] ? '✓' : '—'; ?></td>

@@ -769,7 +769,7 @@ $device_count = $db->query("SELECT COUNT(*) FROM network_devices")->fetchColumn(
                                     if (strpos($msg, 'failed') !== false) $action_color = 'bg-red-100 text-red-700';
                                 ?>
                                     <tr class="hover:bg-gray-50">
-                                        <td class="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap"><?php echo date('M j, g:i A', strtotime($log['created_at'])); ?></td>
+                                        <td class="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap"><?php echo fmt_date($log['created_at'] ?? null, 'M j, g:i A'); ?></td>
                                         <td class="px-4 py-2.5 text-gray-700"><?php echo htmlspecialchars($log['username'] ?? 'System'); ?></td>
                                         <td class="px-4 py-2.5"><span class="px-2 py-0.5 rounded text-xs font-medium <?php echo $action_color; ?>"><?php echo htmlspecialchars($log['action']); ?></span></td>
                                         <td class="px-4 py-2.5 text-gray-600 text-xs"><?php echo htmlspecialchars(is_string($msg) ? $msg : json_encode($msg)); ?></td>

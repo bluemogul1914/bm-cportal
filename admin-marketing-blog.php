@@ -84,7 +84,7 @@ include 'includes/admin-header.php';
                                         <?php echo htmlspecialchars(ucfirst($p['platform'])); ?>
                                     </span>
                                 </td>
-                                <td class="px-6 py-3 text-gray-500"><?php echo date('M d, Y', strtotime($p['published_at'])); ?></td>
+                                <td class="px-6 py-3 text-gray-500"><?php echo fmt_date($p['published_at'] ?? null, 'M d, Y'); ?></td>
                                 <td class="px-6 py-3 text-right text-gray-700"><?php echo number_format(intval($p['views'])); ?></td>
                                 <td class="px-6 py-3 text-right">
                                     <span class="px-2 py-0.5 rounded-full text-xs <?php echo intval($p['engagement_score']) >= 50 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'; ?>">

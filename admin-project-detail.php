@@ -203,7 +203,7 @@ $task_status_icons = ['todo' => 'fa-circle text-gray-400', 'in_progress' => 'fa-
                         <div class="flex justify-between text-xs text-gray-400 mt-2">
                             <span><?php echo count($task_groups['done']); ?> of <?php echo count($tasks); ?> tasks done</span>
                             <?php if ($project['due_date']): ?>
-                                <span>Due: <?php echo date('M d, Y', strtotime($project['due_date'])); ?></span>
+                                <span>Due: <?php echo fmt_date($project['due_date'] ?? null, 'M d, Y'); ?></span>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -330,7 +330,7 @@ $task_status_icons = ['todo' => 'fa-circle text-gray-400', 'in_progress' => 'fa-
                                         <p class="text-xs text-gray-500 mt-0.5">
                                             <?= htmlspecialchars($te['description'] ?: 'No description') ?>
                                             &middot; <?= htmlspecialchars($te['user_name'] ?? 'Unknown') ?>
-                                            &middot; <?= date('M d, g:i A', strtotime($te['created_at'])) ?>
+                                            &middot; <?= fmt_date($te['created_at'] ?? null, 'M d, g:i A') ?>
                                         </p>
                                     </div>
                                     <form method="POST" class="inline" onsubmit="return confirm('Delete this time entry?')">
@@ -365,7 +365,7 @@ $task_status_icons = ['todo' => 'fa-circle text-gray-400', 'in_progress' => 'fa-
                                         <p class="text-sm text-gray-700"><?php echo nl2br(htmlspecialchars($note['note'])); ?></p>
                                         <p class="text-xs text-gray-400 mt-2">
                                             <i class="fas fa-user mr-1"></i><?php echo htmlspecialchars($note['author_name'] ?? 'System'); ?>
-                                            &middot; <?php echo date('M d, Y g:i A', strtotime($note['created_at'])); ?>
+                                            &middot; <?php echo fmt_date($note['created_at'] ?? null, 'M d, Y g:i A'); ?>
                                         </p>
                                     </div>
                                 <?php endforeach; ?>
@@ -446,29 +446,29 @@ $task_status_icons = ['todo' => 'fa-circle text-gray-400', 'in_progress' => 'fa-
                         <div class="space-y-3 text-xs">
                             <div class="flex items-center gap-2 text-gray-500">
                                 <i class="fas fa-calendar-plus text-blue-500 w-4"></i>
-                                <span>Created: <?php echo date('M d, Y', strtotime($project['created_at'])); ?></span>
+                                <span>Created: <?php echo fmt_date($project['created_at'] ?? null, 'M d, Y'); ?></span>
                             </div>
                             <?php if ($project['start_date']): ?>
                             <div class="flex items-center gap-2 text-gray-500">
                                 <i class="fas fa-play text-green-500 w-4"></i>
-                                <span>Start: <?php echo date('M d, Y', strtotime($project['start_date'])); ?></span>
+                                <span>Start: <?php echo fmt_date($project['start_date'] ?? null, 'M d, Y'); ?></span>
                             </div>
                             <?php endif; ?>
                             <?php if ($project['due_date']): ?>
                             <div class="flex items-center gap-2 <?php echo ($project['due_date'] < date('Y-m-d') && $project['status'] !== 'completed') ? 'text-red-600 font-semibold' : 'text-gray-500'; ?>">
                                 <i class="fas fa-flag-checkered w-4"></i>
-                                <span>Due: <?php echo date('M d, Y', strtotime($project['due_date'])); ?></span>
+                                <span>Due: <?php echo fmt_date($project['due_date'] ?? null, 'M d, Y'); ?></span>
                             </div>
                             <?php endif; ?>
                             <?php if ($project['completed_at']): ?>
                             <div class="flex items-center gap-2 text-green-600 font-semibold">
                                 <i class="fas fa-check-circle w-4"></i>
-                                <span>Completed: <?php echo date('M d, Y', strtotime($project['completed_at'])); ?></span>
+                                <span>Completed: <?php echo fmt_date($project['completed_at'] ?? null, 'M d, Y'); ?></span>
                             </div>
                             <?php endif; ?>
                             <div class="flex items-center gap-2 text-gray-400">
                                 <i class="fas fa-clock w-4"></i>
-                                <span>Updated: <?php echo date('M d, Y g:i A', strtotime($project['updated_at'])); ?></span>
+                                <span>Updated: <?php echo fmt_date($project['updated_at'] ?? null, 'M d, Y g:i A'); ?></span>
                             </div>
                         </div>
                     </div>

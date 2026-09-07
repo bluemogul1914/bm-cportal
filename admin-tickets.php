@@ -295,7 +295,7 @@ try {
                                 <a href="admin-ticket-detail.php?id=<?php echo $kt_id; ?>" class="block text-sm font-medium text-gray-900 hover:text-blue-600 mb-1 line-clamp-2"><?php echo htmlspecialchars($kt['subject'] ?? ''); ?></a>
                                 <p class="text-xs text-gray-500 mb-2"><?php echo htmlspecialchars($kt['client_name'] ?? 'Unknown client'); ?></p>
                                 <?php if (!empty($kt['sla_due_at'])): ?>
-                                <p class="text-xs text-gray-400"><i class="fas fa-clock mr-1"></i>SLA: <?php echo date('M j H:i', strtotime($kt['sla_due_at'])); ?></p>
+                                <p class="text-xs text-gray-400"><i class="fas fa-clock mr-1"></i>SLA: <?php echo fmt_date($kt['sla_due_at'] ?? null, 'M j H:i'); ?></p>
                                 <?php endif; ?>
                                 <?php if (!empty($kt['assigned_to'])): ?>
                                 <p class="text-xs text-gray-400 mt-1"><i class="fas fa-user-tag mr-1"></i><?php echo htmlspecialchars($kt['assigned_to']); ?></p>

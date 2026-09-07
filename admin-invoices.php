@@ -311,7 +311,7 @@ try {
                                                 <span class="text-lg font-bold text-gray-900">$<?php echo number_format($invoice['amount'], 2); ?></span>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                                <?php echo date('M d, Y', strtotime($invoice['created_at'])); ?>
+                                                <?php echo fmt_date($invoice['created_at'] ?? null, 'M d, Y'); ?>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap">
                                                 <div>

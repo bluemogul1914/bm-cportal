@@ -161,7 +161,7 @@ try {
                                 <div class="grid grid-cols-2 gap-3 text-sm">
                                     <div>
                                         <p class="text-gray-500 text-xs">Start Date</p>
-                                        <p class="font-medium text-gray-900"><?php echo date('M d, Y', strtotime($service['start_date'])); ?></p>
+                                        <p class="font-medium text-gray-900"><?php echo fmt_date($service['start_date'] ?? null, 'M d, Y'); ?></p>
                                     </div>
                                     <div>
                                         <p class="text-gray-500 text-xs">MRR</p>

@@ -236,7 +236,7 @@ $status_badge = ['active'=>'bg-green-100 text-green-800','pending'=>'bg-yellow-1
                     <p class="text-xs text-gray-500"><?= htmlspecialchars($c['product_line']??'') ?></p>
                 </td>
                 <td class="px-5 py-3 font-bold text-yellow-700">$<?= number_format($c['amount'],2) ?></td>
-                <td class="px-5 py-3 text-gray-500 text-xs"><?= date('M j', strtotime($c['created_at'])) ?></td>
+                <td class="px-5 py-3 text-gray-500 text-xs"><?= fmt_date($c['created_at'] ?? null, 'M j') ?></td>
                 <td class="px-5 py-3">
                     <form method="post" class="inline">
                         <?= csrf_field() ?>

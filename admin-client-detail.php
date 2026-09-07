@@ -612,7 +612,7 @@ $show_map = $has_location || $has_address;
                                         <span class="text-[10px] text-gray-400">
                                             #<?php echo $log['id']; ?> &middot;
                                             <?php echo htmlspecialchars($log_action); ?> &middot;
-                                            <?php echo date('n/j/Y g:i:s a', strtotime($log['created_at'])); ?>
+                                            <?php echo fmt_date($log['created_at'] ?? null, 'n/j/Y g:i:s a'); ?>
                                         </span>
                                     </div>
                                 </div>
@@ -710,7 +710,7 @@ $show_map = $has_location || $has_address;
                                             <?php endif; ?>
                                         </div>
                                         <div class="flex items-center gap-2">
-                                            <span class="text-[11px] text-gray-400"><?= date('M d, Y g:i A', strtotime($cm['created_at'])) ?></span>
+                                            <span class="text-[11px] text-gray-400"><?= fmt_date($cm['created_at'] ?? null, 'M d, Y g:i A') ?></span>
                                             <form method="POST" class="inline" onsubmit="return confirm('Delete?')">
                                                 <?= csrf_field() ?>
                                                 <input type="hidden" name="action" value="delete_client_comm">
@@ -821,7 +821,7 @@ $show_map = $has_location || $has_address;
                                     </div>
                                     <?php endif; ?>
                                     <div class="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
-                                        Created: <?php echo date('M d, Y', strtotime($client['created_at'])); ?>
+                                        Created: <?php echo fmt_date($client['created_at'] ?? null, 'M d, Y'); ?>
                                     </div>
 
                                     <div class="mt-3 pt-3 border-t border-gray-100">
@@ -933,8 +933,9 @@ $show_map = $has_location || $has_address;
                         <div class="p-4">
                             <?php
                             $last_inv = $recent_invoices[0];
-                            $period_start = date('n/j/Y', strtotime($last_inv['due_date'] ?? $last_inv['created_at']));
-                            $period_end = date('n/j/Y', strtotime('+30 days', strtotime($last_inv['due_date'] ?? $last_inv['created_at'])));
+                            $period_base = $last_inv['due_date'] ?? $last_inv['created_at'] ?? null;
+                            $period_start = fmt_date($period_base, 'n/j/Y');
+                            $period_end = $period_base ? date('n/j/Y', strtotime('+30 days', strtotime((string)$period_base))) : '';
                             ?>
                             <div class="flex items-center gap-4 mb-3">
                                 <div>
@@ -945,11 +946,11 @@ $show_map = $has_location || $has_address;
                             <div class="grid grid-cols-3 gap-3 text-center">
                                 <div>
                                     <p class="text-[10px] text-gray-400 uppercase">Created</p>
-                                    <p class="text-xs font-medium"><?php echo date('n/j/Y', strtotime($last_inv['created_at'])); ?></p>
+                                    <p class="text-xs font-medium"><?php echo fmt_date($last_inv['created_at'] ?? null, 'n/j/Y'); ?></p>
                                 </div>
                                 <div>
                                     <p class="text-[10px] text-gray-400 uppercase">Due</p>
-                                    <p class="text-xs font-medium"><?php echo date('n/j/Y', strtotime($last_inv['due_date'] ?? $last_inv['created_at'])); ?></p>
+                                    <p class="text-xs font-medium"><?php echo fmt_date($last_inv['due_date'] ?? $last_inv['created_at'] ?? null, 'n/j/Y'); ?></p>
                                 </div>
                                 <div>
                                     <p class="text-[10px] text-gray-400 uppercase">Amount</p>
@@ -1085,8 +1086,8 @@ $show_map = $has_location || $has_address;
                             <?php foreach ($all_invoices as $inv): ?>
                             <tr class="hover:bg-gray-50 transition">
                                 <td class="px-5 py-3 text-sm font-medium text-gray-900"><?php echo htmlspecialchars($inv['invoice_number']); ?></td>
-                                <td class="px-5 py-3 text-sm text-gray-600"><?php echo date('M d, Y', strtotime($inv['created_at'])); ?></td>
-                                <td class="px-5 py-3 text-sm text-gray-600"><?php echo date('M d, Y', strtotime($inv['due_date'] ?? $inv['created_at'])); ?></td>
+                                <td class="px-5 py-3 text-sm text-gray-600"><?php echo fmt_date($inv['created_at'] ?? null, 'M d, Y'); ?></td>
+                                <td class="px-5 py-3 text-sm text-gray-600"><?php echo fmt_date($inv['due_date'] ?? $inv['created_at'] ?? null, 'M d, Y'); ?></td>
                                 <td class="px-5 py-3 text-sm font-semibold">$<?php echo number_format((float)$inv['amount'], 2); ?></td>
                                 <td class="px-5 py-3"><span class="px-2 py-0.5 rounded text-xs font-medium <?php echo $inv['status'] === 'paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'; ?>"><?php echo ucfirst($inv['status']); ?></span></td>
                                 <td class="px-5 py-3"><a href="admin-invoice-detail.php?id=<?php echo $inv['id']; ?>" class="text-blue-600 hover:underline text-xs font-medium"><i class="fas fa-eye mr-1"></i>View</a></td>
@@ -1119,7 +1120,7 @@ $show_map = $has_location || $has_address;
                         <tbody class="divide-y divide-gray-100">
                             <?php foreach ($payments as $p): ?>
                             <tr class="hover:bg-gray-50">
-                                <td class="px-5 py-3 text-sm text-gray-700"><?php echo date('M d, Y', strtotime($p['payment_date'])); ?></td>
+                                <td class="px-5 py-3 text-sm text-gray-700"><?php echo fmt_date($p['payment_date'] ?? null, 'M d, Y'); ?></td>
                                 <td class="px-5 py-3 text-sm font-semibold text-green-700">$<?php echo number_format((float)$p['amount'], 2); ?></td>
                                 <td class="px-5 py-3 text-sm text-gray-500">Stripe</td>
                             </tr>
@@ -1156,7 +1157,7 @@ $show_map = $has_location || $has_address;
                             <i class="fas <?php echo $icon; ?> text-lg"></i>
                             <div>
                                 <p class="text-sm font-medium text-gray-900 truncate"><?php echo htmlspecialchars($doc['name']); ?></p>
-                                <p class="text-xs text-gray-500"><?php echo htmlspecialchars($doc['category'] ?? 'General'); ?> &middot; <?php echo date('M d, Y', strtotime($doc['created_at'])); ?></p>
+                                <p class="text-xs text-gray-500"><?php echo htmlspecialchars($doc['category'] ?? 'General'); ?> &middot; <?php echo fmt_date($doc['created_at'] ?? null, 'M d, Y'); ?></p>
                             </div>
                         </div>
                     </div>
@@ -1207,7 +1208,7 @@ $show_map = $has_location || $has_address;
                                         default => 'bg-gray-100 text-gray-700'
                                     };
                                 ?>"><?php echo ucfirst(str_replace('_', ' ', $t['status'])); ?></span></td>
-                                <td class="px-5 py-3 text-sm text-gray-500"><?php echo date('M d, Y', strtotime($t['created_at'])); ?></td>
+                                <td class="px-5 py-3 text-sm text-gray-500"><?php echo fmt_date($t['created_at'] ?? null, 'M d, Y'); ?></td>
                                 <td class="px-5 py-3"><a href="admin-ticket-detail.php?id=<?php echo $t['id']; ?>" class="text-blue-600 hover:underline text-xs font-medium"><i class="fas fa-eye mr-1"></i>View</a></td>
                             </tr>
                             <?php endforeach; ?>
@@ -1402,7 +1403,7 @@ $show_map = $has_location || $has_address;
                                     <div class="bg-primary rounded-full h-2" style="width: <?php echo intval($pj['progress'] ?? 0); ?>%"></div>
                                 </div>
                                 <span class="text-xs text-gray-500"><?php echo intval($pj['progress'] ?? 0); ?>%</span>
-                                <span class="text-xs text-gray-400">Created <?php echo date('M d, Y', strtotime($pj['created_at'])); ?></span>
+                                <span class="text-xs text-gray-400">Created <?php echo fmt_date($pj['created_at'] ?? null, 'M d, Y'); ?></span>
                             </div>
                         </div>
                         <span class="px-2 py-0.5 rounded text-[10px] font-semibold ml-3 <?php
@@ -1526,7 +1527,7 @@ $show_map = $has_location || $has_address;
                         <div class="flex-shrink-0 text-right text-xs text-gray-400 space-y-1">
                             <p><?php echo $bord['created_at'] ? date('M d, Y', strtotime($bord['created_at'])) : '—'; ?></p>
                             <?php if ($bord['desired_due_date']): ?>
-                            <p class="text-gray-500">Due <?php echo date('M d', strtotime($bord['desired_due_date'])); ?></p>
+                            <p class="text-gray-500">Due <?php echo fmt_date($bord['desired_due_date'] ?? null, 'M d'); ?></p>
                             <?php endif; ?>
                             <?php if ($bord['invoice_id']): ?>
                             <a href="admin-invoice-detail.php?id=<?php echo (int)$bord['invoice_id']; ?>"

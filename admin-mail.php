@@ -687,7 +687,7 @@ body { font-family: Inter, system-ui, sans-serif; }
                         <i class="fas fa-tag text-xs"></i> <?= htmlspecialchars($mb_def['label']) ?>
                     </span>
                     <span class="text-xs text-gray-500">
-                        <?= date('D, M j, Y g:i A', strtotime($current_msg['received_at'])) ?>
+                        <?= fmt_date($current_msg['received_at'] ?? null, 'D, M j, Y g:i A') ?>
                     </span>
                 </div>
             </div>
@@ -735,7 +735,7 @@ body { font-family: Inter, system-ui, sans-serif; }
     <!-- Thread messages -->
     <?php foreach ($thread_msgs as $ti => $tmsg): ?>
     <?php if ($ti > 0): ?>
-    <div class="thread-sep"><span><?= date('M j', strtotime($tmsg['received_at'])) ?> · <?= htmlspecialchars($tmsg['from_name']) ?></span></div>
+    <div class="thread-sep"><span><?= fmt_date($tmsg['received_at'] ?? null, 'M j') ?> · <?= htmlspecialchars($tmsg['from_name']) ?></span></div>
     <?php endif; ?>
 
     <div class="px-5 py-5" data-testid="msg-body-<?= $tmsg['id'] ?>">
@@ -743,7 +743,7 @@ body { font-family: Inter, system-ui, sans-serif; }
             <?= mail_avatar($tmsg['from_name'], $MAILBOXES[$tmsg['mailbox']]['color'] ?? '#64748b') ?>
             <div>
                 <div class="font-semibold text-gray-900 text-sm"><?= htmlspecialchars($tmsg['from_name']) ?></div>
-                <div class="text-xs text-gray-400"><?= htmlspecialchars($tmsg['from_email']) ?> · <?= date('M j, Y g:i A', strtotime($tmsg['received_at'])) ?></div>
+                <div class="text-xs text-gray-400"><?= htmlspecialchars($tmsg['from_email']) ?> · <?= fmt_date($tmsg['received_at'] ?? null, 'M j, Y g:i A') ?></div>
             </div>
         </div>
         <div class="mail-body">

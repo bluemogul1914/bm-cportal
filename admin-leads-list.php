@@ -164,7 +164,7 @@ $status_badge_colors = [
                     <td class="px-4 py-3 text-gray-600"><?= htmlspecialchars($l['email'] ?? '—') ?></td>
                     <td class="px-4 py-3 text-gray-400 text-xs"><?= $l['last_contacted'] ? date('Y-m-d H:i:s',strtotime($l['last_contacted'])) : '—' ?></td>
                     <td class="px-4 py-3 text-gray-500 text-xs max-w-xs truncate"><?= htmlspecialchars($l['last_comments'] ?? '') ?></td>
-                    <td class="px-4 py-3 text-gray-400 text-xs"><?= date('Y-m-d',strtotime($l['created_at'])) ?></td>
+                    <td class="px-4 py-3 text-gray-400 text-xs"><?= fmt_date($l['created_at'] ?? null, 'Y-m-d') ?></td>
                     <td class="px-4 py-3"><span class="text-xs text-gray-500"><?= htmlspecialchars($l['custom_status'] ?? 'customer') ?></span></td>
                 </tr>
                 <?php endforeach; ?>

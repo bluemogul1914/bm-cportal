@@ -95,7 +95,7 @@ try {
                         </div>
                         <div class="flex justify-between text-sm">
                             <span class="text-gray-600">Date Issued</span>
-                            <span class="font-medium text-gray-900"><?php echo date('M d, Y', strtotime($invoice['created_at'])); ?></span>
+                            <span class="font-medium text-gray-900"><?php echo fmt_date($invoice['created_at'] ?? null, 'M d, Y'); ?></span>
                         </div>
                         <div class="flex justify-between text-sm border-t border-gray-100 pt-3">
                             <span class="text-gray-900 font-semibold">Total Due</span>

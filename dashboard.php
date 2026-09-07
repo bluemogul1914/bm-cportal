@@ -179,7 +179,7 @@ try {
                                                         <div class="flex-1 min-w-0">
                                                             <p class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($notif['title']); ?></p>
                                                             <p class="text-xs text-gray-600 mt-0.5"><?php echo htmlspecialchars($notif['message']); ?></p>
-                                                            <p class="text-xs text-gray-400 mt-1"><?php echo date('M d, g:i A', strtotime($notif['created_at'])); ?></p>
+                                                            <p class="text-xs text-gray-400 mt-1"><?php echo fmt_date($notif['created_at'] ?? null, 'M d, g:i A'); ?></p>
                                                         </div>
                                                     </div>
                                                 </a>
@@ -303,7 +303,7 @@ try {
                                                     <div class="flex items-center gap-3 text-xs">
                                                         <span class="text-gray-400">
                                                             <i class="far fa-clock mr-1"></i>
-                                                            <?php echo date('M d, Y', strtotime($ticket['created_at'])); ?>
+                                                            <?php echo fmt_date($ticket['created_at'] ?? null, 'M d, Y'); ?>
                                                         </span>
                                                         <span class="px-2 py-0.5 rounded-full font-medium <?php
                                                             echo match($ticket['priority'] ?? 'medium') {
