@@ -17,20 +17,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         try {
             $stmt = $pdo->prepare("INSERT INTO projects (client_id, name, description, status, priority, project_type, assigned_to, start_date, due_date, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
-                $_POST['client_id'] ?: null,
-                $_POST['name'],
-                $_POST['description'] ?: null,
+                $_POST['client_id'] ?? null ?: null,
+                $_POST['name'] ?? '',
+                $_POST['description'] ?? '' ?: null,
                 $_POST['status'] ?: 'planning',
-                $_POST['priority'] ?: 'medium',
+                $_POST['priority'] ?? 'medium' ?: 'medium',
                 $_POST['project_type'] ?: 'general',
-                $_POST['assigned_to'] ?: null,
-                $_POST['start_date'] ?: null,
-                $_POST['due_date'] ?: null,
+                $_POST['assigned_to'] ?? null ?: null,
+                $_POST['start_date'] ?? null ?: null,
+                $_POST['due_date'] ?? null ?: null,
                 $_SESSION['user_id']
             ]);
             $project_id = $pdo->lastInsertId();
             $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([
-                $_SESSION['user_id'], 'project_created', 'project', $project_id, 'Created project: ' . $_POST['name'], $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'
+                $_SESSION['user_id'], 'project_created', 'project', $project_id, 'Created project: ' . $_POST['name'] ?? '', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'
             ]);
             $success_message = "Project created successfully!";
         } catch (PDOException $e) {
@@ -49,12 +49,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     }
 }
 
-$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$page = isset($_GET['page']) ? (int)$_GET['page'] ?? 1 : 1;
 $limit = 20;
 $offset = ($page - 1) * $limit;
 
 $search = $_GET['search'] ?? '';
-$status_filter = $_GET['status'] ?? '';
+$status_filter = $_GET['status'] ?? '' ?? '';
 $type_filter = $_GET['type'] ?? '';
 
 try {

@@ -28,9 +28,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
         if ($section === 'company') {
             $settings = [
-                'company_name' => $_POST['company_name'],
-                'company_email' => $_POST['company_email'],
-                'company_phone' => $_POST['company_phone']
+                'company_name' => $_POST['company_name'] ?? '',
+                'company_email' => $_POST['company_email'] ?? '',
+                'company_phone' => $_POST['company_phone'] ?? ''
             ];
             foreach ($settings as $key => $value) {
                 $stmt = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (?, ?, NOW()) ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW()");
@@ -39,12 +39,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $success_message = "Company settings updated successfully!";
         } elseif ($section === 'api') {
             $api_keys = [
-                'stripe_public_key' => $_POST['stripe_public_key'],
-                'stripe_secret_key' => $_POST['stripe_secret_key'],
-                'voip_ms_user' => $_POST['voip_ms_user'],
-                'voip_ms_pass' => $_POST['voip_ms_pass'],
-                'itflow_url' => $_POST['itflow_url'],
-                'itflow_api_key' => $_POST['itflow_api_key']
+                'stripe_public_key' => $_POST['stripe_public_key'] ?? '',
+                'stripe_secret_key' => $_POST['stripe_secret_key'] ?? '',
+                'voip_ms_user' => $_POST['voip_ms_user'] ?? '',
+                'voip_ms_pass' => $_POST['voip_ms_pass'] ?? '',
+                'itflow_url' => $_POST['itflow_url'] ?? '',
+                'itflow_api_key' => $_POST['itflow_api_key'] ?? ''
             ];
             foreach ($api_keys as $key => $value) {
                 $stmt = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (?, ?, NOW()) ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW()");
@@ -53,11 +53,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $success_message = "API keys updated successfully!";
         } elseif ($section === 'email') {
             $email_settings = [
-                'smtp_host' => $_POST['smtp_host'],
-                'smtp_port' => $_POST['smtp_port'],
-                'smtp_user' => $_POST['smtp_user'],
-                'smtp_pass' => $_POST['smtp_pass'],
-                'from_email' => $_POST['from_email'],
+                'smtp_host' => $_POST['smtp_host'] ?? '',
+                'smtp_port' => $_POST['smtp_port'] ?? '',
+                'smtp_user' => $_POST['smtp_user'] ?? '',
+                'smtp_pass' => $_POST['smtp_pass'] ?? '',
+                'from_email' => $_POST['from_email'] ?? '',
                 'from_name' => $_POST['from_name']
             ];
             foreach ($email_settings as $key => $value) {
