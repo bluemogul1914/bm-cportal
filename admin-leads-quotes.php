@@ -6,33 +6,34 @@ require_once 'includes/leads-db-bootstrap.php';
 try { leads_bootstrap($pdo); } catch (Exception $e) {}
 
 $create_msg = '';
-if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'create_quote') {
-    $lead_id       = (int)($_POST['lead_id'] ?? 0);
-    $total         = (float)($_POST['total'] ?? 0);
-    $doc_date      = $_POST['document_date'] ?? date('Y-m-d');
-    $valid_until   = trim($_POST['valid_until'] ?? '');
-    $note          = trim($_POST['note'] ?? '');
-    if ($lead_id > 0) {
-        $qnum = 'Q-' . date('Ymd') . '-' . strtoupper(substr(md5(uniqid()), 0, 4));
-        try {
-            $stmt = $pdo->prepare("INSERT INTO lead_quotes (lead_id, quote_number, status, document_date, valid_until, deal_value, note, items, total_without_tax, tax_amount, total, created_at) VALUES (?,?, 'new', ?, ?, ?, ?, '[]', ?, 0, ?, NOW())");
-            $stmt->execute([$lead_id, $qnum, $doc_date, $valid_until !== '' ? $valid_until : null, $total, $note, $total, $total]);
-            portal_redirect('admin-leads-quotes.php?created=1');
-        } catch (Exception $e) {
-            $create_msg = 'Error: ' . $e->getMessage();
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    require_csrf();
+    
+    if (($_POST['action'] ?? '') === 'create_quote') {
+        $lead_id       = (int)($_POST['lead_id'] ?? 0);
+        $total         = (float)($_POST['total'] ?? 0);
+        $doc_date      = $_POST['document_date'] ?? date('Y-m-d');
+        $valid_until   = trim($_POST['valid_until'] ?? '');
+        $note          = trim($_POST['note'] ?? '');
+        if ($lead_id > 0) {
+            $qnum = 'Q-' . date('Ymd') . '-' . strtoupper(substr(md5(uniqid()), 0, 4));
+            try {
+                $stmt = $pdo->prepare("INSERT INTO lead_quotes (lead_id, quote_number, status, document_date, valid_until, deal_value, note, items, total_without_tax, tax_amount, total, created_at) VALUES (?,?, 'new', ?, ?, ?, ?, '[]', ?, 0, ?, NOW())");
+                $stmt->execute([$lead_id, $qnum, $doc_date, $valid_until !== '' ? $valid_until : null, $total, $note, $total, $total]);
+                portal_redirect('admin-leads-quotes.php?created=1');
+            } catch (Exception $e) {
+                $create_msg = 'Error: ' . $e->getMessage();
+            }
         }
     }
-}
-$leads_for_form = $pdo->query("SELECT id, full_name, email FROM leads WHERE full_name IS NOT NULL AND full_name != '' ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
-
-$convert_msg = '';
-if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'convert_invoice') {
-    $qid = (int)($_POST['quote_id'] ?? 0);
-    if ($qid > 0) {
-        try {
-            $q = $pdo->prepare("SELECT q.*, l.full_name as lead_name, l.email as lead_email FROM lead_quotes q LEFT JOIN leads l ON q.lead_id=l.id WHERE q.id=?");
-            $q->execute([$qid]);
-            $quote = $q->fetch(PDO::FETCH_ASSOC);
+    
+    if (($_POST['action'] ?? '') === 'convert_invoice') {
+        $qid = (int)($_POST['quote_id'] ?? 0);
+        if ($qid > 0) {
+            try {
+                $q = $pdo->prepare("SELECT q.*, l.full_name as lead_name, l.email as lead_email FROM lead_quotes q LEFT JOIN leads l ON q.lead_id=l.id WHERE q.id=?");
+                $q->execute([$qid]);
+                $quote = $q->fetch(PDO::FETCH_ASSOC);
             if ($quote) {
                 $lead_items = json_decode($quote['items'] ?? '[]', true);
                 $inv_items = [];
@@ -69,6 +70,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') ==
             $convert_msg = 'Error: ' . $e->getMessage();
         }
     }
+}
 }
 
 $from = $_GET['from'] ?? date('Y-m-01');

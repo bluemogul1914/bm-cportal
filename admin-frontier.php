@@ -84,6 +84,11 @@ $tab = $_GET['tab'] ?? 'dashboard';
 // ── Actions ───────────────────────────────────────────────────────────────────
 $action = $_POST['_action'] ?? $_GET['action'] ?? '';
 
+// CSRF guard for all POST-driven actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action !== '') {
+    require_csrf();
+}
+
 if ($action === 'save_settings' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $config['environment']   = $_POST['environment']   ?? 'TEST';
     $config['ccna']          = strtoupper(trim($_POST['ccna']          ?? 'BMR'));
