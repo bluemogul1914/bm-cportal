@@ -35,14 +35,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_customer'])) {
 }
 // Convert type
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['convert_id'])) {
-    $cid  = (int)$_POST['convert_id'];
+    $cid  = (int)($_POST['convert_id'] ?? 0);
     $type = $_POST['new_type'] ?? 'client';
     $pdo->prepare("UPDATE dealer_customers SET type=?,updated_at=NOW() WHERE id=? AND dealer_id=?")->execute([$type,$cid,$dealer_id]);
     $success = 'Customer updated.';
 }
 // Delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
-    $pdo->prepare("DELETE FROM dealer_customers WHERE id=? AND dealer_id=?")->execute([(int)$_POST['delete_id'],$dealer_id]);
+    $pdo->prepare("DELETE FROM dealer_customers WHERE id=? AND dealer_id=?")->execute([(int)($_POST['delete_id'] ?? 0),$dealer_id]);
     $success = 'Customer removed.';
 }
 

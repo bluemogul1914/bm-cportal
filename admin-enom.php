@@ -118,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Check domain availability
         } elseif ($action === 'check_domain') {
-            $domain = trim($_POST['domain'] ?? '');
+            $domain = trim($_POST['domain'] ?? '' ?? '' ?? '');
             if (!$domain) {
                 $error_msg = 'Please enter a domain name.';
             } else {
@@ -144,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Register domain
         } elseif ($action === 'register_domain') {
             $sld   = trim($_POST['sld'] ?? '');
-            $tld   = trim($_POST['tld'] ?? 'com');
+            $tld   = trim($_POST['tld'] ?? '' ?? 'com');
             $years = (int)($_POST['num_years'] ?? 1);
             if (!$sld) {
                 $error_msg = 'Domain name (SLD) is required.';
@@ -167,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Renew domain
         } elseif ($action === 'renew_domain') {
             $sld   = trim($_POST['sld'] ?? '');
-            $tld   = trim($_POST['tld'] ?? '');
+            $tld   = trim($_POST['tld'] ?? '' ?? '');
             $years = (int)($_POST['num_years'] ?? 1);
             $res   = enom_api(['command' => 'Renew', 'SLD' => $sld, 'TLD' => $tld, 'NumYears' => $years]);
             if (isset($res['error'])) {
@@ -180,7 +180,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Toggle domain lock
         } elseif ($action === 'toggle_lock') {
             $sld    = trim($_POST['sld'] ?? '');
-            $tld    = trim($_POST['tld'] ?? '');
+            $tld    = trim($_POST['tld'] ?? '' ?? '');
             $unlock = (int)($_POST['unlock'] ?? 0);
             $res    = enom_api(['command' => 'SetDomainLocking', 'SLD' => $sld, 'TLD' => $tld, 'UnlockDomain' => $unlock]);
             if (isset($res['error'])) {
@@ -193,7 +193,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Toggle auto-renew
         } elseif ($action === 'toggle_autorenew') {
             $sld  = trim($_POST['sld'] ?? '');
-            $tld  = trim($_POST['tld'] ?? '');
+            $tld  = trim($_POST['tld'] ?? '' ?? '');
             $auto = (int)($_POST['auto'] ?? 0);
             $res  = enom_api(['command' => 'SetAutoRenew', 'SLD' => $sld, 'TLD' => $tld, 'AutoRenew' => $auto]);
             if (isset($res['error'])) {
@@ -206,7 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Set nameservers
         } elseif ($action === 'set_nameservers') {
             $sld = trim($_POST['sld'] ?? '');
-            $tld = trim($_POST['tld'] ?? '');
+            $tld = trim($_POST['tld'] ?? '' ?? '');
             $ns  = array_filter(array_map('trim', [
                 $_POST['ns1'] ?? '', $_POST['ns2'] ?? '',
                 $_POST['ns3'] ?? '', $_POST['ns4'] ?? '',
@@ -228,7 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Initiate transfer in
         } elseif ($action === 'transfer_domain') {
             $sld  = trim($_POST['sld'] ?? '');
-            $tld  = trim($_POST['tld'] ?? '');
+            $tld  = trim($_POST['tld'] ?? '' ?? '');
             $auth = trim($_POST['auth_code'] ?? '');
             if (!$sld || !$auth) {
                 $error_msg = 'Domain and authorization code are required.';
@@ -481,7 +481,7 @@ $tlds = ['com','net','org','io','co','info','biz','us','me','online','store','ap
                             data-testid="button-quickrenew-<?= htmlspecialchars($sld) ?>"
                             onclick="return confirm('Renew <?= htmlspecialchars(addslashes("$sld.$tld")) ?> for 1 year?')">
                             <i class="fas fa-sync-alt mr-1"></i><?= htmlspecialchars("$sld.$tld") ?>
-                            <span class="text-orange-400">(<?= $exp ? date('M d Y', strtotime($exp)) : '?' ?>)</span>
+                            <span class="text-orange-400">(<?= $exp ? fmt_date($exp ?? null, 'M d Y') : '?' ?>)</span>
                         </button>
                     </form>
                     <?php endforeach; ?>
@@ -542,7 +542,7 @@ $tlds = ['com','net','org','io','co','info','biz','us','me','online','store','ap
                                     </span>
                                 </td>
                                 <td class="px-4 py-3 <?= $exp_class ?>">
-                                    <?= $expdate ? date('M d Y', strtotime($expdate)) : '—' ?>
+                                    <?= $expdate ? fmt_date($expdate ?? null, 'M d Y') : '—' ?>
                                     <?php if ($days_left !== null && $days_left <= 30 && $days_left > 0): ?>
                                         <span class="block text-xs text-orange-500"><?= $days_left ?> days left</span>
                                     <?php elseif ($days_left !== null && $days_left <= 0): ?>
@@ -883,7 +883,7 @@ $tlds = ['com','net','org','io','co','info','biz','us','me','online','store','ap
                                     <td class="px-4 py-3">
                                         <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700"><?= htmlspecialchars($tst) ?></span>
                                     </td>
-                                    <td class="px-4 py-3 text-gray-400 text-xs"><?= $tdat ? date('M d Y', strtotime($tdat)) : '—' ?></td>
+                                    <td class="px-4 py-3 text-gray-400 text-xs"><?= $tdat ? fmt_date($tdat ?? null, 'M d Y') : '—' ?></td>
                                 </tr>
                                 <?php endforeach; ?>
                             </tbody>

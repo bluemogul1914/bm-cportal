@@ -137,7 +137,7 @@ $status_colors = ['#3b82f6','#0ea5e9','#22c55e','#15803d','#ef4444'];
         <tr class="hover:bg-gray-50">
             <td class="px-4 py-2"><a href="admin-leads-view.php?id=<?= $t['lead_id'] ?>" class="text-blue-600 hover:underline text-xs"><?= htmlspecialchars($t['full_name']??'—') ?></a></td>
             <td class="px-4 py-2 text-gray-700"><?= htmlspecialchars($t['todo']) ?></td>
-            <td class="px-4 py-2 text-gray-400 text-xs"><?= $t['scheduled_at'] ? date('M j H:i',strtotime($t['scheduled_at'])) : '—' ?></td>
+            <td class="px-4 py-2 text-gray-400 text-xs"><?= $t['scheduled_at'] ? fmt_date($t['scheduled_at'] ?? null, 'M j H:i') : '—' ?></td>
             <td class="px-4 py-2 text-center"><span class="px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-500">Actions</span></td>
         </tr>
         <?php endforeach; ?>

@@ -831,7 +831,7 @@ if ($view_agent) {
                                     </div>
                                     <div class="flex-1 min-w-0">
                                         <p class="text-sm text-gray-900"><?php echo htmlspecialchars($log['message'] ?? $log['action'] ?? 'Execution'); ?></p>
-                                        <p class="text-xs text-gray-400"><?php echo $log['executed_at'] ? date('M d, g:i A', strtotime($log['executed_at'])) : ''; ?></p>
+                                        <p class="text-xs text-gray-400"><?php echo $log['executed_at'] ? fmt_date($log['executed_at'] ?? null, 'M d, g:i A') : ''; ?></p>
                                     </div>
                                     <?php if ($log['execution_time']): ?>
                                         <span class="text-xs text-gray-400"><?php echo number_format($log['execution_time'] / 1000, 1); ?>s</span>
@@ -1055,7 +1055,7 @@ if ($view_agent) {
                             <div class="flex items-center justify-between text-xs">
                                 <span class="text-green-600 font-medium"><?php echo $bp['revenue_impact']; ?></span>
                                 <?php if ($last_run): ?>
-                                    <span class="text-gray-400"><i class="far fa-clock mr-1"></i><?php echo date('M d, g:i A', strtotime($last_run)); ?></span>
+                                    <span class="text-gray-400"><i class="far fa-clock mr-1"></i><?php echo fmt_date($last_run ?? null, 'M d, g:i A'); ?></span>
                                 <?php endif; ?>
                             </div>
                         </a>
@@ -1093,7 +1093,7 @@ if ($view_agent) {
                                             <?php echo ucfirst($log['status']); ?>
                                         </span>
                                         <p class="text-xs text-gray-400 mt-1">
-                                            <?php echo $log['executed_at'] ? date('M d, g:i A', strtotime($log['executed_at'])) : ''; ?>
+                                            <?php echo $log['executed_at'] ? fmt_date($log['executed_at'] ?? null, 'M d, g:i A') : ''; ?>
                                         </p>
                                     </div>
                                 </div>

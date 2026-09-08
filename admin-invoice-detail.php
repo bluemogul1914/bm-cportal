@@ -67,7 +67,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
             $inv_info = $inv_stmt->fetch(PDO::FETCH_ASSOC);
             if ($inv_info && !empty($inv_info['email'])) {
                 $email_amount = floatval($inv_info['total'] ?? $inv_info['amount']);
-                $due_str = $inv_info['due_date'] ? date('M d, Y', strtotime($inv_info['due_date'])) : 'N/A';
+                $due_str = $inv_info['due_date'] ? fmt_date($inv_info['due_date'] ?? null, 'M d, Y') : 'N/A';
                 $subject = 'Invoice ' . $inv_info['invoice_number'] . ' from Blue Mogul';
                 $body = "Hello " . ($inv_info['name'] ?? 'Client') . ",\n\n";
                 $body .= "You have a new invoice from Blue Mogul.\n\n";

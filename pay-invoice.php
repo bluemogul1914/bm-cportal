@@ -79,7 +79,7 @@ try {
                     <p class="text-4xl font-bold text-gray-900">$<?php echo number_format($invoice['amount'], 2); ?></p>
                     <?php if ($invoice['due_date']): ?>
                         <p class="text-sm text-gray-500 mt-2">
-                            Due <?php echo date('M d, Y', strtotime($invoice['due_date'])); ?>
+                            Due <?php echo fmt_date($invoice['due_date'] ?? null, 'M d, Y'); ?>
                             <?php if (strtotime($invoice['due_date']) < time()): ?>
                                 <span class="text-red-600 font-medium">(Overdue)</span>
                             <?php endif; ?>

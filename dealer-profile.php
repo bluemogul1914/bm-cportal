@@ -19,7 +19,7 @@ $success = ''; $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') require_csrf();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
-    $name    = trim($_POST['name'] ?? '');
+    $name    = trim($_POST['name'] ?? '' ?? '' ?? '');
     $company = trim($_POST['company'] ?? '');
     $pass    = $_POST['new_password'] ?? '';
     $pass2   = $_POST['confirm_password'] ?? '';

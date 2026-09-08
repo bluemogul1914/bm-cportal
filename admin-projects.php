@@ -20,9 +20,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 $_POST['client_id'] ?? null ?: null,
                 $_POST['name'] ?? '',
                 $_POST['description'] ?? '' ?: null,
-                $_POST['status'] ?: 'planning',
+                $_POST['status'] ?? 'planning',
                 $_POST['priority'] ?? 'medium' ?: 'medium',
-                $_POST['project_type'] ?: 'general',
+                $_POST['project_type'] ?? 'general',
                 $_POST['assigned_to'] ?? null ?: null,
                 $_POST['start_date'] ?? null ?: null,
                 $_POST['due_date'] ?? null ?: null,
@@ -38,9 +38,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
     } elseif ($action === 'delete_project') {
         try {
-            $pdo->prepare("DELETE FROM projects WHERE id = ?")->execute([$_POST['project_id']]);
+            $pdo->prepare("DELETE FROM projects WHERE id = ?")->execute([($_POST['project_id'] ?? 0)]);
             $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([
-                $_SESSION['user_id'], 'project_deleted', 'project', $_POST['project_id'], 'Deleted project #' . $_POST['project_id'], $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'
+                $_SESSION['user_id'], 'project_deleted', 'project', ($_POST['project_id'] ?? 0), 'Deleted project #' . ($_POST['project_id'] ?? 0), $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'
             ]);
             $success_message = "Project deleted.";
         } catch (PDOException $e) {
@@ -54,7 +54,7 @@ $limit = 20;
 $offset = ($page - 1) * $limit;
 
 $search = $_GET['search'] ?? '';
-$status_filter = $_GET['status'] ?? '' ?? '';
+$status_filter = $_GET['status'] ?? '' ?? '' ?? '';
 $type_filter = $_GET['type'] ?? '';
 
 try {
@@ -262,7 +262,7 @@ try {
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 text-sm <?php echo $is_overdue ? 'text-red-600 font-semibold' : 'text-gray-600'; ?>">
-                                            <?php echo $project['due_date'] ? date('M d, Y', strtotime($project['due_date'])) : '-'; ?>
+                                            <?php echo $project['due_date'] ? fmt_date($project['due_date'] ?? null, 'M d, Y') : '-'; ?>
                                             <?php if ($is_overdue): ?><i class="fas fa-exclamation-circle ml-1"></i><?php endif; ?>
                                         </td>
                                         <td class="px-6 py-4">

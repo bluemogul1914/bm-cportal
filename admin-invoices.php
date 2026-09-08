@@ -38,7 +38,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 $html = "<p>Hi " . htmlspecialchars($inv['client_name'] ?: 'there') . ",</p>"
                       . "<p>This is a friendly reminder that invoice <strong>{$inv['invoice_number']}</strong>"
                       . " for <strong>\$" . number_format((float)$inv['total'], 2) . "</strong> is "
-                      . ($inv['due_date'] ? "due on " . date('M j, Y', strtotime($inv['due_date'])) . " and currently " . htmlspecialchars($inv['status']) : "currently " . htmlspecialchars($inv['status'])) . ".</p>"
+                      . ($inv['due_date'] ? "due on " . fmt_date($inv['due_date'] ?? null, 'M j, Y') . " and currently " . htmlspecialchars($inv['status']) : "currently " . htmlspecialchars($inv['status'])) . ".</p>"
                       . "<p>You can view and pay it anytime from your Blue Mogul portal.</p>"
                       . "<p>&mdash; Blue Mogul Team</p>";
                 $result = send_email($inv['client_email'], $subject, $html);
@@ -315,7 +315,7 @@ try {
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap">
                                                 <div>
-                                                    <p class="text-sm text-gray-900"><?php echo $invoice['due_date'] ? date('M d, Y', strtotime($invoice['due_date'])) : 'N/A'; ?></p>
+                                                    <p class="text-sm text-gray-900"><?php echo $invoice['due_date'] ? fmt_date($invoice['due_date'] ?? null, 'M d, Y') : 'N/A'; ?></p>
                                                     <?php if ($invoice['status'] === 'unpaid' && $invoice['due_date']): ?>
                                                         <?php if ($is_overdue): ?>
                                                             <p class="text-xs text-red-600 font-semibold"><?php echo abs($days_until_due); ?> days overdue</p>

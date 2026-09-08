@@ -25,22 +25,22 @@ $success = $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
     if (($_POST['action'] ?? '') === 'update_dealer') {
-        $id     = (int)$_POST['dealer_id'];
-        $status = in_array($_POST['status'], ['pending','active','suspended']) ? $_POST['status'] : 'pending';
-        $tier   = in_array($_POST['tier'],   ['base','silver','gold'])         ? $_POST['tier']   : 'base';
+        $id     = (int)($_POST['dealer_id'] ?? 0);
+        $status = in_array($_POST['status'] ?? 'pending', ['pending','active','suspended']) ? $_POST['status'] ?? 'pending' : 'pending';
+        $tier   = in_array($_POST['tier'] ?? 'base',   ['base','silver','gold'])         ? $_POST['tier'] ?? 'base'   : 'base';
         $pdo->prepare("UPDATE dealers SET status=?,tier=?,updated_at=NOW() WHERE id=?")->execute([$status,$tier,$id]);
         $success = "Dealer #{$id} updated.";
     }
 
     if (($_POST['action'] ?? '') === 'approve_commission') {
-        $cid = (int)$_POST['commission_id'];
+        $cid = (int)($_POST['commission_id'] ?? 0);
         $pdo->prepare("UPDATE commissions SET status='approved',approved_at=NOW() WHERE id=? AND status='pending'")->execute([$cid]);
         $success = "Commission approved.";
     }
 }
 
-$search   = trim($_GET['q']      ?? '');
-$filter   = in_array($_GET['status'] ?? '', ['pending','active','suspended']) ? $_GET['status'] : '';
+$search   = trim($_GET['q'] ?? ''      ?? '');
+$filter   = in_array($_GET['status'] ?? '' ?? '', ['pending','active','suspended']) ? $_GET['status'] ?? '' : '';
 $sql_w    = "WHERE 1=1";
 $params   = [];
 if ($search) {

@@ -167,7 +167,7 @@ try {
                                             <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars($doc['client_company'] ?: ($doc['client_name'] ?? 'N/A')); ?></td>
                                             <td class="px-4 py-3"><span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs font-medium uppercase"><?php echo htmlspecialchars($doc['file_type'] ?? strtoupper($ext) ?: 'N/A'); ?></span></td>
                                             <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars($doc['uploader_name'] ?? 'System'); ?></td>
-                                            <td class="px-4 py-3 text-xs text-gray-500"><?php echo isset($doc['uploaded_at']) ? date('M d, Y', strtotime($doc['uploaded_at'])) : 'N/A'; ?></td>
+                                            <td class="px-4 py-3 text-xs text-gray-500"><?php echo isset($doc['uploaded_at']) ? fmt_date($doc['uploaded_at'] ?? null, 'M d, Y') : 'N/A'; ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>

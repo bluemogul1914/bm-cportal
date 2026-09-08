@@ -153,7 +153,7 @@ try {
                                         </td>
                                         <td class="px-6 py-4 font-semibold text-gray-900">$<?php echo number_format($invoice['amount'], 2); ?></td>
                                         <td class="px-6 py-4 text-sm text-gray-600">
-                                            <?php echo $invoice['due_date'] ? date('M d, Y', strtotime($invoice['due_date'])) : 'N/A'; ?>
+                                            <?php echo $invoice['due_date'] ? fmt_date($invoice['due_date'] ?? null, 'M d, Y') : 'N/A'; ?>
                                             <?php if ($invoice['status'] === 'unpaid' && $invoice['due_date'] && strtotime($invoice['due_date']) < time()): ?>
                                                 <span class="text-red-600 text-xs font-medium ml-1">(Overdue)</span>
                                             <?php endif; ?>

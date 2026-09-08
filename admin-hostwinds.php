@@ -322,7 +322,7 @@ foreach ($services as $s) {
                                         <?= ucfirst($st) ?>
                                     </span>
                                 </td>
-                                <td class="px-4 py-3 text-gray-400 text-xs"><?= $due ? date('M d, Y', strtotime($due)) : '—' ?></td>
+                                <td class="px-4 py-3 text-gray-400 text-xs"><?= $due ? fmt_date($due ?? null, 'M d, Y') : '—' ?></td>
                                 <td class="px-4 py-3 text-right font-semibold text-gray-900"><?= $price !== null ? '$'.number_format((float)$price,2) : '—' ?></td>
                             </tr>
                             <?php endforeach; ?>
@@ -376,7 +376,7 @@ foreach ($services as $s) {
                                         <?= ucfirst($ast) ?>
                                     </span>
                                 </td>
-                                <td class="px-4 py-3 text-gray-400 text-xs"><?= $acr ? date('M d, Y', strtotime($acr)) : '—' ?></td>
+                                <td class="px-4 py-3 text-gray-400 text-xs"><?= $acr ? fmt_date($acr ?? null, 'M d, Y') : '—' ?></td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -422,8 +422,8 @@ foreach ($services as $s) {
                             ?>
                             <tr class="hover:bg-gray-50" data-testid="row-invoice-<?= htmlspecialchars((string)$iid) ?>">
                                 <td class="px-4 py-3 font-mono text-xs text-gray-500">#<?= htmlspecialchars((string)$iid) ?></td>
-                                <td class="px-4 py-3 text-gray-600"><?= $idat ? date('M d Y', strtotime($idat)) : '—' ?></td>
-                                <td class="px-4 py-3 text-gray-500"><?= $idue ? date('M d Y', strtotime($idue)) : '—' ?></td>
+                                <td class="px-4 py-3 text-gray-600"><?= $idat ? fmt_date($idat ?? null, 'M d Y') : '—' ?></td>
+                                <td class="px-4 py-3 text-gray-500"><?= $idue ? fmt_date($idue ?? null, 'M d Y') : '—' ?></td>
                                 <td class="px-4 py-3 text-right font-semibold text-gray-900"><?= $iamt !== null ? '$'.number_format((float)$iamt,2) : '—' ?></td>
                                 <td class="px-4 py-3">
                                     <span class="px-2 py-0.5 rounded-full text-xs font-medium <?= $ist==='paid'?'bg-green-100 text-green-700':($ist==='unpaid'?'bg-yellow-100 text-yellow-700':'bg-gray-100 text-gray-600') ?>">

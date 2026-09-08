@@ -10,7 +10,7 @@ $success = $error = '';
 // CSRF guard for all POST actions on this page
 if ($_SERVER['REQUEST_METHOD'] === 'POST') require_csrf();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'request_payout') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '' ?? '' ?? '') === 'request_payout') {
     try {
         $pdo->beginTransaction();
 
@@ -59,7 +59,7 @@ if (isset($_GET['success'])) {
     $success = 'Payout of $' . htmlspecialchars($_GET['amount'] ?? '0.00') . ' requested. Funds sent to your bank by end of next business day.';
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_bank') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '' ?? '' ?? '') === 'update_bank') {
     $routing = preg_replace('/\D/', '', $_POST['ach_routing'] ?? '');
     $account = preg_replace('/\D/', '', $_POST['ach_account'] ?? '');
     if (strlen($routing) === 9 && strlen($account) >= 4) {

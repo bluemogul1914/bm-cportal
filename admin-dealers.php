@@ -8,27 +8,27 @@ $success = ''; $error = '';
 
 // Approve / change status
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_status'])) {
-    $did    = (int)$_POST['dealer_id'];
+    $did    = (int)($_POST['dealer_id'] ?? 0);
     $status = in_array($_POST['status'], ['active','suspended','pending']) ? $_POST['status'] : 'active';
     $pdo->prepare("UPDATE dealers SET status=? WHERE id=?")->execute([$status,$did]);
     $success = 'Dealer status updated.';
 }
 // Set commission rate
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_commission'])) {
-    $did  = (int)$_POST['dealer_id'];
-    $rate = max(0, min(100, (float)($_POST['commission_rate']??10)));
+    $did  = (int)($_POST['dealer_id'] ?? 0);
+    $rate = max(0, min(100, (float)($_POST['commission_rate'] ?? 10??10)));
     $pdo->prepare("UPDATE dealers SET commission_rate=? WHERE id=?")->execute([$rate,$did]);
     $success = 'Commission rate updated.';
 }
 // Approve commission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['approve_commission'])) {
-    $cid = (int)$_POST['commission_id'];
+    $cid = (int)($_POST['commission_id'] ?? 0);
     $pdo->prepare("UPDATE dealer_commissions SET status='approved', approved_at=NOW() WHERE id=?")->execute([$cid]);
     $success = 'Commission approved.';
 }
 // Mark payout paid
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_paid'])) {
-    $pid = (int)$_POST['payout_id'];
+    $pid = (int)($_POST['payout_id'] ?? 0);
     $pdo->prepare("UPDATE dealer_payout_requests SET status='paid' WHERE id=?" )->execute([$pid]);
     // Also mark related commissions as paid
     $success = 'Payout marked as paid.';
@@ -36,9 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_paid'])) {
 // Add dealer directly from the admin dashboard
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_dealer'])) {
     require_csrf();
-    $full_name = trim($_POST['full_name'] ?? '');
-    $email     = trim($_POST['email'] ?? '');
-    $company   = trim($_POST['company'] ?? '');
+    $full_name = trim($_POST['full_name'] ?? '' ?? '');
+    $email     = trim($_POST['email'] ?? '' ?? '');
+    $company   = trim($_POST['company'] ?? '' ?? '');
     $phone     = trim($_POST['phone'] ?? '');
     $tier      = in_array($_POST['tier'] ?? '', ['base','silver','gold']) ? $_POST['tier'] : 'base';
     if (!$full_name || !$email) {
@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_dealer'])) {
 // Delete dealer (cascades to orders, commissions, payouts, and linked user via FK)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_dealer'])) {
     require_csrf();
-    $did = (int)$_POST['dealer_id'];
+    $did = (int)($_POST['dealer_id'] ?? 0);
     if ($did <= 0) { $error = 'Invalid dealer.'; }
     else {
         try {

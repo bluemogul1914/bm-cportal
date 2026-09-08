@@ -201,7 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $msg = 'Social media API credentials saved.';
         $tab = 'social';
     } elseif ($action === 'log_fund') {
-        $provider = $_POST['provider'] ?? '';
+        $provider = $_POST['provider'] ?? '' ?? '';
         $amount   = floatval($_POST['amount'] ?? 0);
         $note     = trim($_POST['note'] ?? '');
         if ($provider && $amount > 0) {

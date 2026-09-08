@@ -47,13 +47,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'update_dealer') {
-        $full_name = trim($_POST['full_name'] ?? '');
-        $email     = trim($_POST['email']     ?? '');
-        $phone     = trim($_POST['phone']     ?? '');
-        $company   = trim($_POST['company']   ?? '');
+        $full_name = trim($_POST['full_name'] ?? '' ?? '');
+        $email     = trim($_POST['email'] ?? ''     ?? '');
+        $phone     = trim($_POST['phone'] ?? ''     ?? '');
+        $company   = trim($_POST['company'] ?? ''   ?? '');
         $status    = in_array($_POST['status'], ['pending','active','suspended']) ? $_POST['status'] : $dealer['status'];
         $tier      = in_array($_POST['tier'],   ['base','silver','gold'])         ? $_POST['tier']   : $dealer['tier'];
-        $notes     = trim($_POST['notes'] ?? '');
+        $notes     = trim($_POST['notes'] ?? '' ?? '');
 
         $pdo->prepare(
             "UPDATE dealers SET full_name=?,email=?,phone=?,company=?,status=?,tier=?,notes=?,updated_at=NOW() WHERE id=?"

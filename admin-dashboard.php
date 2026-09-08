@@ -380,7 +380,7 @@ try {
                                             <?php echo htmlspecialchars($client['company'] ?? 'N/A'); ?>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                            <?php echo $client['created_at'] ? date('M d, Y', strtotime($client['created_at'])) : '—'; ?>
+                                            <?php echo $client['created_at'] ? fmt_date($client['created_at'] ?? null, 'M d, Y') : '—'; ?>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <span class="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">

@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
     if (isset($_POST['update_dealer'])) {
         $pdo->prepare("UPDATE dealers SET company_name=?,commission_rate=?,status=?,notes=?,full_name=? WHERE id=?")
-            ->execute([trim($_POST['company_name']??''), max(0,min(100,(float)($_POST['commission_rate']??10))), $_POST['status']??'active', trim($_POST['notes']??''), trim($_POST['user_name']??''), $did]);
+            ->execute([trim($_POST['company_name'] ?? ''??''), max(0,min(100,(float)($_POST['commission_rate'] ?? 10??10))), $_POST['status']??'active', trim($_POST['notes'] ?? ''??''), trim($_POST['user_name']??''), $did]);
         if (!empty($d['user_id'])) {
             $pdo->prepare("UPDATE users SET name=? WHERE id=?")->execute([trim($_POST['user_name']??''), $d['user_id']]);
         }
@@ -23,17 +23,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $d->execute([$did]); $d = $d->fetch(PDO::FETCH_ASSOC);
     }
     if (isset($_POST['approve_commission'])) {
-        $cid = (int)$_POST['commission_id'];
+        $cid = (int)($_POST['commission_id'] ?? 0);
         $pdo->prepare("UPDATE dealer_commissions SET status='approved',approved_at=NOW() WHERE id=? AND dealer_id=?")->execute([$cid,$did]);
         $success = 'Commission approved.';
     }
     if (isset($_POST['mark_paid'])) {
-        $pid = (int)$_POST['payout_id'];
+        $pid = (int)($_POST['payout_id'] ?? 0);
         $pdo->prepare("UPDATE dealer_payout_requests SET status='paid' WHERE id=? AND dealer_id=?")->execute([$pid,$did]);
         $success = 'Payout marked paid.';
     }
     if (isset($_POST['set_comm_paid'])) {
-        $cid = (int)$_POST['commission_id'];
+        $cid = (int)($_POST['commission_id'] ?? 0);
         $pdo->prepare("UPDATE dealer_commissions SET status='paid',paid_at=NOW() WHERE id=? AND dealer_id=?")->execute([$cid,$did]);
         $success = 'Commission marked paid.';
     }

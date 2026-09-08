@@ -300,7 +300,7 @@ try {
                                                                 <span class="text-[10px] text-gray-400">ID: #<?php echo $client['id']; ?></span>
                                                             <?php endif; ?>
                                                         </div>
-                                                        <p class="text-[10px] text-gray-400 mt-0.5">Created: <?php echo $client['created_at'] ? date('Y-m-d', strtotime($client['created_at'])) : '—'; ?></p>
+                                                        <p class="text-[10px] text-gray-400 mt-0.5">Created: <?php echo $client['created_at'] ? fmt_date($client['created_at'] ?? null, 'Y-m-d') : '—'; ?></p>
                                                     </div>
                                                 </div>
                                             </td>

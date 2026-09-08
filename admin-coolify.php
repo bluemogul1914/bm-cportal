@@ -86,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validate_csrf_token($_POST['_csrf_token'] ?? '')) {
         $error_msg = 'Invalid CSRF token.';
     } else {
-        $action = $_POST['action'] ?? '';
+        $action = $_POST['action'] ?? '' ?? '';
 
         // Save credentials
         if ($action === 'save_credentials') {
@@ -889,7 +889,7 @@ function action_buttons(string $uuid, string $prefix, string $status, bool $has_
                                 <td class="px-4 py-3 font-medium text-gray-900"><?= htmlspecialchars(is_array($dapp) ? ($dapp['name']??'—') : $dapp) ?></td>
                                 <td class="px-4 py-3 text-center"><?= status_badge($dst) ?></td>
                                 <td class="px-4 py-3 font-mono text-xs text-gray-500"><?= htmlspecialchars($dcom) ?></td>
-                                <td class="px-4 py-3 text-xs text-gray-400"><?= $dtime !== '—' ? date('M d Y H:i', strtotime($dtime)) : '—' ?></td>
+                                <td class="px-4 py-3 text-xs text-gray-400"><?= $dtime !== '—' ? fmt_date($dtime ?? null, 'M d Y H:i') : '—' ?></td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>

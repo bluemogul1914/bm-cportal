@@ -169,7 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'delete_server' && $hc_connected) {
         require_csrf();
         $serverId = (int)($_POST['server_id'] ?? 0);
-        $name     = trim($_POST['server_name'] ?? '');
+        $name     = trim($_POST['server_name'] ?? '' ?? '' ?? '');
         $confirm  = trim($_POST['confirm_name'] ?? '');
         if (!$serverId || !$confirm) { $api_error = 'Server ID and confirmation required.'; }
         elseif ($confirm !== $name) { $api_error = 'Confirmation name does not match. Type the server name exactly.'; }
@@ -184,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'assign_client' && $hc_connected) {
         require_csrf();
         $serverId = (int)($_POST['server_id'] ?? 0);
-        $srvName  = trim($_POST['server_name'] ?? '');
+        $srvName  = trim($_POST['server_name'] ?? '' ?? '' ?? '');
         $clientId = (int)($_POST['client_id'] ?? 0);
         $srvIp    = trim($_POST['server_ip'] ?? '');
         $srvType  = trim($_POST['server_type_name'] ?? '');
@@ -234,7 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         require_csrf();
         $serverId = (int)($_POST['server_id'] ?? 0);
         $clientId = (int)($_POST['inv_client_id'] ?? 0);
-        $srvName  = trim($_POST['server_name'] ?? '');
+        $srvName  = trim($_POST['server_name'] ?? '' ?? '' ?? '');
         $srvType  = trim($_POST['server_type_name'] ?? '');
         $amount   = (float)($_POST['inv_amount'] ?? 0);
         $notes    = trim($_POST['inv_notes'] ?? '');

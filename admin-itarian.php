@@ -388,7 +388,7 @@ try {
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-total-endpoints">
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Total Endpoints</p>
                     <p class="text-2xl font-bold text-gray-900" data-testid="text-total-endpoints"><?php echo (int)$endpoint_count; ?></p>
-                    <p class="text-xs text-gray-400 mt-1"><?php echo $last_synced_time ? 'Last sync: ' . date('M d, g:i A', strtotime($last_synced_time)) : 'Not synced yet'; ?></p>
+                    <p class="text-xs text-gray-400 mt-1"><?php echo $last_synced_time ? 'Last sync: ' . fmt_date($last_synced_time ?? null, 'M d, g:i A') : 'Not synced yet'; ?></p>
                 </div>
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-online-endpoints">
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Online</p>
@@ -450,7 +450,7 @@ try {
                                             <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars(($ep['os_name'] ?? '') . ($ep['os_version'] ? ' ' . $ep['os_version'] : '')); ?></td>
                                             <td class="px-4 py-3"><code class="text-xs font-mono text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded"><?php echo htmlspecialchars($ep['ip_address'] ?? 'N/A'); ?></code></td>
                                             <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars($ep['group_name'] ?? ''); ?></td>
-                                            <td class="px-4 py-3 text-xs text-gray-500"><?php echo isset($ep['last_seen']) && $ep['last_seen'] ? date('M d, g:i A', strtotime($ep['last_seen'])) : 'Never'; ?></td>
+                                            <td class="px-4 py-3 text-xs text-gray-500"><?php echo isset($ep['last_seen']) && $ep['last_seen'] ? fmt_date($ep['last_seen'] ?? null, 'M d, g:i A') : 'Never'; ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -534,7 +534,7 @@ try {
                                         </div>
                                         <p class="text-xs text-gray-400 mt-0.5">
                                             <?php if (!empty($al['category'])): ?><span class="mr-2"><?php echo htmlspecialchars($al['category']); ?></span><?php endif; ?>
-                                            <?php echo isset($al['created_at_remote']) && $al['created_at_remote'] ? date('M d, Y g:i A', strtotime($al['created_at_remote'])) : ''; ?>
+                                            <?php echo isset($al['created_at_remote']) && $al['created_at_remote'] ? fmt_date($al['created_at_remote'] ?? null, 'M d, Y g:i A') : ''; ?>
                                         </p>
                                     </div>
                                 </div>

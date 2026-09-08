@@ -292,8 +292,8 @@ $total_invoices = $paid_count + $unpaid_count;
                                     <td class="px-4 py-3 text-sm text-gray-600"><?php echo htmlspecialchars($inv['client_company'] ?: ($inv['client_name'] ?? 'N/A')); ?></td>
                                     <td class="px-4 py-3 text-sm font-semibold text-gray-900">$<?php echo number_format($inv['amount'] ?? 0, 2); ?></td>
                                     <td class="px-4 py-3"><span class="px-2 py-0.5 <?php echo $status_class; ?> rounded text-xs font-medium"><?php echo ucfirst(htmlspecialchars($inv['status'] ?? 'unknown')); ?></span></td>
-                                    <td class="px-4 py-3 text-sm text-gray-500"><?php echo isset($inv['due_date']) ? date('M d, Y', strtotime($inv['due_date'])) : 'N/A'; ?></td>
-                                    <td class="px-4 py-3 text-sm text-gray-500"><?php echo isset($inv['created_at']) ? date('M d, Y', strtotime($inv['created_at'])) : 'N/A'; ?></td>
+                                    <td class="px-4 py-3 text-sm text-gray-500"><?php echo isset($inv['due_date']) ? fmt_date($inv['due_date'] ?? null, 'M d, Y') : 'N/A'; ?></td>
+                                    <td class="px-4 py-3 text-sm text-gray-500"><?php echo isset($inv['created_at']) ? fmt_date($inv['created_at'] ?? null, 'M d, Y') : 'N/A'; ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

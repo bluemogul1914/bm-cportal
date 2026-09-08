@@ -1525,7 +1525,7 @@ $show_map = $has_location || $has_address;
 
                         <!-- Right meta -->
                         <div class="flex-shrink-0 text-right text-xs text-gray-400 space-y-1">
-                            <p><?php echo $bord['created_at'] ? date('M d, Y', strtotime($bord['created_at'])) : '—'; ?></p>
+                            <p><?php echo fmt_date($bord['created_at'] ?? null, 'M d, Y'); ?></p>
                             <?php if ($bord['desired_due_date']): ?>
                             <p class="text-gray-500">Due <?php echo fmt_date($bord['desired_due_date'] ?? null, 'M d'); ?></p>
                             <?php endif; ?>

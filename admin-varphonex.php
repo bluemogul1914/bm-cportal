@@ -134,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Purchase DID
         } elseif ($action === 'purchase_did') {
-            $did    = trim($_POST['did']    ?? '');
+            $did    = trim($_POST['did'] ?? '' ?? ''    ?? '');
             $custid = trim($_POST['customer_id'] ?? '');
             if (!$did) { $error_msg = 'Phone number is required.'; }
             else {
@@ -151,7 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Release DID
         } elseif ($action === 'release_did') {
-            $did = trim($_POST['did'] ?? '');
+            $did = trim($_POST['did'] ?? '' ?? '' ?? '');
             if (!$did) { $error_msg = 'Phone number is required.'; }
             else {
                 $res = vx_api(['action' => 'releaseDID', 'did' => $did]);

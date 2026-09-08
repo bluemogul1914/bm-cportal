@@ -629,7 +629,7 @@ uasort($client_patch_summary, fn($a, $b) => $b['vulns_critical'] <=> $a['vulns_c
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-total-endpoints">
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Total Endpoints</p>
                     <p class="text-2xl font-bold text-gray-900" data-testid="text-total-endpoints"><?php echo (int)$endpoint_count; ?></p>
-                    <p class="text-xs text-gray-400 mt-1"><?php echo $last_synced_time ? 'Last sync: ' . date('M d, g:i A', strtotime($last_synced_time)) : 'Not synced yet'; ?></p>
+                    <p class="text-xs text-gray-400 mt-1"><?php echo $last_synced_time ? 'Last sync: ' . fmt_date($last_synced_time ?? null, 'M d, g:i A') : 'Not synced yet'; ?></p>
                 </div>
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-online-endpoints">
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Online</p>
@@ -821,7 +821,7 @@ uasort($client_patch_summary, fn($a, $b) => $b['vulns_critical'] <=> $a['vulns_c
                                         </div>
                                         <p class="text-xs text-gray-400 mt-0.5">
                                             <?php if (!empty($al['category'])): ?><span class="mr-2"><?php echo htmlspecialchars($al['category']); ?></span><?php endif; ?>
-                                            <?php echo isset($al['created_at_remote']) && $al['created_at_remote'] ? date('M d, Y g:i A', strtotime($al['created_at_remote'])) : ''; ?>
+                                            <?php echo isset($al['created_at_remote']) && $al['created_at_remote'] ? fmt_date($al['created_at_remote'] ?? null, 'M d, Y g:i A') : ''; ?>
                                         </p>
                                     </div>
                                 </div>
@@ -914,7 +914,7 @@ uasort($client_patch_summary, fn($a, $b) => $b['vulns_critical'] <=> $a['vulns_c
                             <i class="fas fa-shield-virus text-purple-600 mr-2"></i>Patching
                         </h2>
                         <p class="text-xs text-gray-400 mt-0.5">
-                            <?php if ($patch_last_synced): ?>Last synced: <?php echo date('M d, Y g:i A', strtotime($patch_last_synced)); ?><?php else: ?>Run &ldquo;Sync Endpoints&rdquo; then &ldquo;Sync Patches&rdquo; to populate data.<?php endif; ?>
+                            <?php if ($patch_last_synced): ?>Last synced: <?php echo fmt_date($patch_last_synced ?? null, 'M d, Y g:i A'); ?><?php else: ?>Run &ldquo;Sync Endpoints&rdquo; then &ldquo;Sync Patches&rdquo; to populate data.<?php endif; ?>
                         </p>
                     </div>
                 </div>
@@ -1133,7 +1133,7 @@ uasort($client_patch_summary, fn($a, $b) => $b['vulns_critical'] <=> $a['vulns_c
                                         <span class="text-xs text-gray-400">No</span>
                                     <?php endif; ?>
                                 </td>
-                                <td class="px-4 py-2.5 text-xs text-gray-600"><?php echo $vuln['published_date'] ? date('M d, Y', strtotime($vuln['published_date'])) : '—'; ?></td>
+                                <td class="px-4 py-2.5 text-xs text-gray-600"><?php echo $vuln['published_date'] ? fmt_date($vuln['published_date'] ?? null, 'M d, Y') : '—'; ?></td>
                                 <td class="px-4 py-2.5">
                                     <span class="inline-block px-2 py-0.5 rounded text-[10px] font-semibold <?php echo $rem_class; ?>"><?php echo htmlspecialchars($vuln['remediation_status'] ?: '—'); ?></span>
                                 </td>

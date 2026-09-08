@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'approve_commission') {
-        $cid = (int)$_POST['commission_id'];
+        $cid = (int)($_POST['commission_id'] ?? 0) ?? 0;
         $pdo->prepare("UPDATE commissions SET status='approved',approved_at=NOW() WHERE id=? AND status='pending'")->execute([$cid]);
         $success = "Commission #{$cid} approved.";
     }
@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'mark_paid') {
-        $pid = (int)$_POST['payout_id'];
+        $pid = (int)($_POST['payout_id'] ?? 0) ?? 0;
         $pdo->prepare("UPDATE dealer_payouts SET status='sent',sent_at=NOW() WHERE id=?")->execute([$pid]);
         $pdo->prepare("UPDATE commissions SET status='paid',paid_at=NOW() WHERE payout_id=? AND status='approved'")->execute([$pid]);
         $success = "Payout #{$pid} marked as sent.";

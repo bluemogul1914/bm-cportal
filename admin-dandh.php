@@ -134,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Price lookup
     if ($action === 'price_lookup') {
         $item = trim($_POST['dh_item'] ?? '');
-        $man  = trim($_POST['dh_manufacturer'] ?: '');
+        $man  = trim($_POST['dh_manufacturer'] ?? '');
         if (!$item) { $api_error = 'Please enter an item number.'; }
         else {
             $man = $man ?: $item; // treat as both if manufacturer not given
@@ -147,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Availability lookup (same endpoint, different display)
     if ($action === 'avail_lookup') {
         $item = trim($_POST['dh_item'] ?? '');
-        $man  = trim($_POST['dh_manufacturer'] ?: '');
+        $man  = trim($_POST['dh_manufacturer'] ?? '');
         if (!$item) { $api_error = 'Please enter an item number.'; }
         else {
             $man = $man ?: $item;
@@ -160,7 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Item inquiry
     if ($action === 'item_inquiry') {
         $item = trim($_POST['dh_item'] ?? '');
-        $man  = trim($_POST['dh_manufacturer'] ?: '');
+        $man  = trim($_POST['dh_manufacturer'] ?? '');
         if (!$item) { $api_error = 'Please enter an item number.'; }
         else {
             $man = $man ?: $item;

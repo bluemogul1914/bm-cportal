@@ -365,7 +365,7 @@ foreach ($users as $u) {
                                         <?php endif; ?>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                        <?php echo $u['last_login'] ? date('M d, Y g:ia', strtotime($u['last_login'])) : 'Never'; ?>
+                                        <?php echo $u['last_login'] ? fmt_date($u['last_login'] ?? null, 'M d, Y g:ia') : 'Never'; ?>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <form method="POST" class="flex items-center space-x-2" data-testid="form-change-role-<?php echo $u['id']; ?>">

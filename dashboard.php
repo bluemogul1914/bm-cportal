@@ -11,7 +11,7 @@ $user_email = $_SESSION['user_email'] ?? '';
 $is_admin = $_SESSION['is_admin'] ?? false;
 
 $last_login = $_SESSION['last_login'] ?? date('Y-m-d H:i:s');
-$last_login_formatted = date('l \a\t g:i A', strtotime($last_login));
+$last_login_formatted = fmt_date($last_login ?? null, 'l 	 g:i A');
 
 try {
     $pdo = getDB();
@@ -358,7 +358,7 @@ try {
                                                     </div>
                                                     <p class="text-sm text-gray-500">
                                                         <i class="far fa-calendar mr-1"></i>
-                                                        Due <?php echo $invoice['due_date'] ? date('M d, Y', strtotime($invoice['due_date'])) : 'N/A'; ?>
+                                                        Due <?php echo $invoice['due_date'] ? fmt_date($invoice['due_date'] ?? null, 'M d, Y') : 'N/A'; ?>
                                                     </p>
                                                 </div>
                                                 <button onclick="payInvoice(<?php echo $invoice['id']; ?>)" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium text-sm transition">

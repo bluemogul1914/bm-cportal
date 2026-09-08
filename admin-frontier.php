@@ -92,10 +92,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action !== '') {
 if ($action === 'save_settings' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $config['environment']   = $_POST['environment']   ?? 'TEST';
     $config['ccna']          = strtoupper(trim($_POST['ccna']          ?? 'BMR'));
-    $config['source_ip']     = trim($_POST['source_ip']     ?? '');
-    $config['contact_name']  = trim($_POST['contact_name']  ?? '');
-    $config['contact_phone'] = trim($_POST['contact_phone'] ?? '');
-    $config['contact_email'] = trim($_POST['contact_email'] ?? '');
+    $config['source_ip']     = trim($_POST['source_ip'] ?? ''     ?? '');
+    $config['contact_name']  = trim($_POST['contact_name'] ?? ''  ?? '');
+    $config['contact_phone'] = trim($_POST['contact_phone'] ?? '' ?? '');
+    $config['contact_email'] = trim($_POST['contact_email'] ?? '' ?? '');
     $pdo->prepare("INSERT INTO settings (key, value) VALUES (?,?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value")
         ->execute([$configKey, json_encode($config)]);
     $success_msg = 'Settings saved.';
@@ -112,15 +112,15 @@ if ($action === 'submit_order' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $orderData = [
             'activity_code'   => $_POST['activity_code']   ?? 'N',
-            'address_line1'   => $_POST['address_line1']   ?? '',
-            'city'            => $_POST['city']            ?? '',
-            'state'           => $_POST['state']           ?? '',
-            'zip'             => $_POST['zip']             ?? '',
+            'address_line1'   => $_POST['address_line1'] ?? ''   ?? '',
+            'city'            => $_POST['city'] ?? ''            ?? '',
+            'state'           => $_POST['state'] ?? ''           ?? '',
+            'zip'             => $_POST['zip'] ?? ''             ?? '',
             'account_number'  => $_POST['account_number']  ?? '',
             'desired_due_date'=> $_POST['desired_due_date'] ?? '',
-            'contact_name'    => $_POST['contact_name']    ?? $config['contact_name'],
-            'contact_phone'   => $_POST['contact_phone']   ?? $config['contact_phone'],
-            'contact_email'   => $_POST['contact_email']   ?? $config['contact_email'],
+            'contact_name'    => $_POST['contact_name'] ?? ''    ?? $config['contact_name'],
+            'contact_phone'   => $_POST['contact_phone'] ?? ''   ?? $config['contact_phone'],
+            'contact_email'   => $_POST['contact_email'] ?? ''   ?? $config['contact_email'],
             'type'            => 'ORDER',
         ];
 
@@ -178,10 +178,10 @@ if ($action === 'prequalify' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $tab = 'prequalify';
     try {
         $orderData = [
-            'address_line1' => $_POST['address_line1'] ?? '',
-            'city'          => $_POST['city']          ?? '',
-            'state'         => $_POST['state']         ?? '',
-            'zip'           => $_POST['zip']           ?? '',
+            'address_line1' => $_POST['address_line1'] ?? '' ?? '',
+            'city'          => $_POST['city'] ?? ''          ?? '',
+            'state'         => $_POST['state'] ?? ''         ?? '',
+            'zip'           => $_POST['zip'] ?? ''           ?? '',
             'pon'           => 'PREQ-' . strtoupper(substr(md5(uniqid()), 0, 8)),
         ];
 
@@ -377,7 +377,7 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                             </td>
                             <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs font-semibold <?php echo $sc; ?>"><?php echo htmlspecialchars($ord['status']); ?></span></td>
                             <td class="px-4 py-3 font-mono text-xs text-gray-600"><?php echo htmlspecialchars($ord['circuit_id'] ?: '—'); ?></td>
-                            <td class="px-4 py-3 text-xs text-gray-500"><?php echo $ord['created_at'] ? date('M d, Y', strtotime($ord['created_at'])) : '—'; ?></td>
+                            <td class="px-4 py-3 text-xs text-gray-500"><?php echo fmt_date($ord['created_at'] ?? null, 'M d, Y'); ?></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -500,7 +500,7 @@ $receiveUrl = "{$scheme}://{$host}/portal/frontier-receive.php";
                     <?php if ($ord['circuit_id']): ?>
                     <span class="font-mono text-xs text-blue-700 font-semibold" data-testid="text-circuit-<?php echo (int)$ord['id']; ?>"><?php echo htmlspecialchars($ord['circuit_id']); ?></span>
                     <?php endif; ?>
-                    <span class="text-xs text-gray-400"><?php echo $ord['created_at'] ? date('M d, Y', strtotime($ord['created_at'])) : '—'; ?></span>
+                    <span class="text-xs text-gray-400"><?php echo fmt_date($ord['created_at'] ?? null, 'M d, Y'); ?></span>
                     <?php if ($ord['desired_due_date']): ?>
                     <span class="text-[10px] text-gray-400">Due <?php echo fmt_date($ord['desired_due_date'] ?? null, 'M d, Y'); ?></span>
                     <?php endif; ?>

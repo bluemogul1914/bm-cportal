@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $action = $_POST['action'] ?? '';
 
         if ($action === 'add_company') {
-            $name  = trim($_POST['name']      ?? '');
+            $name  = trim($_POST['name'] ?? '' ?? ''      ?? '');
             $web   = trim($_POST['website']   ?? '');
             $phone = trim($_POST['phone']     ?? '');
             $email = trim($_POST['email']     ?? '');
@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         } elseif ($action === 'edit_company') {
             $id    = (int)($_POST['id']        ?? 0);
-            $name  = trim($_POST['name']       ?? '');
+            $name  = trim($_POST['name'] ?? '' ?? ''       ?? '');
             $web   = trim($_POST['website']    ?? '');
             $phone = trim($_POST['phone']      ?? '');
             $email = trim($_POST['email']      ?? '');

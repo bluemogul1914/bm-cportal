@@ -210,7 +210,7 @@ $categories = [
                                             <?php endif; ?>
                                         </td>
                                         <td class="px-6 py-4 text-sm text-gray-500">
-                                            <?php echo $msg['sent_at'] ? date('M j, Y g:ia', strtotime($msg['sent_at'])) : date('M j, Y', strtotime($msg['created_at'])); ?>
+                                            <?php echo $msg['sent_at'] ? date('M j, Y g:ia', strtotime($msg['sent_at'])) : fmt_date($msg['created_at'] ?? null, 'M j, Y'); ?>
                                         </td>
                                         <td class="px-6 py-4 text-right">
                                             <div class="flex items-center justify-end space-x-2">

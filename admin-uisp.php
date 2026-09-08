@@ -157,7 +157,7 @@ $uptime_pct = $device_count > 0 ? round(($online_count / $device_count) * 100, 1
                                             <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars($dev['device_type'] ?? ''); ?></td>
                                             <td class="px-4 py-3 text-xs text-gray-600"><?php echo htmlspecialchars($dev['client_company'] ?: ($dev['client_name'] ?? 'N/A')); ?></td>
                                             <td class="px-4 py-3"><code class="text-xs font-mono text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded"><?php echo htmlspecialchars($dev['ip_address'] ?? 'N/A'); ?></code></td>
-                                            <td class="px-4 py-3 text-xs text-gray-500"><?php echo isset($dev['last_seen']) && $dev['last_seen'] ? date('M d, g:i A', strtotime($dev['last_seen'])) : 'Never'; ?></td>
+                                            <td class="px-4 py-3 text-xs text-gray-500"><?php echo isset($dev['last_seen']) && $dev['last_seen'] ? fmt_date($dev['last_seen'] ?? null, 'M d, g:i A') : 'Never'; ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -275,7 +275,7 @@ $uptime_pct = $device_count > 0 ? round(($online_count / $device_count) * 100, 1
                                     </div>
                                     <div class="flex-1 min-w-0">
                                         <p class="text-sm text-gray-900"><?php echo htmlspecialchars($act['details'] ?? $act['action'] ?? ''); ?></p>
-                                        <p class="text-xs text-gray-400 mt-0.5"><?php echo isset($act['created_at']) ? date('M d, Y g:i A', strtotime($act['created_at'])) : ''; ?></p>
+                                        <p class="text-xs text-gray-400 mt-0.5"><?php echo isset($act['created_at']) ? fmt_date($act['created_at'] ?? null, 'M d, Y g:i A') : ''; ?></p>
                                     </div>
                                 </div>
                             <?php endforeach; ?>

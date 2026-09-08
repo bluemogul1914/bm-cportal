@@ -558,7 +558,7 @@ arsort($cost_by_client);
                         <div class="text-center">
                             <p class="text-xs text-gray-500 uppercase font-semibold">Last Payment</p>
                             <p class="text-lg font-bold text-gray-900" data-testid="text-last-payment">$<?php echo number_format(abs(floatval($api_account['last_payment_amount'] ?? 0)), 2); ?></p>
-                            <p class="text-xs text-gray-400"><?php echo $api_account['last_payment_date'] ? date('M d, Y', strtotime($api_account['last_payment_date'])) : 'N/A'; ?></p>
+                            <p class="text-xs text-gray-400"><?php echo $api_account['last_payment_date'] ? fmt_date($api_account['last_payment_date'] ?? null, 'M d, Y') : 'N/A'; ?></p>
                         </div>
                     </div>
                 </div>
@@ -569,7 +569,7 @@ arsort($cost_by_client);
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-total-instances">
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Total Instances</p>
                     <p class="text-2xl font-bold text-gray-900"><?php echo count($db_instances); ?></p>
-                    <p class="text-xs text-gray-400 mt-1"><?php echo $last_synced_time ? 'Synced ' . date('M d g:ia', strtotime($last_synced_time)) : 'Not synced yet'; ?></p>
+                    <p class="text-xs text-gray-400 mt-1"><?php echo $last_synced_time ? 'Synced ' . fmt_date($last_synced_time ?? null, 'M d g:ia') : 'Not synced yet'; ?></p>
                 </div>
                 <div class="bg-white rounded-lg border border-gray-200 p-4" data-testid="card-active-instances">
                     <p class="text-xs font-semibold text-gray-500 uppercase mb-1">Running</p>
@@ -909,11 +909,11 @@ arsort($cost_by_client);
                                 <?php endif; ?>
                                 <div class="flex justify-between">
                                     <span>Created</span>
-                                    <span><?php echo $inst['date_created'] ? date('M d, Y', strtotime($inst['date_created'])) : 'N/A'; ?></span>
+                                    <span><?php echo $inst['date_created'] ? fmt_date($inst['date_created'] ?? null, 'M d, Y') : 'N/A'; ?></span>
                                 </div>
                                 <div class="flex justify-between">
                                     <span>Last Synced</span>
-                                    <span><?php echo $inst['last_synced'] ? date('M d g:ia', strtotime($inst['last_synced'])) : 'Never'; ?></span>
+                                    <span><?php echo $inst['last_synced'] ? fmt_date($inst['last_synced'] ?? null, 'M d g:ia') : 'Never'; ?></span>
                                 </div>
                             </div>
                             <?php

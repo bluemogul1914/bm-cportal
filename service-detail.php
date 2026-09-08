@@ -76,7 +76,7 @@ try {
     portal_redirect('/portal/services.php');
 }
 
-$start_date = $service['start_date'] ? date('M d, Y', strtotime($service['start_date'])) : 'N/A';
+$start_date = $service['start_date'] ? fmt_date($service['start_date'] ?? null, 'M d, Y') : 'N/A';
 $billing_period = $service['billing_period'] ?? 'monthly';
 
 if ($service['start_date'] && $billing_period === 'monthly') {

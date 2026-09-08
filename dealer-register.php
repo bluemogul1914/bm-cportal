@@ -22,7 +22,7 @@ $submitted = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
-    $full_name = trim($_POST['full_name'] ?? '');
+    $full_name = trim($_POST['full_name'] ?? '' ?? '' ?? '');
     $email     = trim($_POST['email']     ?? '');
     $phone     = trim($_POST['phone']     ?? '');
     $company   = trim($_POST['company']   ?? '');
@@ -196,7 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label class="form-label">Full name <span style="color:var(--red);">*</span></label>
             <input type="text" name="full_name" class="form-control" required
                    placeholder="First Last"
-                   value="<?= htmlspecialchars($_POST['full_name'] ?? '') ?>">
+                   value="<?= htmlspecialchars($_POST['full_name'] ?? '' ?? '' ?? '') ?>">
           </div>
           <div class="form-group">
             <label class="form-label">Email address <span style="color:var(--red);">*</span></label>

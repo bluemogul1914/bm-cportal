@@ -86,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'add_quote') {
             $status  = $_POST['q_status']   ?? 'new';
             $docdate = $_POST['doc_date']    ?? date('Y-m-d');
-            $valid   = $_POST['valid_until'] ?? date('Y-m-d',strtotime('+10 days'));
+            $valid   = $_POST['valid_until'] ?? '' ?? date('Y-m-d',strtotime('+10 days'));
             $dval    = (float)($_POST['deal_value'] ?? 0);
             $note    = trim($_POST['note']   ?? '');
             $memo    = trim($_POST['memo']   ?? '');
@@ -334,7 +334,7 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
                 <div class="w-7 h-7 bg-gray-200 rounded-full flex items-center justify-center shrink-0 text-xs font-bold text-gray-600"><?= strtoupper(substr($a['actor']??'S',0,1)) ?></div>
                 <div>
                     <p class="text-sm text-gray-700"><span class="font-medium"><?= htmlspecialchars($a['actor']??'System') ?></span> <?= htmlspecialchars($a['action']??'') ?></p>
-                    <p class="text-xs text-gray-400"><?= $a['created_at'] ? date('Y-m-d H:i:s',strtotime($a['created_at'])) : '' ?></p>
+                    <p class="text-xs text-gray-400"><?= $a['created_at'] ? fmt_date($a['created_at'] ?? null, 'Y-m-d H:i:s') : '' ?></p>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -516,7 +516,7 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
                     <span class="font-medium text-sm text-gray-800"><?= htmlspecialchars($m['sender']??'Admin') ?></span>
                     <?php if ($m['is_internal']): ?><span class="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded">Internal</span><?php endif; ?>
                 </div>
-                <span class="text-xs text-gray-400"><?= $m['created_at'] ? date('Y-m-d H:i',strtotime($m['created_at'])) : '' ?></span>
+                <span class="text-xs text-gray-400"><?= $m['created_at'] ? fmt_date($m['created_at'] ?? null, 'Y-m-d H:i') : '' ?></span>
             </div>
             <?php if ($m['subject']): ?><p class="text-xs font-medium text-gray-500 mb-1">Subject: <?= htmlspecialchars($m['subject']) ?></p><?php endif; ?>
             <p class="text-sm text-gray-700 whitespace-pre-wrap"><?= htmlspecialchars($m['body']) ?></p>

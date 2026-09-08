@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $client_email = trim($_POST['client_email']   ?? '');
     $client_phone = trim($_POST['client_phone']   ?? '');
     $service_addr = trim($_POST['service_address'] ?? '');
-    $product_line = trim($_POST['product_line']   ?? '');
+    $product_line = trim($_POST['product_line'] ?? '' ?? ''   ?? '');
     $plan_name    = trim($_POST['plan_name']      ?? '');
     $plan_price   = (float)($_POST['plan_price']  ?? 0);
     $dealer_notes = trim($_POST['dealer_notes']   ?? '');
@@ -260,7 +260,7 @@ $all_orders = $history->fetchAll();
             <select name="product_line" id="product_line" class="form-control" required onchange="updateSpiff()">
               <option value="">— Select a product —</option>
               <?php foreach ($product_labels as $val => $label): ?>
-              <option value="<?= $val ?>" <?= ($_POST['product_line'] ?? '') === $val ? 'selected' : '' ?>>
+              <option value="<?= $val ?>" <?= ($_POST['product_line'] ?? '' ?? '' ?? '') === $val ? 'selected' : '' ?>>
                 <?= $label ?>
               </option>
               <?php endforeach; ?>

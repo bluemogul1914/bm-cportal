@@ -703,7 +703,7 @@ try {
                 <tbody class="divide-y divide-gray-100">
                     <?php foreach ($email_history as $row): ?>
                     <tr class="hover:bg-gray-50" data-testid="history-row-<?= $row['id'] ?>">
-                        <td class="px-4 py-3 text-gray-500 whitespace-nowrap text-xs"><?= $row['sent_at'] ? date('M j, Y g:i A', strtotime($row['sent_at'])) : '—' ?></td>
+                        <td class="px-4 py-3 text-gray-500 whitespace-nowrap text-xs"><?= fmt_date($row['sent_at'] ?? null, 'M j, Y g:i A') ?></td>
                         <td class="px-4 py-3 text-gray-800 font-mono text-xs"><?= htmlspecialchars($row['recipient']) ?></td>
                         <td class="px-4 py-3 text-gray-700 max-w-xs truncate"><?= htmlspecialchars($row['subject'] ?? '') ?></td>
                         <td class="px-4 py-3 text-center">

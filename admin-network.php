@@ -316,7 +316,7 @@ $warning_devices = $pdo->query("SELECT COUNT(*) FROM network_devices WHERE statu
                                                     <?php if ($dev['ram_gb']): ?><span class="text-gray-400"><?php echo $dev['ram_gb']; ?>GB RAM</span><?php endif; ?>
                                                     <?php if ($dev['disk_gb']): ?><span class="text-gray-400"> / <?php echo $dev['disk_gb']; ?>GB</span><?php endif; ?>
                                                 </td>
-                                                <td class="px-4 py-3 text-xs text-gray-500"><?php echo $dev['last_seen'] ? date('M d, g:i A', strtotime($dev['last_seen'])) : 'Never'; ?></td>
+                                                <td class="px-4 py-3 text-xs text-gray-500"><?php echo $dev['last_seen'] ? fmt_date($dev['last_seen'] ?? null, 'M d, g:i A') : 'Never'; ?></td>
                                                 <td class="px-4 py-3">
                                                     <form method="POST" onsubmit="return confirm('Remove this device?');">
                             <?= csrf_field() ?>

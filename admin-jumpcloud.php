@@ -869,7 +869,7 @@ function jc_bool_icon(mixed $val): string {
         <div class="w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center shrink-0"><i class="fas fa-bolt text-gray-400 text-xs"></i></div>
         <div class="min-w-0">
             <p class="text-sm text-gray-800 font-medium truncate"><?= htmlspecialchars($ev['event_type']) ?></p>
-            <p class="text-xs text-gray-400"><?= htmlspecialchars($ev['initiated_by']??'') ?> · <?= $ev['event_time'] ? date('M j H:i',strtotime($ev['event_time'])) : '' ?></p>
+            <p class="text-xs text-gray-400"><?= htmlspecialchars($ev['initiated_by']??'') ?> · <?= $ev['event_time'] ? fmt_date($ev['event_time'] ?? null, 'M j H:i') : '' ?></p>
         </div>
     </div>
     <?php endforeach; ?>
@@ -896,7 +896,7 @@ function jc_bool_icon(mixed $val): string {
             <p class="text-sm font-medium text-gray-800 truncate"><?= htmlspecialchars($s['display_name']?:$s['hostname']) ?></p>
             <p class="text-xs text-gray-400"><?= htmlspecialchars($s['os']) ?> <?= htmlspecialchars($s['os_version']) ?></p>
         </div>
-        <span class="text-xs text-gray-400 shrink-0"><?= $s['last_contact'] ? date('M j',strtotime($s['last_contact'])) : '—' ?></span>
+        <span class="text-xs text-gray-400 shrink-0"><?= $s['last_contact'] ? fmt_date($s['last_contact'] ?? null, 'M j') : '—' ?></span>
     </div>
     <?php endforeach; ?>
     </div>
@@ -1121,7 +1121,7 @@ function jc_bool_icon(mixed $val): string {
                 <td class="px-4 py-3 text-center"><?= jc_bool_icon($s['allow_multi_factor']) ?></td>
                 <td class="px-4 py-3 text-xs font-mono text-gray-400"><?= htmlspecialchars($s['agent_version']) ?></td>
                 <td class="px-4 py-3 text-xs font-mono text-gray-400"><?= htmlspecialchars($s['remote_ip']) ?></td>
-                <td class="px-4 py-3 text-xs text-gray-400"><?= $s['last_contact'] ? date('Y-m-d H:i', strtotime($s['last_contact'])) : '—' ?></td>
+                <td class="px-4 py-3 text-xs text-gray-400"><?= $s['last_contact'] ? fmt_date($s['last_contact'] ?? null, 'Y-m-d H:i') : '—' ?></td>
                 <td class="px-4 py-3">
                     <div class="flex gap-1">
                     <button onclick='openEditSystem(<?= json_encode(['id'=>$s['jc_id'],'name'=>$s['display_name'],'mfa'=>(!empty($s['allow_multi_factor'])&&$s['allow_multi_factor']!=='false'),'ssh'=>(!empty($s['allow_ssh'])&&$s['allow_ssh']!=='false')]) ?>)'
@@ -1705,7 +1705,7 @@ function openEditSystem(data) {
             <?php else: ?>
             <?php foreach ($db_events as $ev): ?>
             <tr class="hover:bg-gray-50" data-testid="row-event-<?= $ev['id'] ?>">
-                <td class="px-4 py-3 text-xs text-gray-400 whitespace-nowrap"><?= $ev['event_time'] ? date('Y-m-d H:i:s',strtotime($ev['event_time'])) : '—' ?></td>
+                <td class="px-4 py-3 text-xs text-gray-400 whitespace-nowrap"><?= $ev['event_time'] ? fmt_date($ev['event_time'] ?? null, 'Y-m-d H:i:s') : '—' ?></td>
                 <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-700"><?= htmlspecialchars($ev['event_type']) ?></span></td>
                 <td class="px-4 py-3 text-gray-600 text-xs"><?= htmlspecialchars($ev['initiated_by']??'') ?></td>
                 <td class="px-4 py-3 text-xs text-gray-400"><?= htmlspecialchars($ev['service']??'') ?></td>

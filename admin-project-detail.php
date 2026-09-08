@@ -22,18 +22,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'update_project') {
         try {
             $stmt = $pdo->prepare("UPDATE projects SET name=?, description=?, status=?, priority=?, project_type=?, assigned_to=?, start_date=?, due_date=?, progress=?, updated_at=NOW() WHERE id=?");
-            $new_status = $_POST['status'] ?? 'todo';
+            $new_status = $_POST['status'] ?? 'todo' ?? 'todo' ?? 'todo';
             $completed_at_sql = "";
             if ($new_status === 'completed') {
                 $pdo->prepare("UPDATE projects SET completed_at = COALESCE(completed_at, NOW()) WHERE id = ?")->execute([$project_id]);
             }
             $stmt->execute([
-                $_POST['name'] ?? '', $_POST['description'] ?? '' ?: null, $new_status, $_POST['priority'] ?? 'medium', $_POST['project_type'],
-                $_POST['assigned_to'] ?? null ?: null, $_POST['start_date'] ?? null ?: null, $_POST['due_date'] ?? null ?: null,
+                $_POST['name'] ?? '' ?? '' ?? '', $_POST['description'] ?? '' ?? '' ?? '' ?: null, $new_status, $_POST['priority'] ?? 'medium' ?? 'medium' ?? 'medium', $_POST['project_type'],
+                $_POST['assigned_to'] ?? null ?? null ?? null ?: null, $_POST['start_date'] ?? null ?? null ?? null ?: null, $_POST['due_date'] ?? null ?? null ?? null ?: null,
                 (int)$_POST['progress'], $project_id
             ]);
             $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")->execute([
-                $_SESSION['user_id'], 'project_updated', 'project', $project_id, 'Updated project: ' . $_POST['name'] ?? '', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'
+                $_SESSION['user_id'], 'project_updated', 'project', $project_id, 'Updated project: ' . $_POST['name'] ?? '' ?? '' ?? '', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'
             ]);
             $success_message = "Project updated!";
         } catch (PDOException $e) { $error_message = $e->getMessage(); }
