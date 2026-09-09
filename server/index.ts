@@ -19,6 +19,7 @@ import connectPgSimple from "connect-pg-simple";
 
 import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInquiry, dhOrderTracking, dhSearchCatalog, dhCreateSalesOrder, dhOrdersList } from "./dh-api";
 import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat } from "./bmai";
+import { syncAllSources } from "./network-sync";
 
 const webhookPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 // Persistent session store backed by Neon Postgres so admin/dealer sessions
@@ -4052,6 +4053,28 @@ async function bootstrapPortalDatabase() {
     },
     () => {
       log(`serving on port ${port}`);
+
+      // ── Scheduled daily network sync ──────────────────────────────────────
+      // Runs every 24 hours. syncAllSources gracefully skips unconfigured sources.
+      const DAILY_MS = 24 * 60 * 60 * 1000;
+      async function runDailySync() {
+        try {
+          log("[network-sync] Starting daily sync of all sources...");
+          const results = await syncAllSources(webhookPool);
+          for (const r of results) {
+            log(`[network-sync] ${r.source}: ${r.synced} assets, ${r.matched} matched${r.errors.length ? `, errors: ${r.errors.join("; ")}` : ""}`);
+          }
+          log("[network-sync] Daily sync complete");
+        } catch (e: any) {
+          console.error("[network-sync] Daily sync error:", e.message);
+        }
+      }
+
+      // Run first sync 5 minutes after boot, then every 24 hours
+      setTimeout(() => {
+        runDailySync();
+        setInterval(runDailySync, DAILY_MS);
+      }, 5 * 60 * 1000);
     },
   );
 })();
