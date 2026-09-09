@@ -248,7 +248,7 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
     <div class="ai-sidebar-ft">
       <button class="btn-settings-bar" onclick="openSettings()">
         <i class="fas fa-cog"></i> Settings
-        <span class="status-dot checking" id="statusDot" title="Checking Ollama…"></span>
+        <span class="status-dot checking" id="statusDot" title="Checking AI engine…"></span>
       </button>
     </div>
   </div>
@@ -259,16 +259,16 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
       <div class="chat-hd-icon">&#129302;</div>
       <div>
         <h4 id="chatTitle">AI Assistant</h4>
-        <span id="chatSubtitle">Powered by Ollama &mdash; runs locally, stays private</span>
+        <span id="chatSubtitle">Powered by BM AI &mdash; OpenRouter</span>
       </div>
-      <div class="model-badge" id="modelBadge">llama3</div>
+      <div class="model-badge" id="modelBadge">BM AI</div>
     </div>
 
     <div class="chat-messages" id="messages">
       <div class="welcome-wrap" id="welcomeScreen">
         <div class="welcome-icon">&#129302;</div>
         <h3>Blue Mogul AI Assistant</h3>
-        <p>Ask me anything about clients, tickets, invoices, or MSP operations.<br>Runs locally via Ollama &mdash; your data never leaves your server.</p>
+        <p>Ask me anything about clients, tickets, invoices, or MSP operations.<br>Powered by BM AI (OpenRouter) &mdash; secure cloud-based AI assistant.</p>
         <div class="suggestions">
           <button class="suggestion" onclick="useSuggestion(this)">Summarize open tickets</button>
           <button class="suggestion" onclick="useSuggestion(this)">How do I onboard a new client?</button>
@@ -283,7 +283,7 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
     <div class="chat-input-wrap">
       <div class="offline-bar hidden" id="offlineBar">
         <i class="fas fa-exclamation-triangle"></i>
-        Ollama is not reachable. Configure your Ollama URL in settings.
+        BM AI is not reachable. Check your BM AI settings.
         <button onclick="openSettings()" style="margin-left:auto;background:#991b1b;color:#fff;border:none;padding:3px 9px;border-radius:6px;cursor:pointer;font-size:12px;">Settings</button>
       </div>
       <div class="input-row">
@@ -293,7 +293,7 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
           <i class="fas fa-paper-plane"></i>
         </button>
       </div>
-      <div class="input-hint">&#128274; Runs locally via Ollama &middot; Your data stays on your server</div>
+      <div class="input-hint" id="inputHint">&#128274; Powered by BM AI &#183; OpenRouter cloud</div>
     </div>
   </div>
 </div>
@@ -545,12 +545,12 @@ async function delConvo(e, id) {
 function newChat() {
   currentConvId = null; messages = [];
   document.getElementById('chatTitle').textContent = 'AI Assistant';
-  document.getElementById('chatSubtitle').textContent = 'Powered by Ollama — runs locally, stays private';
+  document.getElementById('chatSubtitle').textContent = 'Powered by BM AI — OpenRouter';
   document.getElementById('messages').innerHTML = `
     <div class="welcome-wrap" id="welcomeScreen">
       <div class="welcome-icon">&#129302;</div>
       <h3>Blue Mogul AI Assistant</h3>
-      <p>Ask me anything about clients, tickets, invoices, or MSP operations.<br>Runs locally via Ollama — your data never leaves your server.</p>
+      <p>Ask me anything about clients, tickets, invoices, or MSP operations.<br>Powered by BM AI (OpenRouter) &mdash; secure cloud-based AI assistant.</p>
       <div class="suggestions">
         <button class="suggestion" onclick="useSuggestion(this)">Summarize open tickets</button>
         <button class="suggestion" onclick="useSuggestion(this)">How do I onboard a new client?</button>

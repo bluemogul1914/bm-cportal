@@ -183,7 +183,7 @@ $_aip_name = htmlspecialchars($_SESSION['user_name'] ?? 'Staff', ENT_QUOTES);
     <div class="aip-hd-icon">🤖</div>
     <div style="flex:1">
       <div class="aip-hd-title">AI Assistant</div>
-      <div class="aip-hd-sub" id="aip-model-badge">Blue Mogul · Ollama</div>
+      <div class="aip-hd-sub" id="aip-model-badge">Loading engine…</div>
     </div>
     <div class="aip-hd-actions">
       <button class="aip-btn-icon" onclick="aipNewChat()" title="New chat"><i class="fas fa-plus"></i></button>
@@ -221,7 +221,7 @@ $_aip_name = htmlspecialchars($_SESSION['user_name'] ?? 'Staff', ENT_QUOTES);
       </button>
     </div>
     <div class="aip-footer">
-      <span class="aip-footer-hint">🔒 Runs locally · data stays on your server</span>
+      <span class="aip-footer-hint" id="aip-footer-hint">Powered by BM AI</span>
       <a href="admin-ai-assistant.php" class="aip-open-full" target="_self">
         Full chat <i class="fas fa-external-link-alt" style="font-size:9px"></i>
       </a>
@@ -240,10 +240,20 @@ $_aip_name = htmlspecialchars($_SESSION['user_name'] ?? 'Staff', ENT_QUOTES);
   const STAFF_USER_NAME = <?= json_encode($_aip_name) ?>;
 
   // ── Boot ──────────────────────────────────────────────────────────────
-  fetch('/api/ollama/settings').then(r=>r.json()).then(d=>{
-    aipSettings = d;
+  Promise.all([
+    fetch('/api/bmai/settings').then(r=>r.json()).catch(()=>({enabled:false})),
+    fetch('/api/ollama/settings').then(r=>r.json()).catch(()=>({})),
+  ]).then(([bmai, ollama]) => {
+    aipSettings = { ...ollama, ...bmai };
     const badge = document.getElementById('aip-model-badge');
-    if (badge) badge.textContent = (d.model || 'llama3') + ' · Ollama';
+    const hint  = document.getElementById('aip-footer-hint');
+    if (bmai.enabled && bmai.email) {
+      if (badge) badge.textContent = (bmai.model || 'deepseek/deepseek-v4-flash') + ' · BM AI';
+      if (hint)  hint.textContent  = 'Powered by BM AI · OpenRouter';
+    } else {
+      if (badge) badge.textContent = (ollama.model || 'llama3') + ' · Ollama';
+      if (hint)  hint.textContent  = '🔒 Runs locally · data stays on your server';
+    }
   }).catch(()=>{});
 
   fetch('/api/ollama/models').then(r=>{ if(r.ok) showBadge(); }).catch(()=>{});
