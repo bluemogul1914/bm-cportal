@@ -193,6 +193,9 @@ $warning_devices = $pdo->query("SELECT COUNT(*) FROM network_devices WHERE statu
                                 <a href="?client_id=<?php echo $client_id; ?>&view=credentials" class="px-4 py-2 text-sm font-medium rounded-md transition <?php echo $view === 'credentials' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'; ?>" data-testid="tab-credentials">
                                     <i class="fas fa-key mr-1"></i>Credentials
                                 </a>
+                                <a href="?client_id=<?php echo $client_id; ?>&view=integrations" class="px-4 py-2 text-sm font-medium rounded-md transition <?php echo $view === 'integrations' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'; ?>" data-testid="tab-integrations">
+                                    <i class="fas fa-cloud mr-1"></i>Integrations
+                                </a>
                             </div>
                         </div>
 
@@ -423,6 +426,168 @@ $warning_devices = $pdo->query("SELECT COUNT(*) FROM network_devices WHERE statu
                                 <?php endif; ?>
                             </div>
                         </div>
+                        <?php endif; ?>
+
+                        <?php if ($view === 'integrations'): ?>
+                        <div class="bg-white rounded-lg border border-gray-200 mb-4">
+                            <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                                <h3 class="font-semibold text-gray-900"><i class="fas fa-cloud text-purple-500 mr-2"></i>Integrated Assets</h3>
+                                <button id="sync-all-btn" onclick="syncAll()" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition">
+                                    <i class="fas fa-sync mr-1"></i>Sync All Sources
+                                </button>
+                            </div>
+                            <div id="integrations-sync-status" class="hidden px-6 py-3 border-b border-gray-100 text-sm"></div>
+                            <div id="integrations-content" class="p-6">
+                                <div class="text-center py-12 text-gray-500">
+                                    <i class="fas fa-cloud text-gray-300 text-4xl mb-3 block"></i>
+                                    <p class="text-sm">Loading integrated assets...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <script>
+                        const SOURCE_ICONS = {
+                            action1: { icon: 'fa-shield-halved', color: 'text-blue-500', label: 'Action1 Endpoints' },
+                            jumpcloud: { icon: 'fa-cloud', color: 'text-emerald-500', label: 'JumpCloud Systems & Users' },
+                            voipms: { icon: 'fa-phone', color: 'text-green-500', label: 'VoIP.ms DIDs' },
+                            hetzner: { icon: 'fa-server', color: 'text-red-500', label: 'Hetzner Cloud Servers' },
+                            hostwinds: { icon: 'fa-wind', color: 'text-cyan-500', label: 'Hostwinds VMs' },
+                        };
+
+                        const STATUS_CLASSES = {
+                            'active': 'bg-green-500',
+                            'online': 'bg-green-500',
+                            'running': 'bg-green-500',
+                            'warning': 'bg-yellow-500',
+                            'offline': 'bg-red-500',
+                            'inactive': 'bg-red-500',
+                            'unknown': 'bg-gray-400',
+                            'STAGED': 'bg-yellow-500',
+                        };
+
+                        function getStatusClass(status) {
+                            return STATUS_CLASSES[status?.toLowerCase()] || 'bg-gray-400';
+        }
+
+                        function formatDate(dateStr) {
+                            if (!dateStr) return 'N/A';
+                            const d = new Date(dateStr);
+                            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                        }
+
+                        function showSyncStatus(msg, isError) {
+                            const el = document.getElementById('integrations-sync-status');
+                            el.classList.remove('hidden');
+                            el.className = 'px-6 py-3 border-b border-gray-100 text-sm ' + (isError ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50');
+                            el.innerHTML = msg;
+                        }
+
+                        async function loadAssets() {
+                            const container = document.getElementById('integrations-content');
+                            container.innerHTML = '<div class="text-center py-12 text-gray-500"><i class="fas fa-spinner fa-spin text-gray-300 text-4xl mb-3 block"></i><p class="text-sm">Loading...</p></div>';
+                            try {
+                                const resp = await fetch('/api/network/assets?client_id=<?php echo $client_id; ?>');
+                                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                                const data = await resp.json();
+                                const assets = data.assets || [];
+
+                                if (assets.length === 0) {
+                                    container.innerHTML = '<div class="text-center py-12 text-gray-500"><i class="fas fa-cloud text-gray-300 text-4xl mb-3 block"></i><p class="text-sm">No integrated assets found. Click "Sync All Sources" to pull from connected platforms.</p></div>';
+                                    return;
+                                }
+
+                                // Group by source
+                                const groups = {};
+                                for (const a of assets) {
+                                    if (!groups[a.source]) groups[a.source] = [];
+                                    groups[a.source].push(a);
+                                }
+
+                                let html = '';
+                                for (const [source, items] of Object.entries(groups)) {
+                                    const info = SOURCE_ICONS[source] || { icon: 'fa-cloud', color: 'text-gray-500', label: source };
+                                    html += `<div class="mb-6 last:mb-0">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <h4 class="text-sm font-semibold text-gray-800"><i class="fas ${info.icon} ${info.color} mr-2"></i>${info.label}</h4>
+                                            <span class="text-xs text-gray-500">${items.length} asset(s)</span>
+                                        </div>
+                                        <div class="overflow-x-auto rounded-lg border border-gray-200">
+                                            <table class="w-full">
+                                                <thead class="bg-gray-50">
+                                                    <tr>
+                                                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Name</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Type</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">IP</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Last Seen</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-gray-200">`;
+                                    for (const a of items) {
+                                        const statusClass = getStatusClass(a.status);
+                                        html += `<tr class="hover:bg-gray-50 transition">
+                                            <td class="px-3 py-2.5"><span class="w-2 h-2 rounded-full ${statusClass} inline-block"></span></td>
+                                            <td class="px-3 py-2.5 text-sm font-medium text-gray-900">${escapeHtml(a.name || '(unnamed)')}</td>
+                                            <td class="px-3 py-2.5 text-xs text-gray-600">${escapeHtml(a.asset_type || 'device')}</td>
+                                            <td class="px-3 py-2.5">${a.ip ? '<code class="text-xs font-mono text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded">' + escapeHtml(a.ip) + '</code>' : '<span class="text-xs text-gray-400">N/A</span>'}</td>
+                                            <td class="px-3 py-2.5 text-xs text-gray-500">${formatDate(a.last_seen)}</td>
+                                        </tr>`;
+                                    }
+                                    html += `</tbody></table></div></div>`;
+                                }
+                                container.innerHTML = html;
+                            } catch (e) {
+                                container.innerHTML = '<div class="text-center py-12 text-red-500"><i class="fas fa-exclamation-triangle text-4xl mb-3 block"></i><p class="text-sm">Failed to load assets: ' + escapeHtml(e.message) + '</p></div>';
+                            }
+                        }
+
+                        function escapeHtml(str) {
+                            const div = document.createElement('div');
+                            div.textContent = str;
+                            return div.innerHTML;
+                        }
+
+                        async function syncAll() {
+                            const btn = document.getElementById('sync-all-btn');
+                            btn.disabled = true;
+                            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Syncing...';
+                            showSyncStatus('Syncing all sources...', false);
+
+                            const sources = ['action1', 'jumpcloud', 'voipms', 'hetzner', 'hostwinds'];
+                            let allOk = true;
+                            let msg = '';
+
+                            for (const src of sources) {
+                                try {
+                                    const resp = await fetch('/api/network/sync/' + src, { method: 'POST' });
+                                    const result = await resp.json();
+                                    if (result.errors && result.errors.length > 0) {
+                                        msg += '<div><strong>' + src + ':</strong> ' + result.errors.join('; ') + '</div>';
+                                        allOk = false;
+                                    } else {
+                                        msg += '<div><strong>' + src + ':</strong> ' + result.synced + ' assets, ' + result.matched + ' matched</div>';
+                                    }
+                                } catch (e) {
+                                    msg += '<div><strong>' + src + ':</strong> Error: ' + escapeHtml(e.message) + '</div>';
+                                    allOk = false;
+                                }
+                            }
+
+                            showSyncStatus(msg, !allOk);
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="fas fa-sync mr-1"></i>Sync All Sources';
+
+                            // Reload assets
+                            await loadAssets();
+                        }
+
+                        // Auto-load on page load
+                        document.addEventListener('DOMContentLoaded', function() {
+                            if (document.getElementById('integrations-content')) {
+                                loadAssets();
+                            }
+                        });
+                        </script>
                         <?php endif; ?>
                     <?php endif; ?>
                 </div>

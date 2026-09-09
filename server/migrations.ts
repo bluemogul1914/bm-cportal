@@ -173,4 +173,55 @@ export async function runPortalMigrations() {
   } catch (err: any) {
     console.error("[migrations] Phase 6 migration error:", err.message);
   }
+
+  // ── Phase 7: Network Docs Integrations ───────────────────────────────────
+  try {
+    // Client-to-source mapping table (stable, persistent matching)
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS client_source_mappings (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        source VARCHAR(50) NOT NULL,
+        external_id VARCHAR(255) NOT NULL,
+        external_name VARCHAR(255) DEFAULT '',
+        matched_by VARCHAR(50) DEFAULT 'auto',
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(source, external_id)
+      )
+    `);
+
+    // Network assets table — normalized inventory from all 5 sources
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS network_assets (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+        source VARCHAR(50) NOT NULL,
+        asset_type VARCHAR(100) NOT NULL DEFAULT 'device',
+        external_id VARCHAR(255) NOT NULL,
+        name VARCHAR(255) DEFAULT '',
+        ip VARCHAR(50) DEFAULT '',
+        status VARCHAR(50) DEFAULT 'unknown',
+        last_seen TIMESTAMPTZ,
+        raw JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(source, external_id)
+      )
+    `);
+
+    // Index for fast lookups by client
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_network_assets_client_id ON network_assets(client_id)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_network_assets_source ON network_assets(source)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_client_source_mappings_client ON client_source_mappings(client_id)
+    `);
+
+    console.log("[migrations] Phase 7 network docs integrations applied");
+  } catch (err: any) {
+    console.error("[migrations] Phase 7 migration error:", err.message);
+  }
 }

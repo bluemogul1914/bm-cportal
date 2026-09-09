@@ -8,8 +8,9 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { sql, eq, and } from "drizzle-orm";
+import { syncSource, syncAllSources, getClientAssets, VALID_SOURCES } from "./network-sync";
 
 const DISABLED_FUNCTIONS = [
   "exec", "shell_exec", "system", "passthru", "popen", "proc_open",
@@ -530,6 +531,65 @@ export async function registerRoutes(
       RETURNING *
     `);
     res.status(201).json(result.rows[0]);
+  });
+
+  // ── Phase 7: Network Docs Integrations ──────────────────────────────────
+
+  // Admin auth middleware for network endpoints
+  function requireNetworkAdmin(req: any, res: any, next: any) {
+    const sess = req.session?.portalUser;
+    if (!sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+    next();
+  }
+
+  // GET /api/network/assets?client_id=N — fetch assets for a client
+  app.get("/api/network/assets", requireNetworkAdmin, async (req, res) => {
+    try {
+      const clientId = parseInt(req.query.client_id as string);
+      if (isNaN(clientId)) return res.status(400).json({ error: "client_id required" });
+      const rows = await getClientAssets(pool, clientId);
+      res.json({ assets: rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/network/all-assets — fetch all assets (summary)
+  app.get("/api/network/all-assets", requireNetworkAdmin, async (_req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT na.*, c.name AS client_name, c.company AS client_company
+         FROM network_assets na LEFT JOIN clients c ON na.client_id = c.id
+         ORDER BY na.source, na.client_id, na.asset_type`
+      );
+      res.json({ assets: rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/network/sync/:source — sync one source
+  app.post("/api/network/sync/:source", requireNetworkAdmin, async (req, res) => {
+    const source = req.params.source.toLowerCase();
+    if (!VALID_SOURCES.includes(source)) {
+      return res.status(400).json({ error: `Invalid source. Must be one of: ${VALID_SOURCES.join(", ")}` });
+    }
+    try {
+      const result = await syncSource(pool, source);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/network/sync-all — sync all configured sources
+  app.post("/api/network/sync-all", requireNetworkAdmin, async (_req, res) => {
+    try {
+      const results = await syncAllSources(pool);
+      res.json({ results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   return httpServer;
