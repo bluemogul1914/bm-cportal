@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertSnippetSchema, insertContactSchema, insertAssetSchema, contacts, assets, tickets, invoices, clients } from "@shared/schema";
+import { insertSnippetSchema, insertContactSchema, insertAssetSchema, insertRecurringInvoiceConfigSchema, contacts, assets, tickets, invoices, clients, recurringInvoiceConfigs, activityLog } from "@shared/schema";
 import { execFile } from "child_process";
 import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
@@ -587,6 +587,227 @@ export async function registerRoutes(
     try {
       const results = await syncAllSources(pool);
       res.json({ results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+
+  // ── Recurring Invoice Configs ─────────────────────────────────────────────
+
+  // GET /api/recurring-configs — list all configs with client and product names
+  app.get("/api/recurring-configs", async (_req, res) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT rc.*, c.name AS client_name, p.name AS product_name
+        FROM recurring_invoice_configs rc
+        LEFT JOIN clients c ON rc.client_id = c.id
+        LEFT JOIN products p ON rc.product_id = p.id
+        ORDER BY rc.next_run_date ASC
+      `);
+      res.json(result.rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/recurring-configs/:id — single config
+  app.get("/api/recurring-configs/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const result = await db.execute(sql`
+        SELECT rc.*, c.name AS client_name, p.name AS product_name
+        FROM recurring_invoice_configs rc
+        LEFT JOIN clients c ON rc.client_id = c.id
+        LEFT JOIN products p ON rc.product_id = p.id
+        WHERE rc.id = ${id}
+      `);
+      if (!result.rows.length) return res.status(404).json({ error: "Config not found" });
+      res.json(result.rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/recurring-configs — create new config
+  app.post("/api/recurring-configs", async (req, res) => {
+    try {
+      const parsed = insertRecurringInvoiceConfigSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const [config] = await db.insert(recurringInvoiceConfigs).values(parsed.data).returning();
+      await db.insert(activityLog).values({
+        userId: (req as any).session?.portalUser?.id ?? null,
+        action: "create",
+        entityType: "recurring_config",
+        entityId: config.id,
+        details: { name: config.name, clientId: config.clientId },
+      });
+      res.status(201).json(config);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // PUT /api/recurring-configs/:id — update config
+  app.put("/api/recurring-configs/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const parsed = insertRecurringInvoiceConfigSchema.partial().safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const [config] = await db.update(recurringInvoiceConfigs)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(eq(recurringInvoiceConfigs.id, id))
+        .returning();
+      if (!config) return res.status(404).json({ error: "Config not found" });
+      await db.insert(activityLog).values({
+        userId: (req as any).session?.portalUser?.id ?? null,
+        action: "update",
+        entityType: "recurring_config",
+        entityId: config.id,
+        details: { name: config.name, changes: parsed.data },
+      });
+      res.json(config);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // DELETE /api/recurring-configs/:id — set status to "archived"
+  app.delete("/api/recurring-configs/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const [config] = await db.update(recurringInvoiceConfigs)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(eq(recurringInvoiceConfigs.id, id))
+        .returning();
+      if (!config) return res.status(404).json({ error: "Config not found" });
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/recurring-configs/:id/generate-now — manually generate invoice
+  app.post("/api/recurring-configs/:id/generate-now", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const [config] = await db.select().from(recurringInvoiceConfigs).where(eq(recurringInvoiceConfigs.id, id));
+      if (!config) return res.status(404).json({ error: "Config not found" });
+      if (config.status !== "active") return res.status(400).json({ error: "Config is not active" });
+
+      let amount = "0";
+      let productName = config.name;
+      if (config.productId) {
+        const [product] = await db.select().from(products).where(eq(products.id, config.productId));
+        if (product) {
+          amount = product.price;
+          productName = product.name;
+        }
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const seqResult = await db.execute(sql`
+        SELECT COUNT(*) AS cnt FROM invoices WHERE invoice_number LIKE ${"R-" + id + "-" + today.replace(/-/g, "") + "-%"}
+      `);
+      const seq = ((seqResult.rows[0] as any)?.cnt ?? 0) + 1;
+      const invoiceNumber = `R-${id}-${today.replace(/-/g, "")}-${String(seq).padStart(3, "0")}`;
+
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + (config.invoiceDueDays ?? 30));
+
+      const [invoice] = await db.insert(invoices).values({
+        clientId: config.clientId,
+        invoiceNumber,
+        amount,
+        tax: "0",
+        total: amount,
+        status: "unpaid",
+        dueDate: dueDate.toISOString().slice(0, 10),
+        items: JSON.stringify([{ name: productName, description: config.description, amount }]),
+        createdAt: new Date(),
+      }).returning();
+
+      const nextRun = new Date();
+      nextRun.setDate(nextRun.getDate() + config.intervalDays);
+      await db.update(recurringInvoiceConfigs)
+        .set({ lastRunDate: today, nextRunDate: nextRun.toISOString().slice(0, 10), updatedAt: new Date() })
+        .where(eq(recurringInvoiceConfigs.id, id));
+
+      await db.insert(activityLog).values({
+        userId: (req as any).session?.portalUser?.id ?? null,
+        action: "generate_invoice",
+        entityType: "recurring_config",
+        entityId: config.id,
+        details: { invoiceId: invoice.id, invoiceNumber, amount },
+      });
+
+      res.status(201).json({ invoice, nextRunDate: nextRun.toISOString().slice(0, 10) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/recurring-configs/generate-all — cron endpoint: process all due configs
+  app.post("/api/recurring-configs/generate-all", async (_req, res) => {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const dueConfigs = await db.execute(sql`
+        SELECT * FROM recurring_invoice_configs
+        WHERE status = 'active' AND next_run_date <= ${today}::date
+        ORDER BY next_run_date ASC
+      `);
+
+      const results: any[] = [];
+      for (const config of dueConfigs.rows as any[]) {
+        try {
+          let amount = "0";
+          let productName = config.name;
+          if (config.product_id) {
+            const [product] = await db.select().from(products).where(eq(products.id, config.product_id));
+            if (product) {
+              amount = product.price;
+              productName = product.name;
+            }
+          }
+
+          const seqResult = await db.execute(sql`
+            SELECT COUNT(*) AS cnt FROM invoices WHERE invoice_number LIKE ${"R-" + config.id + "-" + today.replace(/-/g, "") + "-%"}
+          `);
+          const seq = ((seqResult.rows[0] as any)?.cnt ?? 0) + 1;
+          const invoiceNumber = `R-${config.id}-${today.replace(/-/g, "")}-${String(seq).padStart(3, "0")}`;
+
+          const dueDate = new Date();
+          dueDate.setDate(dueDate.getDate() + (config.invoice_due_days ?? 30));
+
+          const [invoice] = await db.insert(invoices).values({
+            clientId: config.client_id,
+            invoiceNumber,
+            amount,
+            tax: "0",
+            total: amount,
+            status: "unpaid",
+            dueDate: dueDate.toISOString().slice(0, 10),
+            items: JSON.stringify([{ name: productName, description: config.description, amount }]),
+            createdAt: new Date(),
+          }).returning();
+
+          const nextRun = new Date();
+          nextRun.setDate(nextRun.getDate() + config.interval_days);
+          await db.update(recurringInvoiceConfigs)
+            .set({ lastRunDate: today, nextRunDate: nextRun.toISOString().slice(0, 10), updatedAt: new Date() })
+            .where(eq(recurringInvoiceConfigs.id, config.id));
+
+          results.push({ configId: config.id, invoiceId: invoice.id, invoiceNumber, status: "generated" });
+        } catch (err: any) {
+          results.push({ configId: config.id, status: "error", error: err.message });
+        }
+      }
+
+      res.json({ processed: results.length, results });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
