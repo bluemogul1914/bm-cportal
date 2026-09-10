@@ -479,3 +479,27 @@ export const blogPosts = pgTable("blog_posts", {
 export const insertBlogPostSchema = createInsertSchema(blogPosts).omit({ id: true, createdAt: true });
 export type InsertBlogPost = z.infer<typeof insertBlogPostSchema>;
 export type BlogPost = typeof blogPosts.$inferSelect;
+
+export const recurringInvoiceConfigs = pgTable("recurring_invoice_configs", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id).notNull(),
+  productId: integer("product_id").references(() => products.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  intervalDays: integer("interval_days").notNull(),
+  nextRunDate: date("next_run_date").notNull(),
+  lastRunDate: date("last_run_date"),
+  status: varchar("status", { length: 50 }).default("active"),
+  invoiceDueDays: integer("invoice_due_days").default(30),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertRecurringInvoiceConfigSchema = createInsertSchema(recurringInvoiceConfigs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertRecurringInvoiceConfig = z.infer<typeof insertRecurringInvoiceConfigSchema>;
+export type RecurringInvoiceConfig = typeof recurringInvoiceConfigs.$inferSelect;
