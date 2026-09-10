@@ -260,7 +260,7 @@
                 ?>
                 <a href="/portal/admin-dealers.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-dealers.php','admin-dealer-detail.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-dealer-dashboard">
                     <i class="fas fa-handshake w-5"></i>
-                    <span>Dealers Dashboard</span>
+                    <span>Dealers</span>
                     <?php if ($dealer_pending_count > 0): ?>
                     <span class="ml-auto bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full"><?= $dealer_pending_count ?></span>
                     <?php endif; ?>
