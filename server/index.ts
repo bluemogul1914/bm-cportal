@@ -20,6 +20,7 @@ import connectPgSimple from "connect-pg-simple";
 import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInquiry, dhOrderTracking, dhSearchCatalog, dhCreateSalesOrder, dhOrdersList } from "./dh-api";
 import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat } from "./bmai";
 import { syncAllSources } from "./network-sync";
+import { checkAllBalances, processPendingTopUps } from "./balance-scheduler";
 
 const webhookPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 // Persistent session store backed by Neon Postgres so admin/dealer sessions
@@ -95,6 +96,7 @@ app.post(
         return res.status(500).json({ error: "Webhook processing error" });
       }
 
+      // stripe-replit-sync handles the event (schema sync, invoice creation etc.)
       await WebhookHandlers.processWebhook(req.body as Buffer, sig);
       res.status(200).json({ received: true });
     } catch (error: any) {
@@ -182,7 +184,7 @@ const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashb
   "dealer-customers.php", "dealer-customer-detail.php", "dealer-smtp.php", "dealer-payouts.php",
   "dealer-training.php", "dealer-profile.php", "dealer-spiffs.php",
   "admin-dealers.php", "admin-dealer-detail.php",
-  "admin-client-contacts.php", "admin-client-assets.php"];
+  "admin-client-contacts.php", "admin-client-assets.php", "frontier-qualify.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -4044,6 +4046,28 @@ async function bootstrapPortalDatabase() {
     await setupVite(httpServer, app);
   }
 
+  // ── Prepaid Balance Admin Endpoints ─────────────────────────────────
+
+  // POST /api/admin/balance-check/run — manual trigger for balance scheduler
+  app.post("/api/admin/balance-check/run", async (req, res) => {
+    if (!(req as any).session?.portalUser?.is_admin) {
+      return res.status(403).json({ error: "Admin only" });
+    }
+    try {
+      const results = await checkAllBalances(webhookPool);
+      const recovered = await processPendingTopUps(webhookPool);
+      res.json({
+        clients_checked: results.length,
+        suspended: results.filter((r: any) => r.actions.includes("suspended_at_zero_balance")).length,
+        warned: results.filter((r: any) => r.actions.includes("low_balance_warned")).length,
+        restored: results.filter((r: any) => r.actions.includes("suspension_cleared_topup")).length,
+        topups_recovered: recovered,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(
     {
@@ -4075,6 +4099,36 @@ async function bootstrapPortalDatabase() {
         runDailySync();
         setInterval(runDailySync, DAILY_MS);
       }, 5 * 60 * 1000);
+
+      // ── Scheduled balance check (every 30 minutes) ─────────────────────
+      // Checks low balances, auto-suspend at $0, clears warnings on top-up.
+      // Also polls Stripe for unprocessed top-up sessions (recovery mechanism).
+      const BALANCE_CHECK_MS = 30 * 60 * 1000;
+      async function runBalanceCheck() {
+        try {
+          log("[balance-scheduler] Checking client balances...");
+          const results = await checkAllBalances(webhookPool);
+          const suspended = results.filter((r: any) => r.actions.includes("suspended_at_zero_balance"));
+          const warned = results.filter((r: any) => r.actions.includes("low_balance_warned"));
+          const restored = results.filter((r: any) => r.actions.includes("suspension_cleared_topup"));
+          if (suspended.length) log(`[balance-scheduler] Suspended ${suspended.length} client(s) at $0`);
+          if (warned.length) log(`[balance-scheduler] Warned ${warned.length} client(s) of low balance`);
+          if (restored.length) log(`[balance-scheduler] Restored ${restored.length} client(s) after top-up`);
+          log(`[balance-scheduler] Check complete: ${results.length} clients processed`);
+
+          // Recover any missed top-ups from Stripe (webhook fallback)
+          const recovered = await processPendingTopUps(webhookPool);
+          if (recovered > 0) log(`[balance-scheduler] Recovered ${recovered} missed top-up(s) from Stripe`);
+        } catch (e: any) {
+          console.error("[balance-scheduler] Error:", e.message);
+        }
+      }
+
+      // Run first check 10 minutes after boot, then every 30 minutes
+      setTimeout(() => {
+        runBalanceCheck();
+        setInterval(runBalanceCheck, BALANCE_CHECK_MS);
+      }, 10 * 60 * 1000);
     },
   );
 })();
