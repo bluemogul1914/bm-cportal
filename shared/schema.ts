@@ -52,6 +52,9 @@ export const clients = pgTable("clients", {
   latitude: varchar("latitude", { length: 20 }),
   longitude: varchar("longitude", { length: 20 }),
   creditBalance: decimal("credit_balance", { precision: 10, scale: 2 }).default("0"),
+  status: varchar("status", { length: 20 }).default("active"),
+  lowBalanceWarned: boolean("low_balance_warned").default(false),
+  lowBalanceThreshold: decimal("low_balance_threshold", { precision: 10, scale: 2 }).default("10.00"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -503,3 +506,28 @@ export const insertRecurringInvoiceConfigSchema = createInsertSchema(recurringIn
 
 export type InsertRecurringInvoiceConfig = z.infer<typeof insertRecurringInvoiceConfigSchema>;
 export type RecurringInvoiceConfig = typeof recurringInvoiceConfigs.$inferSelect;
+
+// ── Prepaid Balance Ledger ───────────────────────────────────────────────────
+
+export const transactionLedger = pgTable("transaction_ledger", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id).notNull(),
+  type: varchar("type", { length: 50 }).notNull(), // "top_up" | "charge" | "refund" | "adjustment"
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  balanceBefore: decimal("balance_before", { precision: 10, scale: 2 }).notNull(),
+  balanceAfter: decimal("balance_after", { precision: 10, scale: 2 }).notNull(),
+  description: text("description"),
+  invoiceId: integer("invoice_id").references(() => invoices.id),
+  stripePaymentId: varchar("stripe_payment_id", { length: 255 }),
+  stripeSessionId: varchar("stripe_session_id", { length: 255 }),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertTransactionLedgerSchema = createInsertSchema(transactionLedger).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTransactionLedger = z.infer<typeof insertTransactionLedgerSchema>;
+export type TransactionLedgerEntry = typeof transactionLedger.$inferSelect;

@@ -224,4 +224,58 @@ export async function runPortalMigrations() {
   } catch (err: any) {
     console.error("[migrations] Phase 7 migration error:", err.message);
   }
+
+  // ── Prepaid Balance Ledger ─────────────────────────────────────────────────
+  try {
+    // Add prepaid columns to clients table (idempotent via IF NOT EXISTS)
+    await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'`);
+    await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS low_balance_warned BOOLEAN DEFAULT false`);
+    await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS low_balance_threshold DECIMAL(10,2) DEFAULT 10.00`);
+
+    // Transaction ledger — every top-up, charge, or adjustment
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS transaction_ledger (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        type VARCHAR(50) NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        balance_before DECIMAL(10,2) NOT NULL,
+        balance_after DECIMAL(10,2) NOT NULL,
+        description TEXT,
+        invoice_id INTEGER REFERENCES invoices(id),
+        stripe_payment_id VARCHAR(255),
+        stripe_session_id VARCHAR(255),
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+
+    // Invoice sequences table for sequential INV-XXXXX number generation
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS invoice_sequences (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        seq INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(client_id)
+      )
+    `);
+
+    // Indexes for fast client ledger queries
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_transaction_ledger_client_id ON transaction_ledger(client_id)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_transaction_ledger_created_at ON transaction_ledger(client_id, created_at DESC)
+    `);
+    // Idempotency: one ledger entry per Stripe session (prevents double-credit on race)
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_transaction_ledger_stripe_session
+      ON transaction_ledger(stripe_session_id)
+      WHERE stripe_session_id IS NOT NULL
+    `);
+
+    console.log("[migrations] Prepaid balance ledger migrations applied");
+  } catch (err: any) {
+    console.error("[migrations] Prepaid balance ledger migration error:", err.message);
+  }
 }

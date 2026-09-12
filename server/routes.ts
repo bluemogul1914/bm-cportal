@@ -11,6 +11,7 @@ import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClie
 import { db, pool } from "./db";
 import { sql, eq, and } from "drizzle-orm";
 import { syncSource, syncAllSources, getClientAssets, VALID_SOURCES } from "./network-sync";
+import { recordTransaction } from "./balance-scheduler";
 
 const DISABLED_FUNCTIONS = [
   "exec", "shell_exec", "system", "passthru", "popen", "proc_open",
@@ -593,7 +594,50 @@ export async function registerRoutes(
   });
 
 
-  // ── Recurring Invoice Configs ─────────────────────────────────────────────
+  // POST /api/top-up/checkout — create Stripe checkout for prepaid top-up
+  app.post("/api/top-up/checkout", async (req, res) => {
+    try {
+      const sess = (req as any).session?.portalUser;
+      // Client must be authenticated and can ONLY top up their own account.
+      // Admins may pass an explicit clientId to top up a client on their behalf.
+      const clientId = sess?.is_admin
+        ? (req.body?.clientId ?? sess?.client_id)
+        : sess?.client_id;
+      const { amount } = req.body;
+      if (!clientId || !amount || amount <= 0) {
+        return res.status(400).json({ error: "clientId and positive amount are required" });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const session = await stripe.checkout.sessions.create({
+        line_items: [{
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: "Prepaid Account Top-Up",
+              description: `Add $${parseFloat(amount).toFixed(2)} credit to your prepaid balance`,
+            },
+            unit_amount: Math.round(parseFloat(amount) * 100),
+          },
+          quantity: 1,
+        }],
+        mode: "payment",
+        billing_address_collection: "required",
+        metadata: {
+          client_id: String(clientId),
+          top_up: "true",
+          description: `Account top-up of $${parseFloat(amount).toFixed(2)}`,
+        },
+        success_url: `${req.protocol}://${req.get("host")}/portal/billing.php?topup=success`,
+        cancel_url: `${req.protocol}://${req.get("host")}/portal/billing.php?topup=cancelled`,
+      });
+
+      res.json({ url: session.url });
+    } catch (error: any) {
+      console.error("Top-up checkout error:", error);
+      res.status(500).json({ error: "Failed to create top-up checkout session" });
+    }
+  });
 
   // GET /api/recurring-configs — list all configs with client and product names
   app.get("/api/recurring-configs", async (_req, res) => {
@@ -808,6 +852,120 @@ export async function registerRoutes(
       }
 
       res.json({ processed: results.length, results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── Prepaid Balance & Transaction Ledger ──────────────────────────────
+
+  // GET /api/admin/clients/:id/balance — get client balance info (admin only)
+  app.get("/api/admin/clients/:id/balance", requireNetworkAdmin, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id);
+      if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
+      const result = await db.execute(sql`
+        SELECT id, name, email, credit_balance, status, low_balance_warned, low_balance_threshold
+        FROM clients WHERE id = ${clientId}
+      `);
+      if (!result.rows.length) return res.status(404).json({ error: "Client not found" });
+      res.json(result.rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/client/balance — current client's balance info
+  app.get("/api/client/balance", async (req, res) => {
+    const clientId = (req as any).session?.portalUser?.client_id;
+    if (!clientId) return res.status(401).json({ error: "Not authenticated" });
+    const result = await db.execute(sql`
+      SELECT credit_balance, status, low_balance_warned, low_balance_threshold
+      FROM clients WHERE id = ${clientId}
+    `);
+    res.json(result.rows[0] || { credit_balance: "0", status: "active" });
+  });
+
+  // GET /api/admin/clients/:id/ledger — full transaction ledger for a client (admin only)
+  app.get("/api/admin/clients/:id/ledger", requireNetworkAdmin, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id);
+      if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
+      const result = await db.execute(sql`
+        SELECT * FROM transaction_ledger WHERE client_id = ${clientId}
+        ORDER BY created_at DESC LIMIT 200
+      `);
+      res.json(result.rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/client/ledger — current client's transaction ledger
+  app.get("/api/client/ledger", async (req, res) => {
+    const clientId = (req as any).session?.portalUser?.client_id;
+    if (!clientId) return res.status(401).json({ error: "Not authenticated" });
+    const result = await db.execute(sql`
+      SELECT * FROM transaction_ledger WHERE client_id = ${clientId}
+      ORDER BY created_at DESC LIMIT 100
+    `);
+    res.json(result.rows);
+  });
+
+  // POST /api/admin/clients/:id/ledger/adjust — manual adjustment (admin only)
+  app.post("/api/admin/clients/:id/ledger/adjust", requireNetworkAdmin, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id);
+      if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
+      const { amount, description } = req.body;
+      if (amount === undefined || !description) {
+        return res.status(400).json({ error: "amount and description are required" });
+      }
+      const parsedAmount = parseFloat(amount);
+      if (isNaN(parsedAmount)) return res.status(400).json({ error: "Invalid amount" });
+
+      const type = parsedAmount >= 0 ? "adjustment" : "charge";
+      const { balanceBefore, balanceAfter } = await recordTransaction(
+        pool,
+        {
+          clientId,
+          type,
+          amount: Math.abs(parsedAmount),
+          description,
+        }
+      );
+      await db.insert(activityLog).values({
+        userId: (req as any).session?.portalUser?.id ?? null,
+        action: "balance_adjustment",
+        entityType: "client",
+        entityId: clientId,
+        details: { amount, balanceBefore, balanceAfter, description },
+      });
+      res.json({ balanceBefore, balanceAfter });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/admin/clients/:id/ledger/charge — manual charge against balance (admin only)
+  app.post("/api/admin/clients/:id/ledger/charge", requireNetworkAdmin, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id);
+      if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
+      const { amount, description } = req.body;
+      if (!amount || !description) {
+        return res.status(400).json({ error: "amount and description are required" });
+      }
+      const { balanceBefore, balanceAfter } = await recordTransaction(
+        pool,
+        {
+          clientId,
+          type: "charge",
+          amount: parseFloat(amount),
+          description,
+        }
+      );
+      res.json({ balanceBefore, balanceAfter });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
