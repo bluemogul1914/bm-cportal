@@ -169,13 +169,18 @@ try {
                                             ?>"><?php echo ucfirst($invoice['status']); ?></span>
                                         </td>
                                         <td class="px-6 py-4 text-right">
-                                            <?php if ($invoice['status'] === 'unpaid'): ?>
-                                                <a href="pay-invoice.php?id=<?php echo $invoice['id']; ?>" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md font-medium text-sm transition" data-testid="button-pay-<?php echo $invoice['id']; ?>">
-                                                    Pay Now
+                                            <div class="flex items-center justify-end gap-2">
+                                                <a href="/api/invoices/<?php echo $invoice['id']; ?>/pdf" target="_blank" class="text-gray-500 hover:text-gray-700 text-sm font-medium transition" data-testid="link-download-pdf-<?php echo $invoice['id']; ?>">
+                                                    <i class="fas fa-file-pdf mr-1"></i>PDF
                                                 </a>
-                                            <?php else: ?>
-                                                <span class="text-gray-400 text-sm"><i class="fas fa-check mr-1"></i>Paid</span>
-                                            <?php endif; ?>
+                                                <?php if ($invoice['status'] === 'unpaid'): ?>
+                                                    <a href="pay-invoice.php?id=<?php echo $invoice['id']; ?>" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md font-medium text-sm transition" data-testid="button-pay-<?php echo $invoice['id']; ?>">
+                                                        Pay Now
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="text-gray-400 text-sm"><i class="fas fa-check mr-1"></i>Paid</span>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
