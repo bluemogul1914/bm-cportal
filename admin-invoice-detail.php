@@ -162,6 +162,9 @@ $total = $has_line_items ? ($subtotal + $tax_total) : floatval($invoice['amount'
                     ?>" data-testid="text-invoice-status"><?php echo ucfirst($invoice['status']); ?></span>
                 </div>
                 <div class="flex items-center gap-2 flex-wrap">
+                    <a href="/api/invoices/<?php echo $invoice_id; ?>/pdf" target="_blank" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md font-medium text-sm transition" data-testid="link-download-pdf">
+                        <i class="fas fa-file-pdf mr-2"></i>Download PDF
+                    </a>
                     <?php if ($invoice['status'] === 'unpaid'): ?>
                         <button type="button" onclick="sendStripeInvoice()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md font-medium text-sm transition" data-testid="button-stripe-pay">
                             <i class="fab fa-stripe-s mr-2"></i>Send via Stripe

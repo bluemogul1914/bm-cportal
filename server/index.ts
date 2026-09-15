@@ -21,6 +21,7 @@ import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInq
 import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat } from "./bmai";
 import { syncAllSources } from "./network-sync";
 import { checkAllBalances, processPendingTopUps } from "./balance-scheduler";
+import { generateReceiptPdfBuffer } from "./receipt-pdf";
 
 const webhookPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 // Persistent session store backed by Neon Postgres so admin/dealer sessions
@@ -4017,6 +4018,136 @@ async function bootstrapPortalDatabase() {
   await seed().catch((err) => console.error("Seed failed:", err));
   await initStripe();
   await registerRoutes(httpServer, app);
+
+  // ── Invoice PDF Download ───────────────────────────────────────────
+  // GET /api/invoices/:id/pdf — streams a branded receipt PDF.
+  // Admins may fetch any invoice; clients may only fetch their own.
+
+  /**
+   * Invoice `items` JSON has been written in two different shapes over time
+   * (D&H orders: {quantity, unit_price, description}; other paths:
+   * {qty, name, amount, unit_price, description}). Normalise both.
+   */
+  function normalizeInvoiceLines(raw: any): Array<{ description: string; quantity: number; unitPrice: string }> {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((li: any) => {
+        if (!li || typeof li !== "object") return null;
+        const description = String(li.description || li.name || li.item || "").trim();
+        if (!description) return null;
+        const quantity = Number(li.quantity ?? li.qty ?? 1) || 1;
+        const unitPrice = String(li.unit_price ?? li.unitPrice ?? li.amount ?? "0");
+        return { description, quantity, unitPrice };
+      })
+      .filter((x): x is { description: string; quantity: number; unitPrice: string } => x !== null);
+  }
+
+  app.get("/api/invoices/:id/pdf", async (req, res) => {
+    const sess = (req.session as any)?.portalUser;
+    if (!sess) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const invoiceId = parseInt(req.params.id, 10);
+    if (isNaN(invoiceId) || invoiceId <= 0) {
+      return res.status(400).json({ error: "Invalid invoice ID" });
+    }
+
+    try {
+      const row = await webhookPool.query(
+        `SELECT i.id, i.invoice_number, i.client_id, i.status, i.amount, i.tax, i.total,
+                i.notes, i.items, i.created_at,
+                c.name AS client_name, c.email AS client_email,
+                c.address AS client_address
+         FROM invoices i
+         LEFT JOIN clients c ON i.client_id = c.id
+         WHERE i.id = $1`,
+        [invoiceId]
+      );
+      if (row.rows.length === 0) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      const inv = row.rows[0];
+      const lineItems = normalizeInvoiceLines(inv.items);
+
+      // Permission: admins can access any invoice; clients only their own
+      if (!sess.is_admin) {
+        const clientRow = await webhookPool.query(
+          "SELECT id FROM clients WHERE user_id = $1",
+          [sess.user_id]
+        );
+        const clientIds = clientRow.rows.map((r: any) => r.id);
+        if (!clientIds.includes(inv.client_id)) {
+          // Audit a denied cross-client access attempt — never block the response on logging.
+          try {
+            await webhookPool.query(
+              `INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address)
+               VALUES ($1, 'invoice_pdf_denied', 'invoice', $2, $3, $4)`,
+              [
+                sess.user_id ?? null,
+                invoiceId,
+                `Denied invoice PDF access to ${inv.invoice_number} (invoice belongs to another client)`,
+                req.ip || "0.0.0.0",
+              ]
+            );
+          } catch (logErr: any) {
+            console.error("Invoice PDF audit log error:", logErr.message);
+          }
+          return res.status(403).json({ error: "Forbidden" });
+        }
+      }
+
+      const pdfBuffer = await generateReceiptPdfBuffer({
+        invoiceNumber: inv.invoice_number,
+        clientName: inv.client_name || "Client",
+        clientEmail: inv.client_email || "",
+        clientAddress: inv.client_address || null,
+        amount: String(parseFloat(inv.amount).toFixed(2)),
+        tax: String(parseFloat(inv.tax ?? 0).toFixed(2)),
+        total: String(parseFloat(inv.total ?? inv.amount).toFixed(2)),
+        // public.invoices has no `description` column (that lives on the
+        // stripe.invoices mirror) — derive the summary line from notes/items.
+        description:
+          lineItems.length > 0
+            ? ""
+            : String(inv.notes || "Prepaid balance top-up").split("\n")[0].trim(),
+        createdAt: new Date(inv.created_at),
+        lineItems,
+      });
+
+      // Audit trail — a paid invoice is a top-up receipt; anything else is an invoice.
+      // NOTE: live activity_log.details is TEXT (the Drizzle schema declares jsonb),
+      // so pass a plain string — an object would fail the insert.
+      const docKind = inv.status === "paid" ? "receipt" : "invoice";
+      try {
+        await webhookPool.query(
+          `INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address)
+           VALUES ($1, $2, 'invoice', $3, $4, $5)`,
+          [
+            sess.user_id ?? null,
+            `${docKind}_pdf_downloaded`,
+            invoiceId,
+            `Downloaded ${docKind} PDF ${inv.invoice_number} for ${inv.client_name || "client"}`,
+            req.ip || "0.0.0.0",
+          ]
+        );
+      } catch (logErr: any) {
+        console.error("Invoice PDF audit log error:", logErr.message);
+      }
+
+      const safeFilename = inv.invoice_number.replace(/[^a-zA-Z0-9_-]/g, "_");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${safeFilename}.pdf"`
+      );
+      res.setHeader("Content-Length", pdfBuffer.length);
+      res.end(pdfBuffer);
+    } catch (e: any) {
+      console.error("Invoice PDF error:", e.message);
+      res.status(500).json({ error: "Failed to generate PDF" });
+    }
+  });
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
