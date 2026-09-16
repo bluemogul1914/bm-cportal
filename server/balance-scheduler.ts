@@ -133,6 +133,79 @@ export async function recordTransaction(
   }
 }
 
+// ── Monthly auto-charge ──────────────────────────────────────────────────────
+
+export interface MonthlyChargeResult { clientId: number; clientName: string; amount: number; }
+
+/**
+ * Charge active clients' prepaid wallets for their active service subscriptions.
+ *
+ * Selects clients with >=1 active subscription and positive summed MRR.
+ * A charge is due when:
+ *   - last_charged_at IS NULL  (first active service → charge now)
+ *   - OR >=30 days since last_charged_at
+ *
+ * The existing recordTransaction() floors the balance at $0, so a client who
+ * cannot cover the month naturally hits $0. The subsequent checkAllBalances()
+ * call (which callers run after this) suspends them. This function does NOT
+ * add suspend logic itself.
+ *
+ * The 30-day last_charged_at gate is the idempotency guard. Clients with NO
+ * active subscriptions are never charged.
+ */
+export async function chargeMonthlySubscriptions(pool: pg.Pool): Promise<MonthlyChargeResult[]> {
+  const results: MonthlyChargeResult[] = [];
+
+  try {
+    const { rows: clients } = await pool.query(`
+      SELECT c.id, c.name, c.last_charged_at,
+             COALESCE(SUM(s.mrr), 0)::numeric AS monthly_total
+      FROM clients c
+      JOIN subscriptions s ON s.client_id = c.id AND s.status = 'active'
+      GROUP BY c.id
+      HAVING COALESCE(SUM(s.mrr), 0) > 0
+      ORDER BY c.id
+    `);
+
+    for (const row of clients) {
+      try {
+        const total = parseFloat(row.monthly_total);
+        if (total <= 0) continue;
+
+        const last = row.last_charged_at ? new Date(row.last_charged_at) : null;
+        const due = last === null
+          || (Date.now() - last.getTime()) >= 30 * 24 * 60 * 60 * 1000;
+
+        if (!due) continue;
+
+        await recordTransaction(pool, {
+          clientId: row.id,
+          type: "charge",
+          amount: total,
+          description: "Monthly prepaid service charge",
+          metadata: { method: "monthly_charge" },
+        });
+
+        await pool.query(
+          `UPDATE clients SET last_charged_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          [row.id]
+        );
+
+        results.push({ clientId: row.id, clientName: row.name, amount: total });
+        console.log(`[monthly-charge] Client ${row.id} (${row.name}): $${total.toFixed(2)}`);
+      } catch (e: any) {
+        console.error(`[monthly-charge] Error charging client ${row.id} (${row.name}):`, e.message);
+      }
+    }
+  } catch (e: any) {
+    console.error("[monthly-charge] Error querying clients:", e.message);
+  }
+
+  return results;
+}
+
+// ── Balance check ────────────────────────────────────────────────────────────
+
 /**
  * Run the balance check cycle for all active clients.
  *

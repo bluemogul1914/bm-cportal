@@ -231,6 +231,7 @@ export async function runPortalMigrations() {
     await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'`);
     await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS low_balance_warned BOOLEAN DEFAULT false`);
     await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS low_balance_threshold DECIMAL(10,2) DEFAULT 10.00`);
+    await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_charged_at TIMESTAMPTZ`);
 
     // Transaction ledger — every top-up, charge, or adjustment
     await db.execute(sql`
