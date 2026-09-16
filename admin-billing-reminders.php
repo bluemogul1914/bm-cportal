@@ -137,28 +137,61 @@ $ledger = $pdo->query("
     LIMIT 20
 ")->fetchAll(PDO::FETCH_ASSOC);
 
-require_once 'includes/admin-header.php';
-require_once 'includes/admin-sidebar.php';
-require_once 'includes/admin-topbar.php';
 ?>
-<div class="p-6">
-    <div class="mb-6">
-        <h1 class="text-2xl font-bold text-white">Billing Reminders</h1>
-        <p class="text-gray-400 mt-1">Prepaid balance monitoring, low-balance reminders and auto-suspend.</p>
-    </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Billing Reminders - Blue Mogul Admin</title>
+    <meta name="description" content="Prepaid balance monitoring, low-balance reminders and auto-suspend for the Blue Mogul portal.">
+
+    <link rel="stylesheet" href="/assets/css/tailwind.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/css/admin.css">
+    <link rel="stylesheet" href="/assets/css/style.css">
+
+    <script src="/assets/js/tailwind-shared.js"></script>
+    <script>
+        tailwind.config = window.bmTailwindConfig;
+    </script>
+</head>
+<body class="bg-gray-50 font-sans">
+
+    <div class="flex h-screen overflow-hidden">
+
+        <?php include 'includes/admin-sidebar.php'; ?>
+
+        <div class="flex-1 overflow-y-auto">
+
+            <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
+                <div class="px-6 py-4">
+                    <div class="flex items-center justify-between gap-4 flex-wrap">
+                        <div>
+                            <h1 class="text-2xl font-semibold text-gray-900" data-testid="text-page-title">
+                                <i class="fas fa-bell mr-2 text-blue-600"></i>Billing Reminders
+                            </h1>
+                            <p class="text-sm text-gray-600 mt-1">Prepaid balance monitoring, low-balance reminders and auto-suspend</p>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="p-6">
 
     <?php if ($success_message): ?>
-        <div class="mb-5 bg-green-900/40 border border-green-700 text-green-200 px-4 py-3 rounded-lg text-sm">
+        <div class="mb-5 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg text-sm">
             <i class="fas fa-check-circle mr-2"></i><?= htmlspecialchars($success_message) ?>
         </div>
     <?php endif; ?>
     <?php if ($error_message): ?>
-        <div class="mb-5 bg-red-900/40 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">
+        <div class="mb-5 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg text-sm">
             <i class="fas fa-exclamation-circle mr-2"></i><?= htmlspecialchars($error_message) ?>
         </div>
     <?php endif; ?>
 
-    <div class="mb-6 bg-blue-900/20 border border-blue-800 rounded-lg px-4 py-3 text-sm text-blue-200">
+    <div class="mb-6 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
         <i class="fas fa-info-circle mr-2"></i>
         <strong>How this works:</strong> every Blue Mogul account is prepaid — the client tops up first and service
         runs until the credit is used. A single low-balance reminder goes out when the balance drops to or below
@@ -167,36 +200,36 @@ require_once 'includes/admin-topbar.php';
 
     <!-- Summary -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div class="bg-gray-800 rounded-xl border border-gray-700 p-5">
-            <div class="text-gray-400 text-xs uppercase tracking-wide">Clients</div>
-            <div class="text-2xl font-bold text-white mt-1"><?= $totalClients ?></div>
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-5 flex flex-col">
+            <div class="text-gray-500 text-xs uppercase tracking-wide">Clients</div>
+            <div class="text-2xl font-bold text-gray-900 mt-1"><?= $totalClients ?></div>
         </div>
-        <div class="bg-gray-800 rounded-xl border border-gray-700 p-5">
-            <div class="text-gray-400 text-xs uppercase tracking-wide">Low balance</div>
-            <div class="text-2xl font-bold <?= $lowCount ? 'text-yellow-400' : 'text-white' ?> mt-1"><?= $lowCount ?></div>
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-5 flex flex-col">
+            <div class="text-gray-500 text-xs uppercase tracking-wide">Low balance</div>
+            <div class="text-2xl font-bold <?= $lowCount ? 'text-yellow-700' : 'text-gray-900' ?> mt-1"><?= $lowCount ?></div>
             <div class="text-gray-500 text-xs mt-1"><?= $warnedCount ?> already reminded</div>
         </div>
-        <div class="bg-gray-800 rounded-xl border border-gray-700 p-5">
-            <div class="text-gray-400 text-xs uppercase tracking-wide">Suspended at $0</div>
-            <div class="text-2xl font-bold <?= $suspendedCount ? 'text-red-400' : 'text-white' ?> mt-1"><?= $suspendedCount ?></div>
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-5 flex flex-col">
+            <div class="text-gray-500 text-xs uppercase tracking-wide">Suspended at $0</div>
+            <div class="text-2xl font-bold <?= $suspendedCount ? 'text-red-700' : 'text-gray-900' ?> mt-1"><?= $suspendedCount ?></div>
             <div class="text-gray-500 text-xs mt-1"><?= $zeroCount ?> at or below zero</div>
         </div>
-        <div class="bg-gray-800 rounded-xl border border-gray-700 p-5">
-            <div class="text-gray-400 text-xs uppercase tracking-wide">Credit held</div>
-            <div class="text-2xl font-bold text-white mt-1">$<?= number_format($balanceTotal, 2) ?></div>
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-5 flex flex-col">
+            <div class="text-gray-500 text-xs uppercase tracking-wide">Credit held</div>
+            <div class="text-2xl font-bold text-gray-900 mt-1">$<?= number_format($balanceTotal, 2) ?></div>
         </div>
     </div>
 
     <!-- Manual trigger -->
-    <div class="bg-gray-800 rounded-xl border border-gray-700 p-5 mb-6 flex flex-wrap items-center justify-between gap-4">
+    <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-6 mb-6 flex items-center justify-between gap-4">
         <div>
-            <div class="text-white font-medium">Run balance check now</div>
-            <div class="text-gray-400 text-sm mt-1">
+            <div class="text-gray-900 font-medium">Run balance check now</div>
+            <div class="text-gray-600 text-sm mt-1">
                 Sends due low-balance reminders, suspends accounts at $0, restores accounts after top-up and
                 recovers missed Stripe top-ups. The scheduler also runs this on a timer.
             </div>
         </div>
-        <form method="POST" onsubmit="return confirm('Run the balance check across all clients now?')">
+        <form method="POST" onsubmit="return confirm('Run the balance check across all clients now?')" class="flex-shrink-0">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
             <input type="hidden" name="action" value="run_check">
             <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium">
@@ -206,25 +239,25 @@ require_once 'includes/admin-topbar.php';
     </div>
 
     <!-- Clients -->
-    <div class="bg-gray-800 rounded-xl border border-gray-700 mb-6 overflow-hidden">
-        <div class="px-5 py-4 border-b border-gray-700">
-            <h2 class="text-lg font-semibold text-white">Client balances</h2>
+    <div class="bg-white rounded-lg border border-gray-200 shadow-sm mb-6 overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Client balances</h2>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
-                <thead class="bg-gray-900/50">
+                <thead class="bg-gray-50">
                     <tr>
-                        <th class="text-left px-5 py-3 text-gray-400 font-medium">Client</th>
-                        <th class="text-right px-5 py-3 text-gray-400 font-medium">Balance</th>
-                        <th class="text-left px-5 py-3 text-gray-400 font-medium">Reminder state</th>
-                        <th class="text-left px-5 py-3 text-gray-400 font-medium">Status</th>
-                        <th class="text-left px-5 py-3 text-gray-400 font-medium">Threshold</th>
-                        <th class="text-right px-5 py-3 text-gray-400 font-medium">Actions</th>
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Client</th>
+                        <th class="text-right px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Balance</th>
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Reminder state</th>
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Threshold</th>
+                        <th class="text-right px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-700">
+                <tbody class="divide-y divide-gray-200">
                 <?php if (!$clients): ?>
-                    <tr><td colspan="6" class="px-5 py-8 text-center text-gray-400">No clients yet.</td></tr>
+                    <tr><td colspan="6" class="px-5 py-8 text-center text-gray-500">No clients yet.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($clients as $c):
                     $balance   = (float)$c['balance'];
@@ -232,52 +265,64 @@ require_once 'includes/admin-topbar.php';
                     $isLow     = ($balance > 0 && $balance <= $threshold);
                     $isSusp    = ($c['status'] === 'suspended');
                 ?>
-                    <tr class="hover:bg-gray-700/30">
+                    <tr class="hover:bg-gray-50">
                         <td class="px-5 py-3">
-                            <div class="text-white font-medium"><?= htmlspecialchars($c['name']) ?></div>
-                            <div class="text-gray-500 text-xs"><?= htmlspecialchars($c['email'] ?? '') ?></div>
+                            <div class="flex items-center">
+                                <div class="leading-tight">
+                                    <div class="text-gray-900 font-medium"><?= htmlspecialchars($c['name']) ?></div>
+                                    <div class="text-gray-500 text-xs"><?= htmlspecialchars($c['email'] ?? '') ?></div>
+                                </div>
+                            </div>
                         </td>
-                        <td class="px-5 py-3 text-right font-mono <?= $balance <= 0 ? 'text-red-400' : ($isLow ? 'text-yellow-400' : 'text-green-400') ?>">
+                        <td class="px-5 py-3 text-right font-mono <?= $balance <= 0 ? 'text-red-700' : ($isLow ? 'text-yellow-700' : 'text-green-700') ?>">
                             $<?= number_format($balance, 2) ?>
                         </td>
                         <td class="px-5 py-3">
-                            <?php if ($isSusp || $balance <= 0): ?>
-                                <span class="px-2 py-0.5 rounded-full text-xs bg-red-900/50 text-red-300 border border-red-800">Final notice sent</span>
-                            <?php elseif (!empty($c['warned'])): ?>
-                                <span class="px-2 py-0.5 rounded-full text-xs bg-yellow-900/50 text-yellow-300 border border-yellow-800">Reminder sent</span>
-                            <?php else: ?>
-                                <span class="px-2 py-0.5 rounded-full text-xs bg-gray-700 text-gray-300">Not sent</span>
-                            <?php endif; ?>
+                            <div class="flex items-center">
+                                <?php if ($isSusp || $balance <= 0): ?>
+                                    <span class="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700 whitespace-nowrap">Final notice sent</span>
+                                <?php elseif (!empty($c['warned'])): ?>
+                                    <span class="px-3 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-700 whitespace-nowrap">Reminder sent</span>
+                                <?php else: ?>
+                                    <span class="px-3 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600 whitespace-nowrap">Not sent</span>
+                                <?php endif; ?>
+                            </div>
                         </td>
                         <td class="px-5 py-3">
-                            <?php if ($isSusp): ?>
-                                <span class="px-2 py-0.5 rounded-full text-xs bg-red-900/50 text-red-300 border border-red-800">Suspended</span>
-                            <?php else: ?>
-                                <span class="px-2 py-0.5 rounded-full text-xs bg-green-900/50 text-green-300 border border-green-800">Active</span>
-                            <?php endif; ?>
+                            <div class="flex items-center">
+                                <?php if ($isSusp): ?>
+                                    <span class="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700 whitespace-nowrap">Suspended</span>
+                                <?php else: ?>
+                                    <span class="px-3 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700 whitespace-nowrap">Active</span>
+                                <?php endif; ?>
+                            </div>
                         </td>
                         <td class="px-5 py-3">
-                            <form method="POST" class="flex items-center gap-2">
+                            <form method="POST" class="flex items-center">
                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
                                 <input type="hidden" name="action" value="set_threshold">
                                 <input type="hidden" name="client_id" value="<?= (int)$c['id'] ?>">
-                                <span class="text-gray-500">$</span>
-                                <input type="number" name="low_balance_threshold" step="0.01" min="0"
-                                       value="<?= number_format($threshold, 2, '.', '') ?>"
-                                       class="w-24 bg-gray-700 border border-gray-600 rounded-lg px-2 py-1 text-white text-sm">
-                                <button type="submit" class="text-blue-400 hover:text-blue-300 text-xs font-medium">Save</button>
+                                <div class="flex items-center">
+                                    <span class="text-gray-500 px-2 py-1 text-sm leading-tight">$</span>
+                                    <input type="number" name="low_balance_threshold" step="0.01" min="0"
+                                           value="<?= number_format($threshold, 2, '.', '') ?>"
+                                           class="w-24 bg-white border border-gray-300 rounded-md px-2 py-1 text-gray-900 text-sm">
+                                </div>
+                                <button type="submit" class="ml-2 text-blue-600 hover:text-blue-800 text-xs font-medium">Save</button>
                             </form>
                         </td>
                         <td class="px-5 py-3 text-right">
-                            <form method="POST" onsubmit="return confirm('Clear the reminder flag for <?= htmlspecialchars(addslashes($c['name'])) ?>? The next check will re-send a reminder.')">
-                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
-                                <input type="hidden" name="action" value="clear_warned">
-                                <input type="hidden" name="client_id" value="<?= (int)$c['id'] ?>">
-                                <button type="submit" class="text-xs text-gray-400 hover:text-white border border-gray-600 rounded px-2 py-1"
-                                        <?= empty($c['warned']) ? 'disabled style="opacity:.4;cursor:not-allowed"' : '' ?>>
-                                    Clear flag
-                                </button>
-                            </form>
+                            <div class="flex items-center justify-end">
+                                <form method="POST" onsubmit="return confirm('Clear the reminder flag for <?= htmlspecialchars(addslashes($c['name'])) ?>? The next check will re-send a reminder.')">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
+                                    <input type="hidden" name="action" value="clear_warned">
+                                    <input type="hidden" name="client_id" value="<?= (int)$c['id'] ?>">
+                                    <button type="submit" class="text-xs text-gray-600 border border-gray-300 hover:bg-gray-50 rounded-md px-2 py-1"
+                                            <?= empty($c['warned']) ? 'disabled style="opacity:.4;cursor:not-allowed"' : '' ?>>
+                                        Clear flag
+                                    </button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -287,44 +332,44 @@ require_once 'includes/admin-topbar.php';
     </div>
 
     <!-- Ledger -->
-    <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
-        <div class="px-5 py-4 border-b border-gray-700">
-            <h2 class="text-lg font-semibold text-white">Recent balance activity</h2>
-            <p class="text-gray-400 text-sm mt-1">Every top-up, charge, refund and adjustment appends a dated ledger entry.</p>
+    <div class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Recent balance activity</h2>
+            <p class="text-gray-600 text-sm mt-1">Every top-up, charge, refund and adjustment appends a dated ledger entry.</p>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
-                <thead class="bg-gray-900/50">
+                <thead class="bg-gray-50">
                     <tr>
-                        <th class="text-left px-5 py-3 text-gray-400 font-medium">When</th>
-                        <th class="text-left px-5 py-3 text-gray-400 font-medium">Client</th>
-                        <th class="text-left px-5 py-3 text-gray-400 font-medium">Type</th>
-                        <th class="text-left px-5 py-3 text-gray-400 font-medium">Description</th>
-                        <th class="text-right px-5 py-3 text-gray-400 font-medium">Amount</th>
-                        <th class="text-right px-5 py-3 text-gray-400 font-medium">Balance after</th>
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">When</th>
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Client</th>
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Description</th>
+                        <th class="text-right px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                        <th class="text-right px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Balance after</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-700">
+                <tbody class="divide-y divide-gray-200">
                 <?php if (!$ledger): ?>
-                    <tr><td colspan="6" class="px-5 py-8 text-center text-gray-400">No balance activity yet.</td></tr>
+                    <tr><td colspan="6" class="px-5 py-8 text-center text-gray-500">No balance activity yet.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($ledger as $l):
                     $amt = (float)$l['amount'];
                     $sign = in_array($l['type'], ['top_up', 'refund'], true) ? '+' : ($l['type'] === 'charge' ? '-' : '');
                 ?>
-                    <tr class="hover:bg-gray-700/30">
-                        <td class="px-5 py-3 text-gray-300 whitespace-nowrap">
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-5 py-3 text-gray-600 whitespace-nowrap">
                             <?= htmlspecialchars(date('M j, Y g:ia', strtotime((string)$l['created_at']))) ?>
                         </td>
-                        <td class="px-5 py-3 text-white"><?= htmlspecialchars($l['client_name'] ?? '—') ?></td>
+                        <td class="px-5 py-3 text-gray-900"><?= htmlspecialchars($l['client_name'] ?? '—') ?></td>
                         <td class="px-5 py-3">
-                            <span class="px-2 py-0.5 rounded-full text-xs bg-gray-700 text-gray-200"><?= htmlspecialchars((string)$l['type']) ?></span>
+                            <span class="px-3 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700"><?= htmlspecialchars((string)$l['type']) ?></span>
                         </td>
-                        <td class="px-5 py-3 text-gray-300"><?= htmlspecialchars((string)($l['description'] ?? '')) ?></td>
-                        <td class="px-5 py-3 text-right font-mono <?= $sign === '+' ? 'text-green-400' : ($sign === '-' ? 'text-red-400' : 'text-gray-300') ?>">
+                        <td class="px-5 py-3 text-gray-600"><?= htmlspecialchars((string)($l['description'] ?? '')) ?></td>
+                        <td class="px-5 py-3 text-right font-mono <?= $sign === '+' ? 'text-green-700' : ($sign === '-' ? 'text-red-700' : 'text-gray-600') ?>">
                             <?= $sign ?>$<?= number_format(abs($amt), 2) ?>
                         </td>
-                        <td class="px-5 py-3 text-right font-mono text-gray-200">$<?= number_format((float)$l['balance_after'], 2) ?></td>
+                        <td class="px-5 py-3 text-right font-mono text-gray-600">$<?= number_format((float)$l['balance_after'], 2) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -332,4 +377,8 @@ require_once 'includes/admin-topbar.php';
         </div>
     </div>
 </div>
-<?php require_once 'includes/admin-footer.php'; ?>
+        </div>
+    </div>
+
+</body>
+</html>
