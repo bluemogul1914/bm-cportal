@@ -471,7 +471,7 @@ $show_map = $has_location || $has_address;
                     <div class="bg-white rounded-lg border border-gray-200">
                         <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
                             <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Services</h2>
-                            <a href="admin-services.php" class="text-primary text-xs hover:underline"><i class="fas fa-plus mr-1"></i>Add</a>
+                            <a href="admin-client-services.php" class="text-primary text-xs hover:underline"><i class="fas fa-plus mr-1"></i>Add</a>
                         </div>
                         <?php if (empty($services)): ?>
                         <div class="p-6 text-center text-gray-400 text-sm">No services found.</div>

@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once __DIR__ . '/includes/service-order.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
     portal_redirect('/portal');
@@ -12,6 +13,9 @@ $is_admin = true;
 
 $pdo = getDB();
 
+// Loopback origin for calling the Node API (Stripe service-invoice checkout)
+$internalOrigin = 'http://127.0.0.1:' . (getenv('PORT') ?: '3000');
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     require_csrf();
     
@@ -23,14 +27,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $start_date = $_POST['start_date'] ?? date('Y-m-d');
 
         if ($client_id && $product_id) {
-            $stmt = $pdo->prepare("SELECT price FROM products WHERE id = ?");
-            $stmt->execute([$product_id]);
-            $product = $stmt->fetch(PDO::FETCH_ASSOC);
-            $mrr = $product ? $product['price'] : 0;
-
-            $stmt = $pdo->prepare("INSERT INTO subscriptions (client_id, product_id, status, start_date, mrr, created_at) VALUES (?, ?, 'active', ?, ?, NOW())");
-            $stmt->execute([$client_id, $product_id, $start_date, $mrr]);
-            portal_redirect('admin-services.php?success=created');
+            try {
+                // Invoice-gated: creates a PENDING subscription + an UNPAID first-month
+                // invoice, then settles from the prepaid wallet if funded (otherwise a
+                // Stripe Checkout link is minted for the remainder).
+                $order = order_service($pdo, $client_id, $product_id, $internalOrigin, $start_date);
+                $_SESSION['service_flash'] = order_service_message($order);
+                portal_redirect('admin-services.php?success=' . ($order['status'] === 'active' ? 'activated' : 'pending'));
+            } catch (Throwable $e) {
+                error_log('order_service failed: ' . $e->getMessage());
+                $_SESSION['service_flash'] = 'Could not add the service: ' . htmlspecialchars($e->getMessage());
+                portal_redirect('admin-services.php?success=error');
+            }
         }
     } elseif ($action === 'update_status') {
         $id = intval($_POST['id'] ?? 0);
@@ -166,13 +174,19 @@ $success = $_GET['success'] ?? '';
             </div>
         </header>
 
-        <?php if ($success): ?>
-            <div class="mx-6 mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
-                <i class="fas fa-check-circle mr-2"></i>
-                <?php echo match($success) {
-                    'created' => 'Subscription created successfully.',
-                    'updated' => 'Subscription status updated.',
-                    default => 'Operation completed.'
+        <?php
+        $flash = $_SESSION['service_flash'] ?? '';
+        unset($_SESSION['service_flash']);
+        if ($flash || $success):
+            $is_error = ($success === 'error');
+        ?>
+            <div class="mx-6 mt-4 border <?php echo $is_error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'; ?> px-4 py-3 rounded-lg text-sm">
+                <i class="fas <?php echo $is_error ? 'fa-exclamation-circle' : 'fa-check-circle'; ?> mr-2"></i>
+                <?php echo $flash !== '' ? $flash : match($success) {
+                    'activated' => 'Subscription activated.',
+                    'pending'   => 'Subscription created — a first-month invoice was generated.',
+                    'updated'   => 'Subscription status updated.',
+                    default     => 'Operation completed.'
                 }; ?>
             </div>
         <?php endif; ?>
@@ -268,6 +282,7 @@ $success = $_GET['success'] ?? '';
                                             <span class="px-2 py-1 rounded-full text-xs font-medium <?php
                                                 echo match($sub['status']) {
                                                     'active' => 'bg-green-100 text-green-700',
+                                                    'pending' => 'bg-blue-100 text-blue-700',
                                                     'suspended' => 'bg-yellow-100 text-yellow-700',
                                                     'cancelled' => 'bg-red-100 text-red-700',
                                                     default => 'bg-gray-100 text-gray-700'
