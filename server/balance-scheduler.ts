@@ -204,6 +204,85 @@ export async function chargeMonthlySubscriptions(pool: pg.Pool): Promise<Monthly
   return results;
 }
 
+// ── Pending activation on balance ─────────────────────────────────────────
+
+export interface PendingActivationResult { subscriptionId: number; clientId: number; productName: string; amount: number; }
+
+/**
+ * Activate pending subscriptions whose linked unpaid invoice is now covered
+ * by the client's prepaid balance.
+ *
+ * This is the ORDER → INVOICE → PAID-BEFORE-ACTIVE gate: services are added
+ * as 'pending' with an 'unpaid' invoice. When the balance >= invoice amount,
+ * the balance is charged and both the invoice and subscription flip to paid/active.
+ */
+export async function activatePaidPendingSubscriptions(pool: pg.Pool): Promise<PendingActivationResult[]> {
+  const results: PendingActivationResult[] = [];
+
+  try {
+    const { rows: candidates } = await pool.query(`
+      SELECT s.id AS subscription_id, s.client_id, i.id AS invoice_id,
+             i.amount::numeric AS inv_amount, p.name AS product_name,
+             COALESCE(c.credit_balance, 0)::numeric AS balance
+      FROM subscriptions s
+      JOIN clients c    ON c.id = s.client_id
+      JOIN products p   ON p.id = s.product_id
+      JOIN invoices i   ON i.subscription_id = s.id
+      WHERE s.status = 'pending' AND i.status = 'unpaid'
+    `);
+
+    for (const row of candidates) {
+      try {
+        const invAmount = parseFloat(row.inv_amount);
+        const balance   = parseFloat(row.balance);
+        const subId     = row.subscription_id;
+        const clientId  = row.client_id;
+        const invoiceId = row.invoice_id;
+        const prodName  = row.product_name;
+
+        if (balance < invAmount) continue;
+
+        // Charge the client's prepaid balance for the first month
+        await recordTransaction(pool, {
+          clientId,
+          type: "charge",
+          amount: invAmount,
+          description: `Service activation - ${prodName}`,
+          metadata: { method: "pending_activation", subscription_id: subId, invoice_id: invoiceId },
+        });
+
+        // Mark invoice as paid
+        await pool.query(
+          `UPDATE invoices SET status = 'paid', paid_date = CURRENT_DATE, paid_at = NOW() WHERE id = $1`,
+          [invoiceId]
+        );
+
+        // Activate the subscription
+        await pool.query(
+          `UPDATE subscriptions SET status = 'active', updated_at = NOW() WHERE id = $1`,
+          [subId]
+        );
+
+        // Set last_charged_at so chargeMonthlySubscriptions doesn't
+        // double-charge on the next cycle (it treats NULL as "due now").
+        await pool.query(
+          `UPDATE clients SET last_charged_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          [clientId]
+        );
+
+        results.push({ subscriptionId: subId, clientId, productName: prodName, amount: invAmount });
+        console.log(`[pending-activation] Subscription ${subId} (${prodName}) activated for client ${clientId}: $${invAmount.toFixed(2)} charged from balance`);
+      } catch (e: any) {
+        console.error(`[pending-activation] Error activating subscription ${row.subscription_id} for client ${row.client_id}:`, e.message);
+      }
+    }
+  } catch (e: any) {
+    console.error("[pending-activation] Error querying pending subscriptions:", e.message);
+  }
+
+  return results;
+}
+
 // ── Balance check ────────────────────────────────────────────────────────────
 
 /**

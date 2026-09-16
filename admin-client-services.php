@@ -37,33 +37,65 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
     }
 
-    // ── Add a service to a client ─────────────────────────────────────
+    // ── Add a service to a client (ORDER → INVOICE → PAID-BEFORE-ACTIVE) ────
     elseif ($action === 'add_subscription') {
         $clientId  = (int)($_POST['client_id'] ?? 0);
         $productId = (int)($_POST['product_id'] ?? 0);
         if ($clientId <= 0 || $productId <= 0) {
             $error_message = 'Invalid client or product selection.';
         } else {
-            // Check if client is suspended
-            $cStmt = $pdo->prepare("SELECT status FROM clients WHERE id = :id");
-            $cStmt->execute([':id' => $clientId]);
-            $client = $cStmt->fetch(PDO::FETCH_ASSOC);
+            // Fetch the product
+            $pStmt = $pdo->prepare("SELECT id, name, price FROM products WHERE id = :id");
+            $pStmt->execute([':id' => $productId]);
+            $product = $pStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$product) {
+                $error_message = 'Product not found.';
+            } else {
+                // Insert subscription with status = 'pending'
+                $stmt = $pdo->prepare("
+                    INSERT INTO subscriptions (client_id, product_id, status, start_date, mrr, created_at, updated_at)
+                    VALUES (:client_id, :product_id, 'pending', CURRENT_DATE, :price, NOW(), NOW())
+                    RETURNING id
+                ");
+                $stmt->execute([
+                    ':client_id'  => $clientId,
+                    ':product_id' => $productId,
+                    ':price'      => $product['price'],
+                ]);
+                $subscriptionId = (int)$stmt->fetchColumn();
 
-            $stmt = $pdo->prepare("
-                INSERT INTO subscriptions (client_id, product_id, status, start_date, mrr, created_at, updated_at)
-                VALUES (:client_id, :product_id, 'active', CURRENT_DATE,
-                        (SELECT price FROM products WHERE id = :product_id2), NOW(), NOW())
-            ");
-            $stmt->execute([
-                ':client_id'   => $clientId,
-                ':product_id'  => $productId,
-                ':product_id2' => $productId,
-            ]);
-            $msg = 'Service added successfully.';
-            if ($client && ($client['status'] ?? 'active') === 'suspended') {
-                $msg .= ' Note: this client is currently suspended — the new service is active and will be charged on the next balance check.';
+                // Generate invoice number via invoice_sequences
+                $seqStmt = $pdo->prepare("
+                    INSERT INTO invoice_sequences (client_id, seq) VALUES (:cid, 1)
+                    ON CONFLICT (client_id) DO UPDATE SET seq = invoice_sequences.seq + 1
+                    RETURNING seq
+                ");
+                $seqStmt->execute([':cid' => $clientId]);
+                $seq = (int)$seqStmt->fetchColumn();
+                $datePart = date('Ymd');
+                $invoiceNumber = "INV-{$clientId}-{$datePart}-" . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+
+                // Insert the invoice
+                $items = json_encode([
+                    ['name' => $product['name'], 'description' => $product['name'], 'amount' => (float)$product['price']],
+                ]);
+                $invStmt = $pdo->prepare("
+                    INSERT INTO invoices (client_id, invoice_number, amount, tax, total, status, paid_date, items, subscription_id, created_at)
+                    VALUES (:cid, :invnum, :amount, '0.00', :amount2, 'unpaid', NULL, :items, :subid, NOW())
+                ");
+                $invStmt->execute([
+                    ':cid'     => $clientId,
+                    ':invnum'  => $invoiceNumber,
+                    ':amount'  => $product['price'],
+                    ':amount2' => $product['price'],
+                    ':items'   => $items,
+                    ':subid'   => $subscriptionId,
+                ]);
+
+                $productName  = $product['name'];
+                $formatted    = number_format((float)$product['price'], 2);
+                $success_message = "Service added — {$productName} is PENDING. An invoice for \${$formatted} was created. It activates automatically once the client's balance covers the invoice (top-up).";
             }
-            $success_message = $msg;
         }
     }
 }
@@ -222,6 +254,8 @@ function getClientSubscriptions(PDO $pdo, int $clientId): array {
                             <td class="px-5 py-3">
                                 <?php if ($s['status'] === 'active'): ?>
                                     <span class="px-3 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">Active</span>
+                                <?php elseif ($s['status'] === 'pending'): ?>
+                                    <span class="px-3 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-700">Pending</span>
                                 <?php else: ?>
                                     <span class="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">Suspended</span>
                                 <?php endif; ?>
@@ -235,6 +269,8 @@ function getClientSubscriptions(PDO $pdo, int $clientId): array {
                                         <input type="hidden" name="status" value="suspended">
                                         <button type="submit" class="text-red-600 border border-red-200 hover:bg-red-50 rounded-md px-3 py-1 text-xs font-medium"
                                                 onclick="return confirm('Suspend this service?')">Suspend</button>
+                                    <?php elseif ($s['status'] === 'pending'): ?>
+                                        <span class="text-gray-500 text-xs">Awaiting payment</span>
                                     <?php else: ?>
                                         <input type="hidden" name="status" value="active">
                                         <button type="submit" class="text-green-600 border border-green-200 hover:bg-green-50 rounded-md px-3 py-1 text-xs font-medium"
