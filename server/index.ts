@@ -187,7 +187,8 @@ const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashb
   "dealer-customers.php", "dealer-customer-detail.php", "dealer-smtp.php", "dealer-payouts.php",
   "dealer-training.php", "dealer-profile.php", "dealer-spiffs.php",
   "admin-dealers.php", "admin-dealer-detail.php",
-  "admin-client-contacts.php", "admin-client-assets.php", "frontier-qualify.php"];
+  "admin-client-contacts.php", "admin-client-assets.php", "frontier-qualify.php",
+  "admin-billing-reminders.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -4240,14 +4241,15 @@ async function bootstrapPortalDatabase() {
     res.redirect(302, "/portal");
   });
 
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
-  }
-
   // ── Prepaid Balance Admin Endpoints ─────────────────────────────────
+  //
+  // NOTE: registered BEFORE the static/SPA handler below, deliberately.
+  // serveStatic() installs a catch-all that answers any unmatched path with
+  // index.html, so an API route declared after it is unreachable and returns the
+  // HTML shell with HTTP 200. This endpoint previously sat after that block.
+  //
+  // Consumed by admin-billing-reminders.php via the internal loopback origin,
+  // forwarding the admin session cookie.
 
   // POST /api/admin/balance-check/run — manual trigger for balance scheduler
   app.post("/api/admin/balance-check/run", async (req, res) => {
@@ -4268,6 +4270,13 @@ async function bootstrapPortalDatabase() {
       res.status(500).json({ error: e.message });
     }
   });
+
+  if (process.env.NODE_ENV === "production") {
+    serveStatic(app);
+  } else {
+    const { setupVite } = await import("./vite");
+    await setupVite(httpServer, app);
+  }
 
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(
