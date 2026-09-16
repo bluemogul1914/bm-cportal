@@ -188,7 +188,8 @@ const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashb
   "dealer-training.php", "dealer-profile.php", "dealer-spiffs.php",
   "admin-dealers.php", "admin-dealer-detail.php",
   "admin-client-contacts.php", "admin-client-assets.php", "frontier-qualify.php",
-  "admin-billing-reminders.php"];
+  "admin-billing-reminders.php",
+  "admin-client-services.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
