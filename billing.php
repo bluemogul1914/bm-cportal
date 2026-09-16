@@ -16,7 +16,11 @@ try {
     $stmt = $pdo->prepare("SELECT id FROM clients WHERE user_id = ?");
     $stmt->execute([$user_id]);
     $client = $stmt->fetch(PDO::FETCH_ASSOC);
-    $client_id = $client ? $client['id'] : $user_id;
+    // NEVER fall back to users.id: users.id and clients.id are different namespaces,
+    // and the old `: $user_id` fallback could render a DIFFERENT client's billing.
+    // null == this login has no linked client record; queries below then return empty.
+    $client_id = $client ? (int)$client['id'] : null;
+    $no_client_link = ($client_id === null);
 
     $status_filter = $_GET['status'] ?? 'all';
 
@@ -85,6 +89,17 @@ try {
         </header>
 
         <div class="p-6">
+            <?php if (!empty($no_client_link)): ?>
+                <div class="bg-yellow-100 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg text-sm mb-6">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    This login isn't linked to a client account, so no invoices are shown.
+                    <?php if (!empty($is_admin)): ?>
+                        View and manage client billing from the <a href="admin-invoices.php" class="underline font-medium">admin Invoices page</a>.
+                    <?php else: ?>
+                        Please contact support to link your account.
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 <div class="bg-white rounded-lg border border-gray-200 p-6">
                     <div class="flex items-center justify-between mb-3">

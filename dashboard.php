@@ -21,7 +21,10 @@ try {
     $stmt = $pdo->prepare("SELECT id FROM clients WHERE user_id = ?");
     $stmt->execute([$user_id]);
     $client = $stmt->fetch(PDO::FETCH_ASSOC);
-    $client_id = $client ? (int)$client['id'] : (int)$user_id;
+    // No `: $user_id` fallback — users.id and clients.id are different namespaces.
+    // null == unlinked login; the queries below then return empty (never another client's data).
+    $client_id = $client ? (int)$client['id'] : null;
+    $no_client_link = ($client_id === null);
 
     $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM tickets WHERE client_id = ? AND status != 'closed'");
     $stmt->execute([$client_id]);
