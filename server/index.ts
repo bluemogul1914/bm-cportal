@@ -20,7 +20,7 @@ import connectPgSimple from "connect-pg-simple";
 import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInquiry, dhOrderTracking, dhSearchCatalog, dhCreateSalesOrder, dhOrdersList } from "./dh-api";
 import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat } from "./bmai";
 import { syncAllSources } from "./network-sync";
-import { checkAllBalances, processPendingTopUps, chargeMonthlySubscriptions } from "./balance-scheduler";
+import { checkAllBalances, processPendingTopUps, chargeMonthlySubscriptions, activatePaidPendingSubscriptions } from "./balance-scheduler";
 import { generateReceiptPdfBuffer } from "./receipt-pdf";
 import { generateQuotePdfBuffer } from "./quote-pdf";
 import { normalizeLineItems } from "./line-items";
@@ -4279,10 +4279,12 @@ const PORTAL_SAFE_MODE =
     }
     try {
       const charged = await chargeMonthlySubscriptions(webhookPool);
+      const activated = await activatePaidPendingSubscriptions(webhookPool);
       const results = await checkAllBalances(webhookPool);
       const recovered = await processPendingTopUps(webhookPool);
       res.json({
         charged: charged.length,
+        activated: activated.length,
         clients_checked: results.length,
         suspended: results.filter((r: any) => r.actions.includes("suspended_at_zero_balance")).length,
         warned: results.filter((r: any) => r.actions.includes("low_balance_warned")).length,
@@ -4348,6 +4350,8 @@ const PORTAL_SAFE_MODE =
           log("[balance-scheduler] Checking client balances...");
           const charged = await chargeMonthlySubscriptions(webhookPool);
           if (charged.length) log(`[balance-scheduler] Charged ${charged.length} client(s) for monthly subscriptions`);
+          const activated = await activatePaidPendingSubscriptions(webhookPool);
+          if (activated.length) log(`[balance-scheduler] Activated ${activated.length} pending subscription(s) after balance top-up`);
           const results = await checkAllBalances(webhookPool);
           const suspended = results.filter((r: any) => r.actions.includes("suspended_at_zero_balance"));
           const warned = results.filter((r: any) => r.actions.includes("low_balance_warned"));
