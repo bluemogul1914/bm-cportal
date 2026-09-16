@@ -12,6 +12,7 @@ export async function runPortalMigrations() {
     // Phase 1 — extend invoices table
     await db.execute(sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS line_items JSONB`);
     await db.execute(sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP`);
+    await db.execute(sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subscription_id INTEGER REFERENCES subscriptions(id)`);
     await db.execute(sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS stripe_payment_id VARCHAR(200)`);
 
     // Phase 1 — create contacts table

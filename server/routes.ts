@@ -639,6 +639,56 @@ export async function registerRoutes(
     }
   });
 
+  // POST /api/admin/service-invoice/checkout — mint Stripe Checkout for unpaid service invoice
+  app.post("/api/admin/service-invoice/checkout", async (req, res) => {
+    try {
+      if (!(req as any).session?.portalUser?.is_admin) {
+        return res.status(403).json({ error: "Admin only" });
+      }
+      const invoiceId = parseInt(req.body?.invoice_id, 10);
+      if (!invoiceId) return res.status(400).json({ error: "invoice_id required" });
+
+      const inv = await pool.query(
+        `SELECT id, invoice_number, total, status, client_id, subscription_id
+         FROM invoices WHERE id = $1`, [invoiceId]
+      );
+      if (!inv.rows.length) return res.status(404).json({ error: "Invoice not found" });
+      const row = inv.rows[0];
+      if (row.status === "paid") return res.json({ url: null, already_paid: true });
+      if (!row.subscription_id) return res.status(400).json({ error: "Invoice has no associated subscription" });
+
+      const stripe = await getUncachableStripeClient();
+      const session = await stripe.checkout.sessions.create({
+        line_items: [{
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: `Service activation - invoice ${row.invoice_number}`,
+              description: "First-month service payment",
+            },
+            unit_amount: Math.round(parseFloat(row.total) * 100),
+          },
+          quantity: 1,
+        }],
+        mode: "payment",
+        billing_address_collection: "required",
+        metadata: {
+          type: "service_invoice",
+          invoice_id: String(row.id),
+          subscription_id: String(row.subscription_id),
+          client_id: String(row.client_id),
+        },
+        success_url: `${req.protocol}://${req.get("host")}/portal/billing.php?invoice=paid`,
+        cancel_url:  `${req.protocol}://${req.get("host")}/portal/billing.php?invoice=cancelled`,
+      });
+
+      res.json({ url: session.url });
+    } catch (error: any) {
+      console.error("Service-invoice checkout error:", error);
+      res.status(500).json({ error: "Failed to create service-invoice checkout session" });
+    }
+  });
+
   // ── Prepaid Balance & Transaction Ledger ──────────────────────────────
 
   // GET /api/admin/clients/:id/balance — get client balance info (admin only)

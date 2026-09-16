@@ -19,6 +19,9 @@ $pdo = getDB();
 $success_message = '';
 $error_message = '';
 
+// Loopback origin for calling the Node API (Stripe service-invoice checkout)
+$internalOrigin = 'http://127.0.0.1:' . (getenv('PORT') ?: '3000');
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     require_csrf();
 
@@ -37,33 +40,140 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
     }
 
-    // ── Add a service to a client ─────────────────────────────────────
+    // ── Add a service to a client (order → invoice → paid → active) ────
     elseif ($action === 'add_subscription') {
         $clientId  = (int)($_POST['client_id'] ?? 0);
         $productId = (int)($_POST['product_id'] ?? 0);
         if ($clientId <= 0 || $productId <= 0) {
             $error_message = 'Invalid client or product selection.';
         } else {
-            // Check if client is suspended
-            $cStmt = $pdo->prepare("SELECT status FROM clients WHERE id = :id");
-            $cStmt->execute([':id' => $clientId]);
-            $client = $cStmt->fetch(PDO::FETCH_ASSOC);
+            $pStmt = $pdo->prepare("SELECT name, price FROM products WHERE id = :id");
+            $pStmt->execute([':id' => $productId]);
+            $product = $pStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$product) {
+                $error_message = 'Product not found.';
+            } else {
+                $price = (float)$product['price'];
 
-            $stmt = $pdo->prepare("
-                INSERT INTO subscriptions (client_id, product_id, status, start_date, mrr, created_at, updated_at)
-                VALUES (:client_id, :product_id, 'active', CURRENT_DATE,
-                        (SELECT price FROM products WHERE id = :product_id2), NOW(), NOW())
-            ");
-            $stmt->execute([
-                ':client_id'   => $clientId,
-                ':product_id'  => $productId,
-                ':product_id2' => $productId,
-            ]);
-            $msg = 'Service added successfully.';
-            if ($client && ($client['status'] ?? 'active') === 'suspended') {
-                $msg .= ' Note: this client is currently suspended — the new service is active and will be charged on the next balance check.';
+                $bStmt = $pdo->prepare("SELECT COALESCE(credit_balance,0) AS bal FROM clients WHERE id = :id");
+                $bStmt->execute([':id' => $clientId]);
+                $balance = (float)($bStmt->fetchColumn() ?: 0);
+
+                // 1) Create a PENDING subscription (not active until the invoice is paid)
+                $stmt = $pdo->prepare("
+                    INSERT INTO subscriptions (client_id, product_id, status, start_date, mrr, created_at, updated_at)
+                    VALUES (:client_id, :product_id, 'pending', CURRENT_DATE, :price, NOW(), NOW())
+                    RETURNING id
+                ");
+                $stmt->execute([':client_id' => $clientId, ':product_id' => $productId, ':price' => $price]);
+                $subscriptionId = (int)$stmt->fetchColumn();
+
+                // 2) Invoice number via invoice_sequences
+                $seqStmt = $pdo->prepare("
+                    INSERT INTO invoice_sequences (client_id, seq) VALUES (:cid, 1)
+                    ON CONFLICT (client_id) DO UPDATE SET seq = invoice_sequences.seq + 1
+                    RETURNING seq
+                ");
+                $seqStmt->execute([':cid' => $clientId]);
+                $seq = (int)$seqStmt->fetchColumn();
+                $invoiceNumber = "INV-{$clientId}-" . date('Ymd') . "-" . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+
+                // 3) Create an UNPAID invoice linked to the subscription
+                $items = json_encode([['name' => $product['name'], 'description' => 'First month service', 'amount' => $price]]);
+                $invStmt = $pdo->prepare("
+                    INSERT INTO invoices (client_id, invoice_number, amount, tax, total, status, paid_date, items, notes, subscription_id, created_at)
+                    VALUES (:cid, :invnum, :amount, '0.00', :amount2, 'unpaid', NULL, :items, :notes, :subid, NOW())
+                ");
+                $invStmt->execute([
+                    ':cid'     => $clientId,
+                    ':invnum'  => $invoiceNumber,
+                    ':amount'  => $price,
+                    ':amount2' => $price,
+                    ':items'   => $items,
+                    ':notes'   => 'Service order: ' . $product['name'],
+                    ':subid'   => $subscriptionId,
+                ]);
+                $invoiceId = (int)$pdo->lastInsertId();
+
+                if ($balance >= $price) {
+                    // WALLET SETTLE: debit the prepaid balance, mark paid, activate
+                    $after = $balance - $price;
+                    $pdo->prepare("UPDATE clients SET credit_balance = :b, last_charged_at = NOW(), updated_at = NOW() WHERE id = :id")
+                        ->execute([':b' => $after, ':id' => $clientId]);
+                    $pdo->prepare("
+                        INSERT INTO transaction_ledger (client_id, type, amount, balance_before, balance_after, description, metadata, created_at)
+                        VALUES (:cid, 'charge', :amt, :before, :after, :desc, :meta, NOW())
+                    ")->execute([
+                        ':cid'    => $clientId,
+                        ':amt'    => $price,
+                        ':before' => $balance,
+                        ':after'  => $after,
+                        ':desc'   => 'First month - ' . $product['name'],
+                        ':meta'   => json_encode(['method' => 'service_order', 'subscription_id' => $subscriptionId, 'invoice_id' => $invoiceId]),
+                    ]);
+                    $pdo->prepare("UPDATE invoices SET status = 'paid', paid_date = CURRENT_DATE, paid_at = NOW() WHERE id = :id")
+                        ->execute([':id' => $invoiceId]);
+                    $pdo->prepare("UPDATE subscriptions SET status = 'active', updated_at = NOW() WHERE id = :id")
+                        ->execute([':id' => $subscriptionId]);
+                    $success_message = $product['name'] . ' activated — $' . number_format($price, 2) . ' paid from the prepaid balance.';
+                } else {
+                    // INSUFFICIENT BALANCE: stay pending + unpaid, mint a Stripe Checkout
+                    $payUrl = '';
+                    $ch = curl_init($internalOrigin . '/api/admin/service-invoice/checkout');
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST           => true,
+                        CURLOPT_TIMEOUT        => 30,
+                        CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
+                        CURLOPT_COOKIE         => 'connect.sid=' . ($_COOKIE['connect.sid'] ?? ''),
+                        CURLOPT_POSTFIELDS     => json_encode(['invoice_id' => $invoiceId]),
+                    ]);
+                    $resp = curl_exec($ch);
+                    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    $cerr = curl_error($ch);
+                    curl_close($ch);
+                    if (!$cerr && $http === 200) {
+                        $data = json_decode((string)$resp, true);
+                        if (!empty($data['url'])) { $payUrl = $data['url']; }
+                    }
+                    if ($payUrl !== '') {
+                        $success_message = 'Invoice ' . $invoiceNumber . ' created for $' . number_format($price, 2)
+                            . ' — <a href="' . htmlspecialchars($payUrl) . '" target="_blank" class="underline text-blue-600">Pay now to activate</a>.';
+                    } else {
+                        $success_message = 'Invoice ' . $invoiceNumber . ' created for $' . number_format($price, 2)
+                            . ' (unpaid). The service activates once it is paid.';
+                    }
+                }
             }
-            $success_message = $msg;
+        }
+    }
+
+    // ── Pay a service invoice (mints Stripe Checkout, then redirects) ────
+    elseif ($action === 'pay_invoice') {
+        $invoiceId = (int)($_POST['invoice_id'] ?? 0);
+        if ($invoiceId <= 0) {
+            $error_message = 'Invalid invoice.';
+        } else {
+            $ch = curl_init($internalOrigin . '/api/admin/service-invoice/checkout');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST           => true,
+                CURLOPT_TIMEOUT        => 30,
+                CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
+                CURLOPT_COOKIE         => 'connect.sid=' . ($_COOKIE['connect.sid'] ?? ''),
+                CURLOPT_POSTFIELDS     => json_encode(['invoice_id' => $invoiceId]),
+            ]);
+            $resp = curl_exec($ch);
+            $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $cerr = curl_error($ch);
+            curl_close($ch);
+            $data = json_decode((string)$resp, true);
+            if (!$cerr && $http === 200 && !empty($data['url'])) {
+                header('Location: ' . $data['url']);
+                exit;
+            } else {
+                $error_message = 'Could not create a payment link. Please try again.';
+            }
         }
     }
 }
@@ -89,9 +199,14 @@ $products = $pdo->query("
 // Per-client subscriptions — lazy-loaded inside the loop
 function getClientSubscriptions(PDO $pdo, int $clientId): array {
     $stmt = $pdo->prepare("
-        SELECT s.id, s.status, s.mrr, s.start_date, p.name, p.category
+        SELECT s.id, s.status, s.mrr, s.start_date, p.name, p.category,
+               i.id AS invoice_id, i.invoice_number, i.status AS invoice_status
         FROM subscriptions s
         JOIN products p ON p.id = s.product_id
+        LEFT JOIN LATERAL (
+            SELECT id, invoice_number, status FROM invoices
+            WHERE subscription_id = s.id ORDER BY id DESC LIMIT 1
+        ) i ON true
         WHERE s.client_id = :id
         ORDER BY p.category, p.name
     ");
@@ -222,25 +337,39 @@ function getClientSubscriptions(PDO $pdo, int $clientId): array {
                             <td class="px-5 py-3">
                                 <?php if ($s['status'] === 'active'): ?>
                                     <span class="px-3 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">Active</span>
+                                <?php elseif ($s['status'] === 'pending'): ?>
+                                    <span class="px-3 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-700">Pending</span>
                                 <?php else: ?>
                                     <span class="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">Suspended</span>
                                 <?php endif; ?>
                             </td>
                             <td class="px-5 py-3 text-right">
-                                <form method="POST" class="inline">
-                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
-                                    <input type="hidden" name="action" value="set_status">
-                                    <input type="hidden" name="subscription_id" value="<?= (int)$s['id'] ?>">
-                                    <?php if ($s['status'] === 'active'): ?>
-                                        <input type="hidden" name="status" value="suspended">
-                                        <button type="submit" class="text-red-600 border border-red-200 hover:bg-red-50 rounded-md px-3 py-1 text-xs font-medium"
-                                                onclick="return confirm('Suspend this service?')">Suspend</button>
-                                    <?php else: ?>
-                                        <input type="hidden" name="status" value="active">
-                                        <button type="submit" class="text-green-600 border border-green-200 hover:bg-green-50 rounded-md px-3 py-1 text-xs font-medium"
-                                                onclick="return confirm('Activate this service?')">Activate</button>
+                                <?php if ($s['status'] === 'pending'): ?>
+                                    <?php if (!empty($s['invoice_number'])): ?>
+                                        <span class="text-xs text-gray-500 mr-2"><?= htmlspecialchars($s['invoice_number']) ?> (<?= htmlspecialchars($s['invoice_status'] ?? 'unpaid') ?>)</span>
                                     <?php endif; ?>
-                                </form>
+                                    <form method="POST" class="inline">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
+                                        <input type="hidden" name="action" value="pay_invoice">
+                                        <input type="hidden" name="invoice_id" value="<?= (int)($s['invoice_id'] ?? 0) ?>">
+                                        <button type="submit" class="rounded-md bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 text-xs font-medium">Pay now</button>
+                                    </form>
+                                <?php else: ?>
+                                    <form method="POST" class="inline">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
+                                        <input type="hidden" name="action" value="set_status">
+                                        <input type="hidden" name="subscription_id" value="<?= (int)$s['id'] ?>">
+                                        <?php if ($s['status'] === 'active'): ?>
+                                            <input type="hidden" name="status" value="suspended">
+                                            <button type="submit" class="text-red-600 border border-red-200 hover:bg-red-50 rounded-md px-3 py-1 text-xs font-medium"
+                                                    onclick="return confirm('Suspend this service?')">Suspend</button>
+                                        <?php else: ?>
+                                            <input type="hidden" name="status" value="active">
+                                            <button type="submit" class="text-green-600 border border-green-200 hover:bg-green-50 rounded-md px-3 py-1 text-xs font-medium"
+                                                    onclick="return confirm('Activate this service?')">Activate</button>
+                                        <?php endif; ?>
+                                    </form>
+                                <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>

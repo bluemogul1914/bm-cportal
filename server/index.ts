@@ -20,7 +20,7 @@ import connectPgSimple from "connect-pg-simple";
 import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInquiry, dhOrderTracking, dhSearchCatalog, dhCreateSalesOrder, dhOrdersList } from "./dh-api";
 import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat } from "./bmai";
 import { syncAllSources } from "./network-sync";
-import { checkAllBalances, processPendingTopUps, chargeMonthlySubscriptions } from "./balance-scheduler";
+import { checkAllBalances, processPendingTopUps, processPendingServiceInvoices, activatePaidPendingSubscriptions, chargeMonthlySubscriptions } from "./balance-scheduler";
 import { generateReceiptPdfBuffer } from "./receipt-pdf";
 import { generateQuotePdfBuffer } from "./quote-pdf";
 import { normalizeLineItems } from "./line-items";
@@ -4281,6 +4281,8 @@ const PORTAL_SAFE_MODE =
       const charged = await chargeMonthlySubscriptions(webhookPool);
       const results = await checkAllBalances(webhookPool);
       const recovered = await processPendingTopUps(webhookPool);
+      const activated = await processPendingServiceInvoices(webhookPool);
+      const walletActivated = await activatePaidPendingSubscriptions(webhookPool);
       res.json({
         charged: charged.length,
         clients_checked: results.length,
@@ -4288,6 +4290,8 @@ const PORTAL_SAFE_MODE =
         warned: results.filter((r: any) => r.actions.includes("low_balance_warned")).length,
         restored: results.filter((r: any) => r.actions.includes("suspension_cleared_topup")).length,
         topups_recovered: recovered,
+        service_invoices_activated: activated,
+        wallet_activated: walletActivated.length,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -4360,6 +4364,14 @@ const PORTAL_SAFE_MODE =
           // Recover any missed top-ups from Stripe (webhook fallback)
           const recovered = await processPendingTopUps(webhookPool);
           if (recovered > 0) log(`[balance-scheduler] Recovered ${recovered} missed top-up(s) from Stripe`);
+
+          // Activate any pending service invoices (invoice-gated activation recovery)
+          const serviceActivated = await processPendingServiceInvoices(webhookPool);
+          if (serviceActivated > 0) log(`[balance-scheduler] Activated ${serviceActivated} service invoice(s) from Stripe`);
+
+          // Activate any pending services now covered by the prepaid wallet
+          const walletActivated = await activatePaidPendingSubscriptions(webhookPool);
+          if (walletActivated.length) log(`[balance-scheduler] Activated ${walletActivated.length} pending subscription(s) from prepaid balance`);
         } catch (e: any) {
           console.error("[balance-scheduler] Error:", e.message);
         }
