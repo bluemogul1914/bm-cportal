@@ -4015,11 +4015,31 @@ async function bootstrapPortalDatabase() {
   }
 }
 
+/**
+ * PORTAL_SAFE_MODE — boot the app WITHOUT mutating the database it points at.
+ *
+ * The local preview (jcode-web-ui/start-preview-server.sh) resolves the SAME
+ * DATABASE_URL as production. A plain boot there therefore applied migrations,
+ * ran the seed, built the Stripe schema, and then fired the network-sync and
+ * balance-check schedulers — which suspend clients at $0 and send real email —
+ * against live data, from whichever branch happened to be checked out.
+ *
+ * Set PORTAL_SAFE_MODE=1 in any environment that shares a production database
+ * but must not write to it. Unset is the default, and preserves production
+ * behaviour exactly: migrations and schedulers run as before.
+ */
+const PORTAL_SAFE_MODE =
+  process.env.PORTAL_SAFE_MODE === "1" || process.env.PORTAL_SAFE_MODE === "true";
+
 (async () => {
-  await bootstrapPortalDatabase();
-  await runPortalMigrations();
-  await seed().catch((err) => console.error("Seed failed:", err));
-  await initStripe();
+  if (PORTAL_SAFE_MODE) {
+    log("[safe-mode] PORTAL_SAFE_MODE=1 — skipping bootstrap, migrations, seed, Stripe init and schedulers");
+  } else {
+    await bootstrapPortalDatabase();
+    await runPortalMigrations();
+    await seed().catch((err) => console.error("Seed failed:", err));
+    await initStripe();
+  }
   await registerRoutes(httpServer, app);
 
   // ── Invoice PDF Download ───────────────────────────────────────────
@@ -4304,11 +4324,17 @@ async function bootstrapPortalDatabase() {
         }
       }
 
-      // Run first sync 5 minutes after boot, then every 24 hours
-      setTimeout(() => {
-        runDailySync();
-        setInterval(runDailySync, DAILY_MS);
-      }, 5 * 60 * 1000);
+      // Run first sync 5 minutes after boot, then every 24 hours.
+      // Disabled in safe mode: against a shared production database this would
+      // mutate live records from an unreviewed branch.
+      if (PORTAL_SAFE_MODE) {
+        log("[safe-mode] network-sync scheduler disabled");
+      } else {
+        setTimeout(() => {
+          runDailySync();
+          setInterval(runDailySync, DAILY_MS);
+        }, 5 * 60 * 1000);
+      }
 
       // ── Scheduled balance check (every 30 minutes) ─────────────────────
       // Checks low balances, auto-suspend at $0, clears warnings on top-up.
@@ -4334,11 +4360,18 @@ async function bootstrapPortalDatabase() {
         }
       }
 
-      // Run first check 10 minutes after boot, then every 30 minutes
-      setTimeout(() => {
-        runBalanceCheck();
-        setInterval(runBalanceCheck, BALANCE_CHECK_MS);
-      }, 10 * 60 * 1000);
+      // Run first check 10 minutes after boot, then every 30 minutes.
+      // Disabled in safe mode: this is what suspends clients at $0 and sends
+      // real reminder email, so it must never fire from a preview sharing the
+      // production database.
+      if (PORTAL_SAFE_MODE) {
+        log("[safe-mode] balance-check scheduler disabled");
+      } else {
+        setTimeout(() => {
+          runBalanceCheck();
+          setInterval(runBalanceCheck, BALANCE_CHECK_MS);
+        }, 10 * 60 * 1000);
+      }
     },
   );
 })();
