@@ -39,6 +39,35 @@ one final notice sent; top-up clears flag. No postpaid "past due" logic anywhere
   invoice detail AND client portal invoice view. Used for top-up receipts (item #1) and any manual invoice.
 Acceptance: a client can download a branded PDF of any receipt/invoice from their portal.
 
+### 2b. Prepaid multi-service subscriptions (Fiber / VoIP / V2Cloud / RMM / Managed-IT)
+Extends #1 so a client's prepaid wallet funds MULTIPLE service lines they subscribe to.
+**Decisions (user, 2026-09-16 — "your recommendations"):** ONE shared wallet per
+client funding all lines; full month prepaid at activation + every 30 days; service-line
+categories use the exact names **Fiber / VoIP / V2Cloud / RMM / Managed-IT**; whole-account
+suspend at $0 (per-service suspend is a UI toggle that drops that line out of the charge).
+
+Model:
+- Products carry `category` in one of the five names (re-map the existing
+  Internet→Fiber, Cloud→V2Cloud, Managed IT→RMM+Managed-IT as needed) with a monthly `price`.
+- `subscriptions` (client_id→product_id, status, mrr) is the client↔service link — one row per
+  service per client. "Linked to the client account" = these rows.
+- New scheduler step `chargeMonthlySubscriptions(pool)` runs before `checkAllBalances`:
+  per client with ≥1 active subscription, `monthlyTotal = SUM(mrr)`; charge when
+  `clients.last_charged_at` is NULL (first active sub → charge immediately) or
+  `now - last_charged_at >= 30 days`. Charge via existing `recordTransaction(type:'charge')`
+  so the wallet drops and the existing low-balance/suspend-at-$0/top-up-reactivate logic
+  is untouched. `recordTransaction` already floors at $0 → that IS the suspend trigger.
+- Schema: add `clients.last_charged_at timestamptz` (nullable) via `ADD COLUMN IF NOT EXISTS`.
+- Wire the new step into `POST /api/admin/balance-check/run` AND the daily cron, before balances.
+- P1 admin **Client Services** page: per client, list subscriptions grouped by line with an
+  Active/Suspended toggle + monthly total, beside the prepaid balance (extends
+  `admin-billing-reminders.php`).
+- P1 client-portal **My Services** view: their services, balance, top-up.
+
+Acceptance: a client with Fiber+VoIP+RMM subscriptions receives ONE monthly charge = the sum
+once every 30 days; at $0 the account suspends (blocks login); a top-up reactivates it; a
+service suspended in the UI drops out of the next monthly charge.
+
 ## P1 — Field ops (before Alaska installs)
 
 ### 3. Field work orders + checklists + scheduling
