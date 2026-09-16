@@ -68,6 +68,37 @@ Acceptance: a client with Fiber+VoIP+RMM subscriptions receives ONE monthly char
 once every 30 days; at $0 the account suspends (blocks login); a top-up reactivates it; a
 service suspended in the UI drops out of the next monthly charge.
 
+### 2c. Invoice-gated service activation (order → invoice → paid → active)
+Extends #2b. A service never goes ACTIVE unpaid. **Decision (user, 2026-09-16 — "Both"):**
+the prepaid wallet settles the order if it has enough funds; otherwise a Stripe invoice
+covers the remainder. No separate AR/dunning — the "invoice" is the first-month commitment.
+
+Flow (ordering a service = the "Add service" action in Client Services):
+- Create `subscriptions.status='pending'` (this is EXCLUDED from the monthly wallet charge —
+  `chargeMonthlySubscriptions` already JOINs on `status='active'`).
+- Create an `invoices` row (status `unpaid`, amount = product price, `subscription_id` linked,
+  `invoice_number` via `invoice_sequences` — mirror the pattern in `processPendingTopUps`).
+- Activation gate, in order:
+  1. If `clients.credit_balance >= invoice total` → settle FROM the wallet
+     (`recordTransaction` charge to the client wallet, mark invoice `paid` + `paid_date`,
+     set subscription `active`). Success: "X activated — $Y paid from your prepaid balance."
+  2. Else → subscription stays `pending`, invoice `unpaid`, and a **Stripe Checkout** is created
+     for the invoice amount with metadata `{type:'service_invoice', invoice_id, subscription_id}`.
+     Return the Checkout URL to the page as the "Pay $X to activate" action.
+- Activation on Stripe payment: new poll fn `processPendingServiceInvoices(pool)` (mirrors
+  `processPendingTopUps`) — lists completed Stripe sessions with `service_invoice` metadata,
+  marks the invoice `paid`, sets the subscription `active`, appends a ledger receipt.
+  Wired into `POST /api/admin/balance-check/run` + the daily cron alongside the top-up poll.
+- New admin-only endpoint `POST /api/admin/service-invoice/checkout` (mirrors
+  `/api/top-up/checkout`, routes.ts:598) so the PHP page can mint the Stripe URL.
+
+UI (Client Services): `pending` renders as an amber **Pending** badge (not Active/Suspended);
+a pending subscription shows its invoice + a **Pay** link and cannot be toggled until active.
+
+Acceptance: adding a service fully covered by the wallet activates instantly and settles the
+invoice from the wallet; adding an under-funded service creates an unpaid invoice + Stripe
+link and stays pending until paid; the scheduler never charges pending subscriptions.
+
 ## P1 — Field ops (before Alaska installs)
 
 ### 3. Field work orders + checklists + scheduling

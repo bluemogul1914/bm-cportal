@@ -204,6 +204,87 @@ export async function chargeMonthlySubscriptions(pool: pg.Pool): Promise<Monthly
   return results;
 }
 
+// ── Pending activation on balance (wallet settle) ──────────────────────────
+
+export interface PendingActivationResult { subscriptionId: number; clientId: number; productName: string; amount: number; }
+
+/**
+ * Activate pending subscriptions whose linked unpaid invoice is now covered
+ * by the client's prepaid balance (the "wallet settles" half of the
+ * order → invoice → paid-before-active gate).
+ *
+ * Services are added as 'pending' with an 'unpaid' invoice. When the balance
+ * >= invoice amount, the balance is charged and both the invoice and the
+ * subscription flip to paid/active. Subscriptions whose invoice is instead
+ * paid via Stripe are handled by processPendingServiceInvoices().
+ */
+export async function activatePaidPendingSubscriptions(pool: pg.Pool): Promise<PendingActivationResult[]> {
+  const results: PendingActivationResult[] = [];
+
+  try {
+    const { rows: candidates } = await pool.query(`
+      SELECT s.id AS subscription_id, s.client_id, i.id AS invoice_id,
+             i.amount::numeric AS inv_amount, p.name AS product_name,
+             COALESCE(c.credit_balance, 0)::numeric AS balance
+      FROM subscriptions s
+      JOIN clients c    ON c.id = s.client_id
+      JOIN products p   ON p.id = s.product_id
+      JOIN invoices i   ON i.subscription_id = s.id
+      WHERE s.status = 'pending' AND i.status = 'unpaid'
+    `);
+
+    for (const row of candidates) {
+      try {
+        const invAmount = parseFloat(row.inv_amount);
+        const balance   = parseFloat(row.balance);
+        const subId     = row.subscription_id;
+        const clientId  = row.client_id;
+        const invoiceId = row.invoice_id;
+        const prodName  = row.product_name;
+
+        if (balance < invAmount) continue;
+
+        // Charge the client's prepaid balance for the first month
+        await recordTransaction(pool, {
+          clientId,
+          type: "charge",
+          amount: invAmount,
+          description: `Service activation - ${prodName}`,
+          metadata: { method: "pending_activation", subscription_id: subId, invoice_id: invoiceId },
+        });
+
+        // Mark invoice as paid
+        await pool.query(
+          `UPDATE invoices SET status = 'paid', paid_date = CURRENT_DATE, paid_at = NOW() WHERE id = $1`,
+          [invoiceId]
+        );
+
+        // Activate the subscription
+        await pool.query(
+          `UPDATE subscriptions SET status = 'active', updated_at = NOW() WHERE id = $1`,
+          [subId]
+        );
+
+        // Set last_charged_at so chargeMonthlySubscriptions doesn't
+        // double-charge on the next cycle (it treats NULL as "due now").
+        await pool.query(
+          `UPDATE clients SET last_charged_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          [clientId]
+        );
+
+        results.push({ subscriptionId: subId, clientId, productName: prodName, amount: invAmount });
+        console.log(`[pending-activation] Subscription ${subId} (${prodName}) activated for client ${clientId}: $${invAmount.toFixed(2)} charged from balance`);
+      } catch (e: any) {
+        console.error(`[pending-activation] Error activating subscription ${row.subscription_id} for client ${row.client_id}:`, e.message);
+      }
+    }
+  } catch (e: any) {
+    console.error("[pending-activation] Error querying pending subscriptions:", e.message);
+  }
+
+  return results;
+}
+
 // ── Balance check ────────────────────────────────────────────────────────────
 
 /**
@@ -411,4 +492,71 @@ export async function processPendingTopUps(pool: pg.Pool): Promise<number> {
   }
 
   return processed;
+}
+
+/**
+ * Poll Stripe for completed checkout sessions with service_invoice metadata
+ * that haven't been processed yet. Returns count activated.
+ *
+ * Mirror of processPendingTopUps for the invoice-gated activation flow.
+ * When a service invoice's Stripe Checkout is completed, this marks the
+ * invoice paid, activates the subscription, and seeds the 30-day wallet
+ * cycle so month-1 is not double-charged.
+ */
+export async function processPendingServiceInvoices(pool: pg.Pool): Promise<number> {
+  let activated = 0;
+
+  try {
+    const { getUncachableStripeClient } = await import("./stripeClient");
+    const stripe = await getUncachableStripeClient();
+
+    const { data: sessions } = await stripe.checkout.sessions.list({
+      limit: 100,
+      status: "complete",
+      expand: ["data.payment_intent"],
+    });
+
+    for (const session of sessions) {
+      const m = session.metadata || {};
+      if (m.type !== "service_invoice") continue;
+      if (session.payment_status !== "paid") continue;
+
+      const invoiceId = parseInt(m.invoice_id, 10);
+      const subId = parseInt(m.subscription_id, 10);
+      if (!invoiceId || !subId) continue;
+
+      // Already processed?
+      const already = await pool.query(
+        `SELECT id FROM invoices WHERE id=$1 AND status='paid'`, [invoiceId]
+      );
+      if (already.rows.length) continue;
+
+      const pi = session.payment_intent as any;
+      const piId = typeof pi === "string" ? pi : (pi?.id ?? null);
+
+      // Mark invoice paid (invoices table has no updated_at or stripe_session_id column)
+      await pool.query(
+        `UPDATE invoices SET status='paid', paid_date=CURRENT_DATE, stripe_payment_id=$2 WHERE id=$1`,
+        [invoiceId, piId]
+      );
+
+      // Activate subscription
+      await pool.query(
+        `UPDATE subscriptions SET status='active', updated_at=NOW() WHERE id=$1`, [subId]
+      );
+
+      // Seed the client's 30-day recurring wallet cycle so month-1 is NOT double-charged
+      await pool.query(
+        `UPDATE clients SET last_charged_at=NOW(), updated_at=NOW() WHERE id=$1`,
+        [parseInt(m.client_id, 10) || 0]
+      );
+
+      activated++;
+      console.log(`[service-invoice] Activated subscription ${subId} via invoice ${invoiceId} (session ${session.id})`);
+    }
+  } catch (e: any) {
+    console.error("[service-invoice] Error:", e.message);
+  }
+
+  return activated;
 }
