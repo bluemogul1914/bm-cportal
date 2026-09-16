@@ -10,6 +10,7 @@
  * and the account is suspended at $0. A top-up restores it.
  */
 require_once 'config.php';
+require_once __DIR__ . '/includes/service-order.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['is_admin'] ?? false) !== true) {
     portal_redirect('/portal');
@@ -47,103 +48,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         if ($clientId <= 0 || $productId <= 0) {
             $error_message = 'Invalid client or product selection.';
         } else {
-            $pStmt = $pdo->prepare("SELECT name, price FROM products WHERE id = :id");
-            $pStmt->execute([':id' => $productId]);
-            $product = $pStmt->fetch(PDO::FETCH_ASSOC);
-            if (!$product) {
-                $error_message = 'Product not found.';
-            } else {
-                $price = (float)$product['price'];
-
-                $bStmt = $pdo->prepare("SELECT COALESCE(credit_balance,0) AS bal FROM clients WHERE id = :id");
-                $bStmt->execute([':id' => $clientId]);
-                $balance = (float)($bStmt->fetchColumn() ?: 0);
-
-                // 1) Create a PENDING subscription (not active until the invoice is paid)
-                $stmt = $pdo->prepare("
-                    INSERT INTO subscriptions (client_id, product_id, status, start_date, mrr, created_at, updated_at)
-                    VALUES (:client_id, :product_id, 'pending', CURRENT_DATE, :price, NOW(), NOW())
-                    RETURNING id
-                ");
-                $stmt->execute([':client_id' => $clientId, ':product_id' => $productId, ':price' => $price]);
-                $subscriptionId = (int)$stmt->fetchColumn();
-
-                // 2) Invoice number via invoice_sequences
-                $seqStmt = $pdo->prepare("
-                    INSERT INTO invoice_sequences (client_id, seq) VALUES (:cid, 1)
-                    ON CONFLICT (client_id) DO UPDATE SET seq = invoice_sequences.seq + 1
-                    RETURNING seq
-                ");
-                $seqStmt->execute([':cid' => $clientId]);
-                $seq = (int)$seqStmt->fetchColumn();
-                $invoiceNumber = "INV-{$clientId}-" . date('Ymd') . "-" . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
-
-                // 3) Create an UNPAID invoice linked to the subscription
-                $items = json_encode([['name' => $product['name'], 'description' => 'First month service', 'amount' => $price]]);
-                $invStmt = $pdo->prepare("
-                    INSERT INTO invoices (client_id, invoice_number, amount, tax, total, status, paid_date, items, notes, subscription_id, created_at)
-                    VALUES (:cid, :invnum, :amount, '0.00', :amount2, 'unpaid', NULL, :items, :notes, :subid, NOW())
-                ");
-                $invStmt->execute([
-                    ':cid'     => $clientId,
-                    ':invnum'  => $invoiceNumber,
-                    ':amount'  => $price,
-                    ':amount2' => $price,
-                    ':items'   => $items,
-                    ':notes'   => 'Service order: ' . $product['name'],
-                    ':subid'   => $subscriptionId,
-                ]);
-                $invoiceId = (int)$pdo->lastInsertId();
-
-                if ($balance >= $price) {
-                    // WALLET SETTLE: debit the prepaid balance, mark paid, activate
-                    $after = $balance - $price;
-                    $pdo->prepare("UPDATE clients SET credit_balance = :b, last_charged_at = NOW(), updated_at = NOW() WHERE id = :id")
-                        ->execute([':b' => $after, ':id' => $clientId]);
-                    $pdo->prepare("
-                        INSERT INTO transaction_ledger (client_id, type, amount, balance_before, balance_after, description, metadata, created_at)
-                        VALUES (:cid, 'charge', :amt, :before, :after, :desc, :meta, NOW())
-                    ")->execute([
-                        ':cid'    => $clientId,
-                        ':amt'    => $price,
-                        ':before' => $balance,
-                        ':after'  => $after,
-                        ':desc'   => 'First month - ' . $product['name'],
-                        ':meta'   => json_encode(['method' => 'service_order', 'subscription_id' => $subscriptionId, 'invoice_id' => $invoiceId]),
-                    ]);
-                    $pdo->prepare("UPDATE invoices SET status = 'paid', paid_date = CURRENT_DATE, paid_at = NOW() WHERE id = :id")
-                        ->execute([':id' => $invoiceId]);
-                    $pdo->prepare("UPDATE subscriptions SET status = 'active', updated_at = NOW() WHERE id = :id")
-                        ->execute([':id' => $subscriptionId]);
-                    $success_message = $product['name'] . ' activated — $' . number_format($price, 2) . ' paid from the prepaid balance.';
-                } else {
-                    // INSUFFICIENT BALANCE: stay pending + unpaid, mint a Stripe Checkout
-                    $payUrl = '';
-                    $ch = curl_init($internalOrigin . '/api/admin/service-invoice/checkout');
-                    curl_setopt_array($ch, [
-                        CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_POST           => true,
-                        CURLOPT_TIMEOUT        => 30,
-                        CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
-                        CURLOPT_COOKIE         => 'connect.sid=' . ($_COOKIE['connect.sid'] ?? ''),
-                        CURLOPT_POSTFIELDS     => json_encode(['invoice_id' => $invoiceId]),
-                    ]);
-                    $resp = curl_exec($ch);
-                    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                    $cerr = curl_error($ch);
-                    curl_close($ch);
-                    if (!$cerr && $http === 200) {
-                        $data = json_decode((string)$resp, true);
-                        if (!empty($data['url'])) { $payUrl = $data['url']; }
-                    }
-                    if ($payUrl !== '') {
-                        $success_message = 'Invoice ' . $invoiceNumber . ' created for $' . number_format($price, 2)
-                            . ' — <a href="' . htmlspecialchars($payUrl) . '" target="_blank" class="underline text-blue-600">Pay now to activate</a>.';
-                    } else {
-                        $success_message = 'Invoice ' . $invoiceNumber . ' created for $' . number_format($price, 2)
-                            . ' (unpaid). The service activates once it is paid.';
-                    }
-                }
+            try {
+                // Shared invoice-gated path (includes/service-order.php): creates a
+                // PENDING sub + unpaid invoice, then settles from the wallet if funded.
+                $order = order_service($pdo, $clientId, $productId, $internalOrigin);
+                $success_message = order_service_message($order);
+            } catch (Throwable $e) {
+                $error_message = $e->getMessage();
             }
         }
     }
