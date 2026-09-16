@@ -84,9 +84,9 @@
                 <span>Invoices</span>
             </a>
 
-            <a href="admin-recurring-invoices.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-recurring-invoices.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
-                <i class="fas fa-sync-alt w-5"></i>
-                <span>Recurring Invoices</span>
+            <a href="admin-billing-reminders.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-billing-reminders.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
+                <i class="fas fa-bell w-5"></i>
+                <span>Billing Reminders</span>
                 <span class="ml-auto bg-purple-500 text-white text-xs px-2 py-0.5 rounded-full">NEW</span>
             </a>
 
