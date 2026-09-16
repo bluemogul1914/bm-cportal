@@ -22,6 +22,8 @@ import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat
 import { syncAllSources } from "./network-sync";
 import { checkAllBalances, processPendingTopUps } from "./balance-scheduler";
 import { generateReceiptPdfBuffer } from "./receipt-pdf";
+import { generateQuotePdfBuffer } from "./quote-pdf";
+import { normalizeLineItems } from "./line-items";
 
 const webhookPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 // Persistent session store backed by Neon Postgres so admin/dealer sessions
@@ -4023,25 +4025,6 @@ async function bootstrapPortalDatabase() {
   // GET /api/invoices/:id/pdf — streams a branded receipt PDF.
   // Admins may fetch any invoice; clients may only fetch their own.
 
-  /**
-   * Invoice `items` JSON has been written in two different shapes over time
-   * (D&H orders: {quantity, unit_price, description}; other paths:
-   * {qty, name, amount, unit_price, description}). Normalise both.
-   */
-  function normalizeInvoiceLines(raw: any): Array<{ description: string; quantity: number; unitPrice: string }> {
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .map((li: any) => {
-        if (!li || typeof li !== "object") return null;
-        const description = String(li.description || li.name || li.item || "").trim();
-        if (!description) return null;
-        const quantity = Number(li.quantity ?? li.qty ?? 1) || 1;
-        const unitPrice = String(li.unit_price ?? li.unitPrice ?? li.amount ?? "0");
-        return { description, quantity, unitPrice };
-      })
-      .filter((x): x is { description: string; quantity: number; unitPrice: string } => x !== null);
-  }
-
   app.get("/api/invoices/:id/pdf", async (req, res) => {
     const sess = (req.session as any)?.portalUser;
     if (!sess) {
@@ -4068,7 +4051,7 @@ async function bootstrapPortalDatabase() {
       }
 
       const inv = row.rows[0];
-      const lineItems = normalizeInvoiceLines(inv.items);
+      const lineItems = normalizeLineItems(inv.items);
 
       // Permission: admins can access any invoice; clients only their own
       if (!sess.is_admin) {
@@ -4145,6 +4128,93 @@ async function bootstrapPortalDatabase() {
       res.end(pdfBuffer);
     } catch (e: any) {
       console.error("Invoice PDF error:", e.message);
+      res.status(500).json({ error: "Failed to generate PDF" });
+    }
+  });
+
+  // ── Quote PDF Download ──────────────────────────────────────────────
+  // GET /api/quotes/:id/pdf — streams a branded sales quote.
+  // Admin-only: quotes live in the leads pipeline, which is not client-visible.
+  app.get("/api/quotes/:id/pdf", async (req, res) => {
+    const sess = (req.session as any)?.portalUser;
+    if (!sess) return res.status(401).json({ error: "Not authenticated" });
+    if (!sess.is_admin) return res.status(403).json({ error: "Forbidden" });
+
+    const quoteId = parseInt(req.params.id, 10);
+    if (isNaN(quoteId) || quoteId <= 0) return res.status(400).json({ error: "Invalid quote ID" });
+
+    try {
+      const row = await webhookPool.query(
+        `SELECT q.id, q.quote_number, q.document_date, q.valid_until, q.items,
+                q.total_without_tax, q.tax_amount, q.total, q.note, q.memo,
+                l.full_name AS lead_name, l.email AS lead_email, l.company AS lead_company
+           FROM lead_quotes q
+           LEFT JOIN leads l ON q.lead_id = l.id
+          WHERE q.id = $1`,
+        [quoteId]
+      );
+      if (row.rows.length === 0) return res.status(404).json({ error: "Quote not found" });
+      const q = row.rows[0];
+
+      // lead_quotes.items is a TEXT column holding a JSON array.
+      let parsed: unknown = [];
+      try {
+        parsed = typeof q.items === "string" ? JSON.parse(q.items || "[]") : q.items;
+      } catch {
+        parsed = [];
+      }
+      const lineItems = normalizeLineItems(parsed);
+
+      const subtotalNum = parseFloat(q.total_without_tax) || 0;
+      const taxNum = parseFloat(q.tax_amount) || 0;
+      const totalNum = parseFloat(q.total) || subtotalNum + taxNum;
+
+      // Quotes created without itemised lines still need a line to show.
+      if (lineItems.length === 0 && (subtotalNum > 0 || totalNum > 0)) {
+        lineItems.push({
+          description: "Services — as quoted",
+          quantity: 1,
+          unitPrice: String(subtotalNum || totalNum),
+        });
+      }
+
+      const buf = await generateQuotePdfBuffer({
+        quoteNumber: q.quote_number,
+        preparedFor: q.lead_company || q.lead_name || "Client",
+        preparedForEmail: q.lead_email || null,
+        documentDate: q.document_date ? new Date(q.document_date) : new Date(),
+        validUntil: q.valid_until ? new Date(q.valid_until) : null,
+        items: lineItems,
+        subtotal: subtotalNum || totalNum,
+        tax: taxNum,
+        total: totalNum || subtotalNum,
+        note: q.note || null,
+        memo: q.memo || null,
+      });
+
+      // Audit trail — same never-block-the-download discipline as the invoice route.
+      try {
+        await webhookPool.query(
+          `INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address)
+           VALUES ($1, 'quote_pdf_downloaded', 'quote', $2, $3, $4)`,
+          [
+            sess.user_id ?? null,
+            quoteId,
+            `Downloaded quote PDF ${q.quote_number}`,
+            req.ip || "0.0.0.0",
+          ]
+        );
+      } catch (logErr: any) {
+        console.error("Quote PDF audit log error:", logErr.message);
+      }
+
+      const safe = String(q.quote_number).replace(/[^a-zA-Z0-9_-]/g, "_");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${safe}.pdf"`);
+      res.setHeader("Content-Length", buf.length);
+      res.end(buf);
+    } catch (e: any) {
+      console.error("Quote PDF error:", e.message);
       res.status(500).json({ error: "Failed to generate PDF" });
     }
   });

@@ -221,6 +221,7 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
                     <td class="px-4 py-3 text-right font-semibold text-gray-900">$<?= number_format((float)($q['total']??0),2) ?></td>
                     <td class="px-4 py-3 text-gray-400"><?= $q['valid_until'] ?></td>
                     <td class="px-4 py-3" onclick="event.stopPropagation()">
+                      <a href="/api/quotes/<?= (int)$q['id'] ?>/pdf" target="_blank" class="text-xs text-gray-600 hover:text-gray-900 border border-gray-300 rounded px-2 py-0.5 font-medium mr-1 inline-block" title="Download quote PDF" data-testid="link-quote-pdf-<?= (int)$q['id'] ?>"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
                       <?php if (in_array($q['status'], ['new','sent','on_review'])): ?>
                       <form method="POST" action="/portal/admin-leads-quotes.php" style="display:inline;">
                         <?= csrf_field() ?>
