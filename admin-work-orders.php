@@ -83,6 +83,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 $pdo = getDB();
 $view = $_GET['view'] ?? 'list';
 $detail_id = (int)($_GET['id'] ?? 0);
+$status_filter = $_GET['status'] ?? '';
+$client_filter = (int)($_GET['client'] ?? 0);
 
 // Data
 $clients = $pdo->query("SELECT id, name, company FROM clients ORDER BY name")->fetchAll();
@@ -97,11 +99,18 @@ $stats = $pdo->query("SELECT COUNT(*) total,
     SUM(CASE WHEN scheduled_date < CURRENT_DATE AND status NOT IN ('completed','cancelled') THEN 1 ELSE 0 END) overdue
     FROM work_orders")->fetch();
 
-$work_orders = $pdo->query("SELECT w.*, c.name AS client_name, t.subject AS ticket_subject
+$wo_where = []; $wo_params = [];
+if ($status_filter) { $wo_where[] = 'w.status = ?'; $wo_params[] = $status_filter; }
+if ($client_filter) { $wo_where[] = 'w.client_id = ?'; $wo_params[] = $client_filter; }
+$wo_where_sql = $wo_where ? 'WHERE ' . implode(' AND ', $wo_where) : '';
+$work_orders = $pdo->prepare("SELECT w.*, c.name AS client_name, t.subject AS ticket_subject
     FROM work_orders w
     LEFT JOIN clients c ON w.client_id = c.id
     LEFT JOIN tickets t ON w.ticket_id = t.id
-    ORDER BY w.scheduled_date IS NULL, w.scheduled_date ASC, w.created_at DESC")->fetchAll();
+    $wo_where_sql
+    ORDER BY w.scheduled_date IS NULL, w.scheduled_date ASC, w.created_at DESC");
+$work_orders->execute($wo_params);
+$work_orders = $work_orders->fetchAll();
 
 $detail = null;
 if ($detail_id) {
@@ -110,6 +119,16 @@ if ($detail_id) {
     $st->execute([$detail_id]);
     $detail = $st->fetch(PDO::FETCH_ASSOC);
 }
+
+$status_color = function($s) {
+    return $s==='completed' ? 'bg-green-100 text-green-700 border-green-200'
+         : ($s==='in_progress' ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
+         : ($s==='cancelled' ? 'bg-gray-100 text-gray-500 border-gray-200'
+         : 'bg-blue-100 text-blue-700 border-blue-200'));
+};
+$status_dot = function($s) {
+    return $s==='completed' ? 'bg-green-500' : ($s==='in_progress' ? 'bg-yellow-500' : ($s==='cancelled' ? 'bg-gray-400' : 'bg-blue-500'));
+};
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -224,19 +243,10 @@ if ($detail_id) {
                     $client_filter_cal = (int)($_GET['cal_client'] ?? 0);
 
                     $cal_wos = $work_orders;
-                    if ($status_filter_cal) $cal_wos = array_values(array_filter($cal_wos, fn($w)=>$w['status']===$status_filter_cal));
-                    if ($client_filter_cal) $cal_wos = array_values(array_filter($cal_wos, fn($w)=>(int)$w['client_id']===$client_filter_cal));
+                                        if ($status_filter_cal) $cal_wos = array_values(array_filter($cal_wos, fn($w)=>$w['status']===$status_filter_cal));
+                                        if ($client_filter_cal) $cal_wos = array_values(array_filter($cal_wos, fn($w)=>(int)$w['client_id']===$client_filter_cal));
 
-                    $status_color = function($s) {
-                        return $s==='completed' ? 'bg-green-100 text-green-700 border-green-200'
-                             : ($s==='in_progress' ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
-                             : ($s==='cancelled' ? 'bg-gray-100 text-gray-500 border-gray-200'
-                             : 'bg-blue-100 text-blue-700 border-blue-200'));
-                    };
-                    $status_dot = function($s) {
-                        return $s==='completed' ? 'bg-green-500' : ($s==='in_progress' ? 'bg-yellow-500' : ($s==='cancelled' ? 'bg-gray-400' : 'bg-blue-500'));
-                    };
-                    $cal_qs = "view=calendar&cal_view=$cal_view&cal_date=$cal_date&cal_status=$status_filter_cal&cal_client=$client_filter_cal";
+                                        $cal_qs = "view=calendar&cal_view=$cal_view&cal_date=$cal_date&cal_status=$status_filter_cal&cal_client=$client_filter_cal";
                 ?>
                 <div class="flex gap-6">
                     <div class="w-64 shrink-0 hidden lg:block">
@@ -413,33 +423,70 @@ if ($detail_id) {
                     </div>
                 </div>
             <?php else: ?>
-                <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                    <table class="w-full">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Work Order</th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Client</th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Scheduled</th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Assignee</th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            <?php if (empty($work_orders)): ?>
-                                <tr><td colspan="5" class="px-6 py-12 text-center text-gray-500">No work orders yet. Create one to get started.</td></tr>
-                            <?php else: foreach ($work_orders as $wo): ?>
-                                <tr class="hover:bg-gray-50 transition">
-                                    <td class="px-6 py-4"><a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="font-medium text-blue-600 hover:underline">#<?php echo $wo['id']; ?> — <?php echo htmlspecialchars($wo['site_name'] ?: 'Untitled'); ?></a></td>
-                                    <td class="px-6 py-4 text-sm text-gray-600"><?php echo htmlspecialchars($wo['client_name'] ?: '—'); ?></td>
-                                    <td class="px-6 py-4 text-sm text-gray-600"><?php echo $wo['scheduled_date'] ? date('M d, Y', strtotime($wo['scheduled_date'])) : '—'; ?></td>
-                                    <td class="px-6 py-4 text-sm text-gray-600"><?php echo htmlspecialchars($wo['assignee'] ?: '—'); ?></td>
-                                    <td class="px-6 py-4">
-                                        <span class="px-2 py-1 text-xs font-medium rounded-full <?php echo $wo['status']==='completed'?'bg-green-100 text-green-700':($wo['status']==='in_progress'?'bg-yellow-100 text-yellow-700':($wo['status']==='cancelled'?'bg-gray-100 text-gray-500':'bg-blue-100 text-blue-700')); ?>"><?php echo ucwords(str_replace('_',' ',$wo['status'])); ?></span>
-                                    </td>
-                                </tr>
-                            <?php endforeach; endif; ?>
-                        </tbody>
-                    </table>
+                <div class="flex gap-6">
+                    <div class="w-64 shrink-0 hidden lg:block">
+                        <div class="bg-white rounded-lg border border-gray-200 p-4 sticky top-20">
+                            <div class="mb-4">
+                                <label class="block text-xs font-semibold text-gray-500 uppercase mb-2">Filter events</label>
+                                <input type="text" id="listSearch" placeholder="Search work orders..." class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-xs font-semibold text-gray-500 uppercase mb-2">Status</label>
+                                <div class="space-y-1">
+                                    <?php foreach (['open','in_progress','completed','cancelled'] as $s): ?>
+                                        <a href="admin-work-orders.php?status=<?php echo $s; ?>&client=<?php echo $client_filter; ?>" class="flex items-center gap-2 px-2 py-1 rounded text-sm <?php echo $status_filter===$s?'bg-blue-50 text-blue-700':'text-gray-600 hover:bg-gray-50'; ?>">
+                                            <span class="w-2.5 h-2.5 rounded-full <?php echo $status_dot($s); ?>"></span>
+                                            <?php echo ucwords(str_replace('_',' ',$s)); ?>
+                                        </a>
+                                    <?php endforeach; ?>
+                                    <a href="admin-work-orders.php?client=<?php echo $client_filter; ?>" class="flex items-center gap-2 px-2 py-1 rounded text-sm <?php echo $status_filter===''?'bg-blue-50 text-blue-700':'text-gray-600 hover:bg-gray-50'; ?>">
+                                        <span class="w-2.5 h-2.5 rounded-full bg-gray-400"></span> All
+                                    </a>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 uppercase mb-2">Client</label>
+                                <div class="space-y-1 max-h-48 overflow-y-auto">
+                                    <a href="admin-work-orders.php?status=<?php echo $status_filter; ?>" class="flex items-center gap-2 px-2 py-1 rounded text-sm <?php echo $client_filter===0?'bg-blue-50 text-blue-700':'text-gray-600 hover:bg-gray-50'; ?>">All clients</a>
+                                    <?php foreach ($clients as $c): ?>
+                                        <a href="admin-work-orders.php?status=<?php echo $status_filter; ?>&client=<?php echo $c['id']; ?>" class="flex items-center gap-2 px-2 py-1 rounded text-sm <?php echo $client_filter===(int)$c['id']?'bg-blue-50 text-blue-700':'text-gray-600 hover:bg-gray-50'; ?>">
+                                            <span class="w-2.5 h-2.5 rounded-full bg-blue-400"></span><?php echo htmlspecialchars($c['name']); ?>
+                                        </a>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                            <table id="woTable" class="w-full">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Work Order</th>
+                                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Client</th>
+                                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Scheduled</th>
+                                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Assignee</th>
+                                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    <?php if (empty($work_orders)): ?>
+                                        <tr><td colspan="5" class="px-6 py-12 text-center text-gray-500">No work orders yet. Create one to get started.</td></tr>
+                                    <?php else: foreach ($work_orders as $wo): ?>
+                                        <tr class="hover:bg-gray-50 transition">
+                                            <td class="px-6 py-4"><a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="font-medium text-blue-600 hover:underline">#<?php echo $wo['id']; ?> — <?php echo htmlspecialchars($wo['site_name'] ?: 'Untitled'); ?></a></td>
+                                            <td class="px-6 py-4 text-sm text-gray-600"><?php echo htmlspecialchars($wo['client_name'] ?: '—'); ?></td>
+                                            <td class="px-6 py-4 text-sm text-gray-600"><?php echo $wo['scheduled_date'] ? date('M d, Y', strtotime($wo['scheduled_date'])) : '—'; ?></td>
+                                            <td class="px-6 py-4 text-sm text-gray-600"><?php echo htmlspecialchars($wo['assignee'] ?: '—'); ?></td>
+                                            <td class="px-6 py-4">
+                                                <span class="px-2 py-1 text-xs font-medium rounded-full <?php echo $wo['status']==='completed'?'bg-green-100 text-green-700':($wo['status']==='in_progress'?'bg-yellow-100 text-yellow-700':($wo['status']==='cancelled'?'bg-gray-100 text-gray-500':'bg-blue-100 text-blue-700')); ?>"><?php echo ucwords(str_replace('_',' ',$wo['status'])); ?></span>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             <?php endif; ?>
         </div>
@@ -521,10 +568,16 @@ if ($detail_id) {
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var search = document.getElementById('calSearch');
-    if (!search) return;
-    search.addEventListener('input', function () {
+    if (search) search.addEventListener('input', function () {
         var q = search.value.trim().toLowerCase();
         document.querySelectorAll('.cal-event').forEach(function (el) {
+            el.style.display = (!q || el.textContent.toLowerCase().indexOf(q) !== -1) ? '' : 'none';
+        });
+    });
+    var listSearch = document.getElementById('listSearch');
+    if (listSearch) listSearch.addEventListener('input', function () {
+        var q = listSearch.value.trim().toLowerCase();
+        document.querySelectorAll('#woTable tbody tr').forEach(function (el) {
             el.style.display = (!q || el.textContent.toLowerCase().indexOf(q) !== -1) ? '' : 'none';
         });
     });
