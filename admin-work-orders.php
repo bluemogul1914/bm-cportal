@@ -215,39 +215,148 @@ if ($detail_id) {
                 </div>
             <?php elseif ($view === 'calendar'): ?>
                 <?php
-                    $month = $_GET['month'] ?? date('Y-m');
-                    $ts = strtotime($month . '-01');
-                    $ym = date('Y-m', $ts);
-                    $firstDow = (int)date('w', $ts);
-                    $daysInMonth = (int)date('t', $ts);
-                    $byDay = [];
-                    foreach ($work_orders as $wo) {
-                        if ($wo['scheduled_date']) $byDay[(int)date('j', strtotime($wo['scheduled_date']))][] = $wo;
-                    }
-                    $prev = date('Y-m', strtotime($month . '-01 -1 month'));
-                    $next = date('Y-m', strtotime($month . '-01 +1 month'));
+                    $cal_view = $_GET['cal_view'] ?? 'month';
+                    $cal_date = $_GET['cal_date'] ?? date('Y-m-d');
+                    $ts = strtotime($cal_date);
+                    $today = date('Y-m-d');
+                    $status_filter_cal = $_GET['cal_status'] ?? '';
+                    $client_filter_cal = (int)($_GET['cal_client'] ?? 0);
+
+                    $cal_wos = $work_orders;
+                    if ($status_filter_cal) $cal_wos = array_values(array_filter($cal_wos, fn($w)=>$w['status']===$status_filter_cal));
+                    if ($client_filter_cal) $cal_wos = array_values(array_filter($cal_wos, fn($w)=>(int)$w['client_id']===$client_filter_cal));
+
+                    $status_color = function($s) {
+                        return $s==='completed' ? 'bg-green-100 text-green-700 border-green-200'
+                             : ($s==='in_progress' ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                             : ($s==='cancelled' ? 'bg-gray-100 text-gray-500 border-gray-200'
+                             : 'bg-blue-100 text-blue-700 border-blue-200'));
+                    };
+                    $status_dot = function($s) {
+                        return $s==='completed' ? 'bg-green-500' : ($s==='in_progress' ? 'bg-yellow-500' : ($s==='cancelled' ? 'bg-gray-400' : 'bg-blue-500'));
+                    };
+                    $cal_qs = "view=calendar&cal_view=$cal_view&cal_date=$cal_date&cal_status=$status_filter_cal&cal_client=$client_filter_cal";
                 ?>
-                <div class="bg-white rounded-lg border border-gray-200 p-6">
-                    <div class="flex items-center justify-between mb-4">
-                        <a href="admin-work-orders.php?view=calendar&month=<?php echo $prev; ?>" class="text-gray-500 hover:text-gray-800"><i class="fas fa-chevron-left"></i></a>
-                        <h2 class="text-lg font-semibold text-gray-900"><?php echo date('F Y', $ts); ?></h2>
-                        <a href="admin-work-orders.php?view=calendar&month=<?php echo $next; ?>" class="text-gray-500 hover:text-gray-800"><i class="fas fa-chevron-right"></i></a>
-                    </div>
-                    <div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-gray-500 uppercase mb-2">
-                        <?php foreach (['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] as $d): ?><div class="py-1"><?php echo $d; ?></div><?php endforeach; ?>
-                    </div>
-                    <div class="grid grid-cols-7 gap-1">
-                        <?php for ($i = 0; $i < $firstDow; $i++): ?><div></div><?php endfor; ?>
-                        <?php for ($d = 1; $d <= $daysInMonth; $d++): ?>
-                            <div class="min-h-[70px] border border-gray-100 rounded p-1 <?php echo $d===(int)date('j') && $ym===date('Y-m') ? 'bg-blue-50' : ''; ?>">
-                                <div class="text-xs font-medium text-gray-500"><?php echo $d; ?></div>
-                                <?php foreach (($byDay[$d] ?? []) as $wo): ?>
-                                    <a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="block text-[10px] truncate rounded px-1 py-0.5 mb-0.5 <?php echo $wo['status']==='completed'?'bg-green-100 text-green-700':($wo['status']==='in_progress'?'bg-yellow-100 text-yellow-700':'bg-blue-100 text-blue-700'); ?>">
-                                        <?php echo htmlspecialchars($wo['site_name'] ?: '#' . $wo['id']); ?>
-                                    </a>
-                                <?php endforeach; ?>
+                <div class="flex gap-6">
+                    <div class="w-64 shrink-0 hidden lg:block">
+                        <div class="bg-white rounded-lg border border-gray-200 p-4 sticky top-20">
+                            <div class="mb-4">
+                                <label class="block text-xs font-semibold text-gray-500 uppercase mb-2">Filter events</label>
+                                <input type="text" id="calSearch" placeholder="Search work orders..." class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
                             </div>
-                        <?php endfor; ?>
+                            <div class="mb-4">
+                                <label class="block text-xs font-semibold text-gray-500 uppercase mb-2">Status</label>
+                                <div class="space-y-1">
+                                    <?php foreach (['open','in_progress','completed','cancelled'] as $s): ?>
+                                        <a href="admin-work-orders.php?<?php echo $cal_qs; ?>&cal_status=<?php echo $s; ?>" class="flex items-center gap-2 px-2 py-1 rounded text-sm <?php echo $status_filter_cal===$s?'bg-blue-50 text-blue-700':'text-gray-600 hover:bg-gray-50'; ?>">
+                                            <span class="w-2.5 h-2.5 rounded-full <?php echo $status_dot($s); ?>"></span>
+                                            <?php echo ucwords(str_replace('_',' ',$s)); ?>
+                                        </a>
+                                    <?php endforeach; ?>
+                                    <a href="admin-work-orders.php?view=calendar&cal_view=<?php echo $cal_view; ?>&cal_date=<?php echo $cal_date; ?>" class="flex items-center gap-2 px-2 py-1 rounded text-sm <?php echo $status_filter_cal===''?'bg-blue-50 text-blue-700':'text-gray-600 hover:bg-gray-50'; ?>">
+                                        <span class="w-2.5 h-2.5 rounded-full bg-gray-400"></span> All
+                                    </a>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 uppercase mb-2">Client</label>
+                                <div class="space-y-1 max-h-48 overflow-y-auto">
+                                    <a href="admin-work-orders.php?view=calendar&cal_view=<?php echo $cal_view; ?>&cal_date=<?php echo $cal_date; ?>&cal_status=<?php echo $status_filter_cal; ?>" class="flex items-center gap-2 px-2 py-1 rounded text-sm <?php echo $client_filter_cal===0?'bg-blue-50 text-blue-700':'text-gray-600 hover:bg-gray-50'; ?>">All clients</a>
+                                    <?php foreach ($clients as $c): ?>
+                                        <a href="admin-work-orders.php?<?php echo $cal_qs; ?>&cal_client=<?php echo $c['id']; ?>" class="flex items-center gap-2 px-2 py-1 rounded text-sm <?php echo $client_filter_cal===(int)$c['id']?'bg-blue-50 text-blue-700':'text-gray-600 hover:bg-gray-50'; ?>">
+                                            <span class="w-2.5 h-2.5 rounded-full bg-blue-400"></span><?php echo htmlspecialchars($c['name']); ?>
+                                        </a>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 min-w-0">
+                        <div class="bg-white rounded-lg border border-gray-200 p-6">
+                            <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+                                <div class="flex items-center gap-2">
+                                    <a href="admin-work-orders.php?view=calendar&cal_view=<?php echo $cal_view; ?>&cal_date=<?php echo date('Y-m-d', strtotime($cal_date . ' -1 month')); ?>&cal_status=<?php echo $status_filter_cal; ?>&cal_client=<?php echo $client_filter_cal; ?>" class="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500"><i class="fas fa-chevron-left"></i></a>
+                                    <a href="admin-work-orders.php?view=calendar&cal_view=<?php echo $cal_view; ?>&cal_date=<?php echo date('Y-m-d', strtotime($cal_date . ' +1 month')); ?>&cal_status=<?php echo $status_filter_cal; ?>&cal_client=<?php echo $client_filter_cal; ?>" class="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500"><i class="fas fa-chevron-right"></i></a>
+                                    <a href="admin-work-orders.php?view=calendar&cal_view=<?php echo $cal_view; ?>&cal_date=<?php echo $today; ?>" class="px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50">Today</a>
+                                    <h2 class="text-lg font-semibold text-gray-900 ml-2"><?php echo $cal_view==='month' ? date('F Y', $ts) : date('F j, Y', $ts); ?></h2>
+                                </div>
+                                <div class="flex items-center gap-1 border border-gray-200 rounded-lg overflow-hidden">
+                                    <?php foreach (['month','week','day'] as $v): ?>
+                                        <a href="admin-work-orders.php?view=calendar&cal_view=<?php echo $v; ?>&cal_date=<?php echo $cal_date; ?>&cal_status=<?php echo $status_filter_cal; ?>&cal_client=<?php echo $client_filter_cal; ?>" class="px-3 py-1.5 text-sm font-medium <?php echo $cal_view===$v?'bg-blue-600 text-white':'text-gray-600 hover:bg-gray-50'; ?>"><?php echo ucfirst($v); ?></a>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+
+                            <?php if ($cal_view === 'month'): ?>
+                                <?php
+                                    $month = date('Y-m', $ts);
+                                    $firstDow = (int)date('w', strtotime($month . '-01'));
+                                    $daysInMonth = (int)date('t', strtotime($month . '-01'));
+                                    $byDay = [];
+                                    foreach ($cal_wos as $wo) if ($wo['scheduled_date']) $byDay[(int)date('j', strtotime($wo['scheduled_date']))][] = $wo;
+                                ?>
+                                <div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-gray-500 uppercase mb-2">
+                                    <?php foreach (['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] as $d): ?><div class="py-1"><?php echo $d; ?></div><?php endforeach; ?>
+                                </div>
+                                <div class="grid grid-cols-7 gap-1">
+                                    <?php for ($i = 0; $i < $firstDow; $i++): ?><div></div><?php endfor; ?>
+                                    <?php for ($d = 1; $d <= $daysInMonth; $d++): ?>
+                                        <?php $dstr = $month . '-' . str_pad($d, 2, '0', STR_PAD_LEFT); $isToday = $dstr === $today; ?>
+                                        <div class="min-h-[80px] border border-gray-100 rounded p-1 <?php echo $isToday ? 'bg-blue-50 ring-1 ring-blue-200' : ''; ?>">
+                                            <div class="text-xs font-medium <?php echo $isToday ? 'text-blue-700' : 'text-gray-500'; ?>"><?php echo $d; ?></div>
+                                            <?php foreach (($byDay[$d] ?? []) as $wo): ?>
+                                                <a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="cal-event block text-[10px] truncate rounded px-1 py-0.5 mb-0.5 border <?php echo $status_color($wo['status']); ?>">
+                                                    <span class="inline-block w-1.5 h-1.5 rounded-full <?php echo $status_dot($wo['status']); ?> mr-1"></span><?php echo htmlspecialchars($wo['site_name'] ?: '#' . $wo['id']); ?>
+                                                </a>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endfor; ?>
+                                </div>
+                            <?php elseif ($cal_view === 'week'): ?>
+                                <?php
+                                    $dow = (int)date('w', $ts);
+                                    $weekStart = strtotime($cal_date . ' -' . $dow . ' days');
+                                    $byDay = [];
+                                    foreach ($cal_wos as $wo) if ($wo['scheduled_date']) $byDay[date('Y-m-d', strtotime($wo['scheduled_date']))][] = $wo;
+                                ?>
+                                <div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-gray-500 uppercase mb-2">
+                                    <?php for ($i = 0; $i < 7; $i++): $d = strtotime("+$i days", $weekStart); ?>
+                                        <div class="py-1 <?php echo date('Y-m-d',$d)===$today?'text-blue-700':''; ?>"><?php echo date('D', $d); ?> <span class="block text-base font-bold"><?php echo date('j', $d); ?></span></div>
+                                    <?php endfor; ?>
+                                </div>
+                                <div class="grid grid-cols-7 gap-1">
+                                    <?php for ($i = 0; $i < 7; $i++): $d = strtotime("+$i days", $weekStart); $dstr = date('Y-m-d', $d); ?>
+                                        <div class="min-h-[120px] border border-gray-100 rounded p-1 <?php echo $dstr===$today?'bg-blue-50 ring-1 ring-blue-200':''; ?>">
+                                            <?php foreach (($byDay[$dstr] ?? []) as $wo): ?>
+                                                <a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="cal-event block text-[10px] truncate rounded px-1 py-0.5 mb-0.5 border <?php echo $status_color($wo['status']); ?>">
+                                                    <span class="inline-block w-1.5 h-1.5 rounded-full <?php echo $status_dot($wo['status']); ?> mr-1"></span><?php echo htmlspecialchars($wo['site_name'] ?: '#' . $wo['id']); ?>
+                                                </a>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endfor; ?>
+                                </div>
+                            <?php else: ?>
+                                <?php $day_wos = array_values(array_filter($cal_wos, fn($w)=>$w['scheduled_date'] && date('Y-m-d', strtotime($w['scheduled_date']))===$cal_date)); ?>
+                                <div class="text-sm text-gray-500 mb-3"><?php echo count($day_wos); ?> work order(s) scheduled for <?php echo date('F j, Y', $ts); ?></div>
+                                <?php if (empty($day_wos)): ?>
+                                    <p class="text-sm text-gray-500 py-8 text-center">No work orders scheduled for this day.</p>
+                                <?php else: ?>
+                                    <div class="space-y-2">
+                                        <?php foreach ($day_wos as $wo): ?>
+                                            <a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="cal-event flex items-center gap-3 border border-gray-200 rounded-lg px-4 py-3 hover:bg-gray-50 transition">
+                                                <span class="w-2.5 h-2.5 rounded-full <?php echo $status_dot($wo['status']); ?>"></span>
+                                                <div class="flex-1">
+                                                    <p class="font-medium text-gray-900 text-sm"><?php echo htmlspecialchars($wo['site_name'] ?: '#' . $wo['id']); ?></p>
+                                                    <p class="text-xs text-gray-500"><?php echo htmlspecialchars($wo['client_name'] ?: 'No client'); ?><?php echo $wo['assignee'] ? ' · ' . htmlspecialchars($wo['assignee']) : ''; ?></p>
+                                                </div>
+                                                <span class="px-2 py-1 text-xs font-medium rounded-full <?php echo $status_color($wo['status']); ?>"><?php echo ucwords(str_replace('_',' ',$wo['status'])); ?></span>
+                                            </a>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
             <?php else: ?>
@@ -352,5 +461,17 @@ if ($detail_id) {
         </form>
     </div>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var search = document.getElementById('calSearch');
+    if (!search) return;
+    search.addEventListener('input', function () {
+        var q = search.value.trim().toLowerCase();
+        document.querySelectorAll('.cal-event').forEach(function (el) {
+            el.style.display = (!q || el.textContent.toLowerCase().indexOf(q) !== -1) ? '' : 'none';
+        });
+    });
+});
+</script>
 </body>
 </html>
