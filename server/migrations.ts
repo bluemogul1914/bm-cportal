@@ -313,9 +313,38 @@ export async function runPortalMigrations() {
           ON CONFLICT (name) DO NOTHING
         `);
         await db.execute(sql`
-          CREATE INDEX IF NOT EXISTS idx_work_orders_scheduled_date ON work_orders(scheduled_date)
-        `);
-        console.log("[migrations] Field work orders migrations applied");
+              CREATE INDEX IF NOT EXISTS idx_work_orders_scheduled_date ON work_orders(scheduled_date)
+            `);
+
+            // ── Inventory with deployed-status (P1 #4) ──────────────────────────────
+            await db.execute(sql`
+              CREATE TABLE IF NOT EXISTS network_sites (
+                id SERIAL PRIMARY KEY,
+                client_id INTEGER REFERENCES clients(id),
+                name TEXT NOT NULL,
+                address TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+              )
+            `);
+            await db.execute(sql`
+              ALTER TABLE assets ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'received'
+            `);
+            await db.execute(sql`
+              ALTER TABLE assets ADD COLUMN IF NOT EXISTS network_site_id INTEGER REFERENCES network_sites(id)
+            `);
+            await db.execute(sql`
+              ALTER TABLE assets ADD COLUMN IF NOT EXISTS supplier TEXT
+            `);
+            await db.execute(sql`
+              ALTER TABLE assets ADD COLUMN IF NOT EXISTS po_reference TEXT
+            `);
+            await db.execute(sql`
+              CREATE INDEX IF NOT EXISTS idx_assets_status ON assets(status)
+            `);
+            await db.execute(sql`
+              CREATE INDEX IF NOT EXISTS idx_assets_network_site_id ON assets(network_site_id)
+            `);
+            console.log("[migrations] Inventory deployed-status migrations applied");
   } catch (err: any) {
     console.error("[migrations] Prepaid balance ledger migration error:", err.message);
   }
