@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once __DIR__ . '/includes/client-wallet.php';
 
 if (!isset($_SESSION['user_id'])) {
     portal_redirect('/portal');
@@ -16,7 +17,9 @@ try {
     $stmt = $pdo->prepare("SELECT id FROM clients WHERE user_id = ?");
     $stmt->execute([$user_id]);
     $client = $stmt->fetch(PDO::FETCH_ASSOC);
-    $client_id = $client ? $client['id'] : $user_id;
+    // NEVER fall back to users.id (different namespace) — null means no linked client.
+    $client_id = $client ? (int)$client['id'] : null;
+    $no_client_link = ($client_id === null);
 
     $stmt = $pdo->prepare("
         SELECT s.*, p.name as product_name, p.price, p.category, p.description as product_description, p.features, p.billing_period
@@ -109,6 +112,16 @@ try {
                     <p class="text-3xl font-bold text-gray-900" data-testid="text-annual-cost">$<?php echo number_format($monthly_total * 12, 2); ?></p>
                 </div>
             </div>
+
+            <?php if ($no_client_link): ?>
+                <div class="bg-yellow-100 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg text-sm mb-6">
+                    <i class="fas fa-info-circle mr-1"></i>This login isn't linked to a client account, so services and balance can't be shown.
+                </div>
+            <?php else: ?>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    <?php render_wallet_card($pdo, $client_id); ?>
+                </div>
+            <?php endif; ?>
 
             <?php if (empty($services)): ?>
                 <div class="bg-white rounded-lg border border-gray-200 text-center py-16">

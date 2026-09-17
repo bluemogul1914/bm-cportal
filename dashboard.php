@@ -472,7 +472,7 @@ try {
         });
 
         function payInvoice(id) {
-            alert('Payment processing for invoice #' + id);
+            window.location = '/portal/pay-invoice.php?id=' + id;
         }
     </script>
 
