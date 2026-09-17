@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once __DIR__ . '/includes/client-wallet.php';
 
 if (!isset($_SESSION['user_id'])) {
     portal_redirect('/portal');
@@ -128,6 +129,12 @@ try {
                     <p class="text-3xl font-bold text-gray-900" data-testid="text-total-invoices"><?php echo count($invoices); ?></p>
                 </div>
             </div>
+
+            <?php if (empty($no_client_link)): ?>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    <?php render_wallet_card($pdo, $client_id); ?>
+                </div>
+            <?php endif; ?>
 
             <div class="bg-white rounded-lg border border-gray-200">
                 <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">

@@ -23,7 +23,8 @@ try {
     $stmt = $pdo->prepare("SELECT id FROM clients WHERE user_id = ?");
     $stmt->execute([$user_id]);
     $client = $stmt->fetch(PDO::FETCH_ASSOC);
-    $client_id = $client ? $client['id'] : $user_id;
+    // NEVER fall back to users.id (different namespace) — null means no linked client.
+    $client_id = $client ? (int)$client['id'] : null;
 
     $stmt = $pdo->prepare("SELECT * FROM invoices WHERE id = ? AND client_id = ? AND status = 'unpaid'");
     $stmt->execute([$invoice_id, $client_id]);
