@@ -15,13 +15,9 @@
  * the lead is still captured and the visitor gets a reference number.
  */
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/includes/prequal.php';
 
 header('Content-Type: text/html; charset=UTF-8');
-
-// ── Dependencies (confirmed-working SOAP client) ─────────────────────────────
-$logDir = (is_writable('/var/log/frontier') ? '/var/log/frontier' : sys_get_temp_dir() . '/frontier-qualify');
-require_once __DIR__ . '/frontier-asr-v10/src/Logger.php';
-require_once __DIR__ . '/frontier-asr-v10/src/FrontierASRClient.php';
 
 $isEmbed = isset($_GET['embed']);
 
@@ -107,77 +103,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$prev['address'] || !$prev['city'] || !$prev['state'] || !$prev['zip']) {
         $formErr = 'Please fill in your full service address (street, city, state, ZIP).';
     } else {
-        $pon = 'PREQ-' . strtoupper(substr(md5(uniqid('', true)), 0, 8));
+        $pdo = qualify_db();
 
-        // 1) Persist the lead (best-effort — never block the visitor on DB)
-        try {
-            $pdo = qualify_db();
-            if ($pdo) {
-                $stmt = $pdo->prepare(
-                    "INSERT INTO frontier_orders
-                        (pon, type, address_line1, city, state, zip,
-                         contact_name, contact_phone, contact_email,
-                         client_id, status, remarks, created_at, updated_at)
-                     VALUES (?, 'PRE-ORDER', ?, ?, ?, ?, ?, ?, ?, ?, 'PREQUAL_CHECKING', ?, NOW(), NOW())"
-                );
-                $stmt->execute([
-                    $pon, $prev['address'], $prev['city'], $prev['state'], $prev['zip'],
-                    $prev['name'] ?: 'Web Inquiry', $prev['phone'], $prev['email'],
-                    $loggedClientId, 'Source: fiber.bluemogul.us',
-                ]);
-            }
-        } catch (Throwable $e) {
-            // DB down — still try Frontier; result page will note the reference.
-        }
+        // Provider selection: single by default (Frontier), or 'all' for a dual
+        // Frontier+Cox check. Cox is a pending placeholder until its API docs.
+        $requested = trim($_POST['provider'] ?? 'Frontier');
+        $providers = ($requested === 'all' || $requested === 'ALL')
+            ? array_keys(prequal_providers())
+            : [$requested];
 
-        // 2) Call Frontier (confirmed envelope; TEST env)
-        $client = new FrontierASRClient([
-            'environment' => 'TEST',
-            'ccna'        => 'BMR',
-            'source_ip'   => '5.78.87.79',
-        ], new Logger($logDir));
+        $address = [
+            'address' => $prev['address'], 'city' => $prev['city'],
+            'state'   => $prev['state'],   'zip'   => $prev['zip'],
+            'name'    => $prev['name'],    'phone' => $prev['phone'],
+            'email'   => $prev['email'],
+        ];
 
-        $res = $client->sendPreOrder([
-            'address_line1' => $prev['address'],
-            'city'          => $prev['city'],
-            'state'         => $prev['state'],
-            'zip'           => $prev['zip'],
-            'pon'           => $pon,
-        ]);
+        // Persist a lead per provider, run each adapter, collect results.
+        $results = prequal_check_many($pdo, $address, $providers, $loggedClientId);
 
-        $available = $res['parsed']['available'] ?? null;
-        $fault     = $res['parsed']['fault_code'] ?? '';
-        $faultMsg  = $res['parsed']['fault_string'] ?? '';
-
-        // 3) Classify result (independent of DB) + persist best-effort
-        if ($available === true) {
-            $result = 'available';
-        } elseif ($available === false) {
-            $result = 'unavailable';
-        } else {
-            $result = 'checking';
-        }
-        try {
-            $pdo = qualify_db();
-            if ($pdo) {
-                if ($available === true) {
-                    $pdo->prepare("UPDATE frontier_orders SET status='PREQUAL_AVAILABLE', raw_response=?, updated_at=NOW() WHERE pon=?")
-                        ->execute([substr($res['response'] ?? '', 0, 2000), $pon]);
-                } elseif ($available === false) {
-                    $pdo->prepare("UPDATE frontier_orders SET status='PREQUAL_UNAVAILABLE', raw_response=?, updated_at=NOW() WHERE pon=?")
-                        ->execute([substr($res['response'] ?? '', 0, 2000), $pon]);
-                } else {
-                    $pdo->prepare("UPDATE frontier_orders SET status='PREQUAL_CHECKING', remarks=?, raw_response=?, updated_at=NOW() WHERE pon=?")
-                        ->execute([trim("Frontier: $fault $faultMsg"), substr($res['response'] ?? '', 0, 2000), $pon]);
-                }
-            }
-        } catch (Throwable $e) {
-            // persistence best-effort
-        }
-
-        $message = $res['success'] && $available !== null
-            ? null
-            : (trim("$fault $faultMsg") ?: 'Frontier is confirming your address with our team.');
+        // First result drives the existing single-result display.
+        $first = reset($results);
+        $result = $first['available'] === true ? 'available'
+                : ($first['available'] === false ? 'unavailable' : 'checking');
+        $message = $first['message'];
+        $pon     = $first['pon'];
+        $multiResults = count($results) > 1 ? $results : null;
     }
 }
 ?>
@@ -272,6 +223,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php if($pon): ?><div class="ref">Reference #: <?= htmlspecialchars($pon) ?></div><?php endif; ?>
   </div>
   <button class="again" onclick="location.href='?'">Check Another Address</button>
+
+<?php if(!empty($multiResults)): ?>
+  <div class="result" style="background:#f5f7fa;border:1px solid #dde3ec;margin-top:12px;text-align:left">
+    <div style="font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:#888;font-weight:bold;margin-bottom:8px">Per-provider results</div>
+    <?php foreach($multiResults as $p): ?>
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid #eef1f6">
+        <strong style="color:var(--navy)"><?= htmlspecialchars($p['provider']) ?></strong>
+        <span style="color:<?= $p['available']===true?'var(--green)':($p['available']===false?'#e65100':'var(--blue)') ?>">
+          <?= $p['available']===true?'Available':($p['available']===false?'Not available':'Pending') ?>
+        </span>
+      </div>
+      <?php if($p['message']): ?><div style="font-size:12px;color:#888;margin-top:2px"><?= htmlspecialchars($p['message']) ?></div><?php endif; ?>
+    <?php endforeach; ?>
+  </div>
+<?php endif; ?>
 
 <?php else: ?>
   <h2>Check Service Availability</h2>

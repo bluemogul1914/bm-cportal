@@ -14,6 +14,8 @@ export async function runPortalMigrations() {
     await db.execute(sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP`);
     await db.execute(sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subscription_id INTEGER REFERENCES subscriptions(id)`);
     await db.execute(sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS stripe_payment_id VARCHAR(200)`);
+    // Provider-agnostic pre-qual: which footprint provider a lead targets (Frontier today, Cox later).
+    await db.execute(sql`ALTER TABLE frontier_orders ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'Frontier'`);
 
     // Phase 1 — create contacts table
     await db.execute(sql`
