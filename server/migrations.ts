@@ -272,13 +272,50 @@ export async function runPortalMigrations() {
       CREATE INDEX IF NOT EXISTS idx_transaction_ledger_created_at ON transaction_ledger(client_id, created_at DESC)
     `);
     // Idempotency: one ledger entry per Stripe session (prevents double-credit on race)
-    await db.execute(sql`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_transaction_ledger_stripe_session
-      ON transaction_ledger(stripe_session_id)
-      WHERE stripe_session_id IS NOT NULL
-    `);
+        await db.execute(sql`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_transaction_ledger_stripe_session
+          ON transaction_ledger(stripe_session_id)
+          WHERE stripe_session_id IS NOT NULL
+        `);
 
-    console.log("[migrations] Prepaid balance ledger migrations applied");
+        // ── Field work orders (P1 #3) ────────────────────────────────────────────
+        await db.execute(sql`
+          CREATE TABLE IF NOT EXISTS work_orders (
+            id SERIAL PRIMARY KEY,
+            client_id INTEGER REFERENCES clients(id),
+            ticket_id INTEGER REFERENCES tickets(id),
+            project_id INTEGER REFERENCES projects(id),
+            site_name TEXT,
+            address TEXT,
+            scheduled_date DATE,
+            assignee TEXT,
+            status TEXT NOT NULL DEFAULT 'open',
+            checklist_template TEXT,
+            checklist JSONB NOT NULL DEFAULT '[]',
+            notes TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+          )
+        `);
+        await db.execute(sql`
+          CREATE TABLE IF NOT EXISTS work_order_checklist_templates (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            items JSONB NOT NULL DEFAULT '[]',
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          )
+        `);
+        await db.execute(sql`
+          INSERT INTO work_order_checklist_templates (name, items) VALUES
+            ('install', '["Confirm site access","Mount CPE/radio","Run cable + terminate","Power + verify link","Speed test","Label equipment","Document in portal"]'),
+            ('survey', '["Site photos","Line-of-sight check","Mounting points","Power availability","GPS coordinates","Obstruction notes"]'),
+            ('decommission', '["Notify client","Remove equipment","Recover hardware","Update inventory","Close ticket"]')
+          ON CONFLICT (name) DO NOTHING
+        `);
+        await db.execute(sql`
+          CREATE INDEX IF NOT EXISTS idx_work_orders_scheduled_date ON work_orders(scheduled_date)
+        `);
+        console.log("[migrations] Field work orders migrations applied");
   } catch (err: any) {
     console.error("[migrations] Prepaid balance ledger migration error:", err.message);
   }
