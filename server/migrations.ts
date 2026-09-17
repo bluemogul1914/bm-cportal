@@ -281,22 +281,25 @@ export async function runPortalMigrations() {
         // ── Field work orders (P1 #3) ────────────────────────────────────────────
         await db.execute(sql`
           CREATE TABLE IF NOT EXISTS work_orders (
-            id SERIAL PRIMARY KEY,
-            client_id INTEGER REFERENCES clients(id),
-            ticket_id INTEGER REFERENCES tickets(id),
-            project_id INTEGER REFERENCES projects(id),
-            site_name TEXT,
-            address TEXT,
-            scheduled_date DATE,
-            assignee TEXT,
-            status TEXT NOT NULL DEFAULT 'open',
-            checklist_template TEXT,
-            checklist JSONB NOT NULL DEFAULT '[]',
-            notes TEXT,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-          )
-        `);
+                  id SERIAL PRIMARY KEY,
+                  client_id INTEGER REFERENCES clients(id),
+                  ticket_id INTEGER REFERENCES tickets(id),
+                  project_id INTEGER REFERENCES projects(id),
+                  site_name TEXT,
+                  address TEXT,
+                  scheduled_date DATE,
+                  assignee TEXT,
+                  status TEXT NOT NULL DEFAULT 'open',
+                  checklist_template TEXT,
+                  checklist JSONB NOT NULL DEFAULT '[]',
+                  notes TEXT,
+                  created_at TIMESTAMPTZ DEFAULT NOW(),
+                  updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+              `);
+              await db.execute(sql`
+                ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS scheduled_time TIME
+              `);
         await db.execute(sql`
           CREATE TABLE IF NOT EXISTS work_order_checklist_templates (
             id SERIAL PRIMARY KEY,
