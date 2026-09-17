@@ -34,13 +34,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 }
             }
             $stmt = $pdo->prepare("INSERT INTO work_orders
-                (client_id, ticket_id, project_id, site_name, address, scheduled_date, assignee, status, checklist_template, checklist, notes, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, NOW(), NOW())");
+                (client_id, ticket_id, project_id, site_name, address, scheduled_date, scheduled_time, assignee, status, checklist_template, checklist, notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, NOW(), NOW())");
             $stmt->execute([
                 $client_id, $ticket_id, $project_id,
                 trim($_POST['site_name'] ?? '') ?: null,
                 trim($_POST['address'] ?? '') ?: null,
                 $_POST['scheduled_date'] ?? null ?: null,
+                $_POST['scheduled_time'] ?? null ?: null,
                 trim($_POST['assignee'] ?? '') ?: null,
                 $template, json_encode($items), trim($_POST['notes'] ?? '') ?: null,
             ]);
@@ -337,24 +338,76 @@ if ($detail_id) {
                                     <?php endfor; ?>
                                 </div>
                             <?php else: ?>
-                                <?php $day_wos = array_values(array_filter($cal_wos, fn($w)=>$w['scheduled_date'] && date('Y-m-d', strtotime($w['scheduled_date']))===$cal_date)); ?>
-                                <div class="text-sm text-gray-500 mb-3"><?php echo count($day_wos); ?> work order(s) scheduled for <?php echo date('F j, Y', $ts); ?></div>
-                                <?php if (empty($day_wos)): ?>
-                                    <p class="text-sm text-gray-500 py-8 text-center">No work orders scheduled for this day.</p>
-                                <?php else: ?>
-                                    <div class="space-y-2">
-                                        <?php foreach ($day_wos as $wo): ?>
-                                            <a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="cal-event flex items-center gap-3 border border-gray-200 rounded-lg px-4 py-3 hover:bg-gray-50 transition">
-                                                <span class="w-2.5 h-2.5 rounded-full <?php echo $status_dot($wo['status']); ?>"></span>
-                                                <div class="flex-1">
-                                                    <p class="font-medium text-gray-900 text-sm"><?php echo htmlspecialchars($wo['site_name'] ?: '#' . $wo['id']); ?></p>
-                                                    <p class="text-xs text-gray-500"><?php echo htmlspecialchars($wo['client_name'] ?: 'No client'); ?><?php echo $wo['assignee'] ? ' · ' . htmlspecialchars($wo['assignee']) : ''; ?></p>
-                                                </div>
-                                                <span class="px-2 py-1 text-xs font-medium rounded-full <?php echo $status_color($wo['status']); ?>"><?php echo ucwords(str_replace('_',' ',$wo['status'])); ?></span>
-                                            </a>
-                                        <?php endforeach; ?>
+                                <?php
+                                    $day_wos = array_values(array_filter($cal_wos, fn($w)=>$w['scheduled_date'] && date('Y-m-d', strtotime($w['scheduled_date']))===$cal_date));
+                                    // Group by assignee (Splynx-style rows)
+                                    $assignees = [];
+                                    foreach ($day_wos as $wo) {
+                                        $a = $wo['assignee'] ?: 'Not assigned';
+                                        $assignees[$a][] = $wo;
+                                    }
+                                    // Backlog = work orders with no scheduled date (unscheduled jobs)
+                                    $backlog = array_values(array_filter($cal_wos, fn($w)=>!$w['scheduled_date']));
+                                    $hour_start = 7; $hour_end = 21;
+                                ?>
+                                <div class="flex gap-6">
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-sm text-gray-500 mb-3"><?php echo count($day_wos); ?> work order(s) scheduled for <?php echo date('F j, Y', $ts); ?></div>
+                                        <?php if (empty($day_wos)): ?>
+                                            <p class="text-sm text-gray-500 py-8 text-center">No work orders scheduled for this day.</p>
+                                        <?php else: ?>
+                                            <div class="space-y-4">
+                                                <?php foreach ($assignees as $assignee => $wos): ?>
+                                                    <div>
+                                                        <div class="flex items-center gap-2 mb-2">
+                                                            <span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-semibold"><?php echo strtoupper(substr($assignee,0,2)); ?></span>
+                                                            <span class="text-sm font-semibold text-gray-700"><?php echo htmlspecialchars($assignee); ?></span>
+                                                            <span class="text-xs text-gray-400">(<?php echo count($wos); ?>)</span>
+                                                        </div>
+                                                        <div class="relative border border-gray-200 rounded-lg overflow-hidden">
+                                                            <?php for ($h = $hour_start; $h <= $hour_end; $h++): ?>
+                                                                <div class="h-12 border-b border-gray-100 flex items-center px-2 text-[10px] text-gray-400"><?php echo sprintf('%02d:00', $h); ?></div>
+                                                            <?php endfor; ?>
+                                                            <?php foreach ($wos as $wo): ?>
+                                                                <?php
+                                                                    $t = $wo['scheduled_time'] ? strtotime($wo['scheduled_time']) : null;
+                                                                    $top = $t ? (int)date('G', $t) - $hour_start : 0;
+                                                                    $min = $t ? (int)date('i', $t) : 0;
+                                                                    $topPx = $top * 48 + ($min / 60) * 48;
+                                                                ?>
+                                                                <a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="absolute left-2 right-2 rounded border px-2 py-1 text-xs <?php echo $status_color($wo['status']); ?>" style="top:<?php echo $topPx; ?>px;">
+                                                                    <span class="font-semibold"><?php echo $t ? date('g:i A', $t) : 'All day'; ?></span> — <?php echo htmlspecialchars($wo['site_name'] ?: '#' . $wo['id']); ?>
+                                                                </a>
+                                                            <?php endforeach; ?>
+                                                        </div>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php endif; ?>
                                     </div>
-                                <?php endif; ?>
+                                    <?php if (!empty($backlog)): ?>
+                                        <div class="w-72 shrink-0 hidden xl:block">
+                                            <div class="bg-white rounded-lg border border-gray-200 p-4 sticky top-20">
+                                                <div class="flex items-center justify-between mb-3">
+                                                    <h3 class="text-sm font-semibold text-gray-700">Backlog</h3>
+                                                    <span class="text-xs text-gray-400"><?php echo count($backlog); ?></span>
+                                                </div>
+                                                <div class="space-y-2 max-h-[60vh] overflow-y-auto">
+                                                    <?php foreach ($backlog as $wo): ?>
+                                                        <a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="block border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition">
+                                                            <div class="flex items-center gap-2 mb-1">
+                                                                <span class="px-1.5 py-0.5 text-[10px] font-medium rounded <?php echo $status_color($wo['status']); ?>"><?php echo ucwords(str_replace('_',' ',$wo['status'])); ?></span>
+                                                                <span class="text-xs text-gray-400">#<?php echo $wo['id']; ?></span>
+                                                            </div>
+                                                            <p class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($wo['site_name'] ?: 'Untitled'); ?></p>
+                                                            <p class="text-xs text-gray-500"><?php echo htmlspecialchars($wo['client_name'] ?: 'No client'); ?><?php echo $wo['assignee'] ? ' · ' . htmlspecialchars($wo['assignee']) : ''; ?></p>
+                                                        </a>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -440,9 +493,13 @@ if ($detail_id) {
                     <input type="date" name="scheduled_date" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Assignee</label>
-                    <input type="text" name="assignee" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="Technician name">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Scheduled time</label>
+                    <input type="time" name="scheduled_time" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
                 </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Assignee</label>
+                <input type="text" name="assignee" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="Technician name">
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Checklist template</label>
