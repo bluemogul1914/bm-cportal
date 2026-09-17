@@ -36,6 +36,34 @@ $prev = [
     'email'   => trim($_POST['email']   ?? ''),
 ];
 
+// ── Client-aware prefill + tagging ──────────────────────────────────────────
+// If a portal client is logged in, tag any lead with their client_id
+// (frontier_orders.client_id) and prefill their address on the initial GET.
+// qualify_db() is a top-level fn (hoisted), safe to call here.
+$loggedClientId = null;
+$isPost = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
+if (!empty($_SESSION['user_id'])) {
+    try {
+        $pq = qualify_db();
+        if ($pq) {
+            $cst = $pq->prepare("SELECT id, address, city, state, zip, email FROM clients WHERE user_id = ? LIMIT 1");
+            $cst->execute([$_SESSION['user_id']]);
+            $pc = $cst->fetch(PDO::FETCH_ASSOC);
+            if ($pc) {
+                $loggedClientId = (int)$pc['id'];
+                if (!$isPost) {
+                    $street = trim((string)($pc['address'] ?? ''));
+                    if ($street) $prev['address'] = $street;
+                    if (!empty($pc['city']))  $prev['city']  = $pc['city'];
+                    if (!empty($pc['state'])) $prev['state'] = strtoupper($pc['state']);
+                    if (!empty($pc['zip']))   $prev['zip']   = $pc['zip'];
+                    if (!empty($pc['email'])) $prev['email'] = $pc['email'];
+                }
+            }
+        }
+    } catch (Throwable $e) { /* prefill best-effort */ }
+}
+
 $result   = null;   // 'available' | 'unavailable' | 'checking' | 'error'
 $message  = null;
 $pon      = null;
@@ -89,13 +117,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "INSERT INTO frontier_orders
                         (pon, type, address_line1, city, state, zip,
                          contact_name, contact_phone, contact_email,
-                         status, remarks, created_at, updated_at)
-                     VALUES (?, 'PRE-ORDER', ?, ?, ?, ?, ?, ?, ?, 'PREQUAL_CHECKING', ?, NOW(), NOW())"
+                         client_id, status, remarks, created_at, updated_at)
+                     VALUES (?, 'PRE-ORDER', ?, ?, ?, ?, ?, ?, ?, ?, 'PREQUAL_CHECKING', ?, NOW(), NOW())"
                 );
                 $stmt->execute([
                     $pon, $prev['address'], $prev['city'], $prev['state'], $prev['zip'],
                     $prev['name'] ?: 'Web Inquiry', $prev['phone'], $prev['email'],
-                    'Source: fiber.bluemogul.us',
+                    $loggedClientId, 'Source: fiber.bluemogul.us',
                 ]);
             }
         } catch (Throwable $e) {
