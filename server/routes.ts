@@ -13,6 +13,18 @@ import { sql, eq, and } from "drizzle-orm";
 import { syncSource, syncAllSources, getClientAssets, VALID_SOURCES } from "./network-sync";
 import { recordTransaction } from "./balance-scheduler";
 
+/** Resolve a portal user's linked client from the DB (login session carries no client_id). */
+async function resolveClientId(sess: any): Promise<number | null> {
+  const uid = sess?.user_id;
+  if (!uid) return null;
+  try {
+    const r = await pool.query(`SELECT id FROM clients WHERE user_id = $1 LIMIT 1`, [uid]);
+    return r.rows.length ? Number(r.rows[0].id) : null;
+  } catch {
+    return null;
+  }
+}
+
 const DISABLED_FUNCTIONS = [
   "exec", "shell_exec", "system", "passthru", "popen", "proc_open",
   "pcntl_exec", "pcntl_fork", "pcntl_signal", "pcntl_waitpid",
@@ -333,7 +345,7 @@ export async function registerRoutes(
 
   // ── Client tickets ────────────────────────────────────────────────────────
   app.get("/api/client/tickets", async (req, res) => {
-    const clientId = (req as any).session?.portalUser?.client_id;
+    const clientId = await resolveClientId((req as any).session?.portalUser);
     if (!clientId) return res.status(401).json({ error: "Not authenticated" });
     const result = await db.execute(
       sql`SELECT * FROM tickets WHERE client_id = ${clientId} ORDER BY created_at DESC`
@@ -342,7 +354,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/client/tickets", async (req, res) => {
-    const clientId = (req as any).session?.portalUser?.client_id;
+    const clientId = await resolveClientId((req as any).session?.portalUser);
     if (!clientId) return res.status(401).json({ error: "Not authenticated" });
     const { subject, description, priority = "medium" } = req.body;
     if (!subject) return res.status(400).json({ error: "subject is required" });
@@ -409,7 +421,7 @@ export async function registerRoutes(
 
   // ── Client invoices ───────────────────────────────────────────────────────
   app.get("/api/client/invoices", async (req, res) => {
-    const clientId = (req as any).session?.portalUser?.client_id;
+    const clientId = await resolveClientId((req as any).session?.portalUser);
     if (!clientId) return res.status(401).json({ error: "Not authenticated" });
     const result = await db.execute(
       sql`SELECT * FROM invoices WHERE client_id = ${clientId} ORDER BY created_at DESC`
@@ -600,9 +612,10 @@ export async function registerRoutes(
       const sess = (req as any).session?.portalUser;
       // Client must be authenticated and can ONLY top up their own account.
       // Admins may pass an explicit clientId to top up a client on their behalf.
-      const clientId = sess?.is_admin
-        ? (req.body?.clientId ?? sess?.client_id)
-        : sess?.client_id;
+      let clientId = await resolveClientId(sess);
+      if (sess?.is_admin && req.body?.clientId) {
+        clientId = parseInt(req.body.clientId, 10) || clientId;
+      }
       const { amount } = req.body;
       if (!clientId || !amount || amount <= 0) {
         return res.status(400).json({ error: "clientId and positive amount are required" });
@@ -709,7 +722,7 @@ export async function registerRoutes(
 
   // GET /api/client/balance — current client's balance info
   app.get("/api/client/balance", async (req, res) => {
-    const clientId = (req as any).session?.portalUser?.client_id;
+    const clientId = await resolveClientId((req as any).session?.portalUser);
     if (!clientId) return res.status(401).json({ error: "Not authenticated" });
     const result = await db.execute(sql`
       SELECT credit_balance, status, low_balance_warned, low_balance_threshold
@@ -735,7 +748,7 @@ export async function registerRoutes(
 
   // GET /api/client/ledger — current client's transaction ledger
   app.get("/api/client/ledger", async (req, res) => {
-    const clientId = (req as any).session?.portalUser?.client_id;
+    const clientId = await resolveClientId((req as any).session?.portalUser);
     if (!clientId) return res.status(401).json({ error: "Not authenticated" });
     const result = await db.execute(sql`
       SELECT * FROM transaction_ledger WHERE client_id = ${clientId}
