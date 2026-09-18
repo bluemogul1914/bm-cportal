@@ -41,12 +41,16 @@ $error_msg   = '';
 $tab         = $_GET['tab'] ?? 'services';
 
 // ── Core API helper (Reseller API — POST form-encoded) ─────────────────────────
+// The API reads ONLY $_POST and requires the exact, case-sensitive field names
+// `action`, `reseller_api_key`, `reseller_email`. This helper previously sent
+// `email`/`apikey`, so EVERY call from this page was answered with
+// {"result":0,"msg":"No API KEY in request"} — a second reason nothing showed up.
 function hw_api(string $action, array $params = []): array {
     global $hw_api_email, $hw_api_key, $hw_api_url;
     $postFields = array_merge([
-        'action' => $action,
-        'email'  => $hw_api_email,
-        'apikey' => $hw_api_key,
+        'action'           => $action,
+        'reseller_email'   => $hw_api_email,
+        'reseller_api_key' => $hw_api_key,
     ], $params);
 
     $ch = curl_init();
@@ -99,12 +103,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tab = 'settings';
 
         } elseif ($action === 'test_connection') {
-            $res = hw_api('getservicelist');
-            if (isset($res['error'])) {
-                $error_msg = 'Connection failed: ' . $res['error'];
+            // Real health check: TestConnection. (`getservicelist` does not exist
+            // in this API — that call could never have succeeded.)
+            $res = hw_api('TestConnection');
+            if (isset($res['error']) || (string)($res['msg'] ?? '') !== 'OK') {
+                $error_msg = 'Connection failed: ' . ($res['error'] ?? ($res['msg'] ?? 'unknown'));
             } else {
-                $count = count($res['services'] ?? $res['data'] ?? []);
-                $success_msg = "Connected! Found $count hosting service(s).";
+                $cat = hw_api('ProductsList');
+                $n = 0;
+                foreach (($cat['products'] ?? []) as $items) { $n += is_array($items) ? count($items) : 0; }
+                $success_msg = "Connected — TestConnection OK; $n reseller product(s) available.";
+            }
+            $tab = 'services';
+
+        } elseif ($action === 'provision_hostwinds') {
+            // ⚠️ Creates a billable service. Runs through the loopback API so the
+            // shared audit/mirror logic lives in one place.
+            $payload = [
+                'client_id'   => (int)($_POST['client_id'] ?? 0),
+                'product_id'  => (int)($_POST['product_id'] ?? 0),
+                'product_name'=> trim((string)($_POST['product_name'] ?? '')),
+                'domain'      => trim((string)($_POST['domain'] ?? '')),
+                'email'       => trim((string)($_POST['email'] ?? '')),
+                'firstname'   => trim((string)($_POST['firstname'] ?? '')),
+                'lastname'    => trim((string)($_POST['lastname'] ?? '')),
+                'companyname' => trim((string)($_POST['companyname'] ?? '')),
+                'phonenumber' => trim((string)($_POST['phonenumber'] ?? '')),
+                'billingcycle'=> trim((string)($_POST['billingcycle'] ?? 'monthly')),
+            ];
+            $ch = curl_init('http://127.0.0.1:' . (getenv('PORT') ?: '3000') . '/portal/api/admin/hostwinds/services/provision');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 180,
+                CURLOPT_POSTFIELDS     => json_encode($payload),
+                CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
+                CURLOPT_COOKIE         => 'connect.sid=' . ($_COOKIE['connect.sid'] ?? ''),
+            ]);
+            $resp = curl_exec($ch); $http = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+            $data = json_decode((string)$resp, true);
+            if ($http === 200 && !empty($data['ok'])) {
+                $success_msg = 'Service provisioned. Hosting id: ' . ($data['hosting_id'] ?? 'not returned') . '.';
+            } else {
+                $error_msg = 'Provisioning rejected: ' . htmlspecialchars((string)($data['error'] ?? $data['api_response']['msg'] ?? substr((string)$resp, 0, 200)));
+            }
+            $tab = 'services';
+
+        } elseif ($action === 'sync_hostwinds_statuses') {
+            $ch = curl_init('http://127.0.0.1:' . (getenv('PORT') ?: '3000') . '/portal/api/admin/hostwinds/services/sync');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 120,
+                CURLOPT_POSTFIELDS     => '{}',
+                CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
+                CURLOPT_COOKIE         => 'connect.sid=' . ($_COOKIE['connect.sid'] ?? ''),
+            ]);
+            $resp = curl_exec($ch); $http = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+            $data = json_decode((string)$resp, true);
+            if ($http === 200) {
+                $success_msg = sprintf('Status refresh: %d service(s) checked, %d changed.', (int)($data['checked'] ?? 0), (int)($data['updated'] ?? 0));
+                if (!empty($data['errors'])) $success_msg .= ' Notes: ' . implode(' | ', array_map('strval', $data['errors']));
+            } else {
+                $error_msg = 'Status refresh failed: ' . htmlspecialchars((string)($data['error'] ?? substr((string)$resp, 0, 160)));
             }
             $tab = 'services';
         }
@@ -112,25 +169,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ── Live data per tab ──────────────────────────────────────────────────────────
+// NOTE: this API has NO list-services, list-clients or list-invoices action.
+// `getservicelist` / `listclients` / `getinvoices` do not exist, which is the
+// third reason this page showed nothing. Services come from the portal's own
+// mirror (hostwinds_services: one row per sub-account the PORTAL created),
+// because Hostwinds itself cannot enumerate them (GetServicesData needs
+// hostings_ids from WHMCS's own tblhosting). Billing is not exposed at all.
 $services  = [];
 $accounts  = [];
 $invoices  = [];
 $api_error = '';
+$hw_catalog = [];
 
 if ($hw_connected) {
-    if ($tab === 'services') {
-        $res = hw_api('getservicelist');
-        if (isset($res['error'])) { $api_error = $res['error']; }
-        else { $services = $res['services'] ?? $res['data'] ?? []; }
-    } elseif ($tab === 'accounts') {
-        $res = hw_api('listclients');
-        if (isset($res['error'])) { $api_error = $res['error']; }
-        else { $accounts = $res['clients'] ?? $res['data'] ?? []; }
-    } elseif ($tab === 'billing') {
-        $res = hw_api('getinvoices');
-        if (isset($res['error'])) { $api_error = $res['error']; }
-        else { $invoices = $res['invoices'] ?? $res['data'] ?? []; }
+    // Catalogue is always live — it is the one account-wide listing the API has.
+    $cat = hw_api('ProductsList');
+    foreach (($cat['products'] ?? []) as $group => $items) {
+        foreach ((array)$items as $p) {
+            $hw_catalog[] = [
+                'id'      => (int)($p['id'] ?? 0),
+                'name'    => $p['name'] ?? '',
+                'group'   => $group,
+                'monthly' => $p['price']['monthly'] ?? ($p['price']['msetupfee'] ?? null),
+                'paytype' => $p['price']['paytype'] ?? null,
+            ];
+        }
     }
+
+    if ($tab === 'services') {
+        // Mirror first (always available), then a live status refresh by id.
+        try {
+            $rows = $pdo->query("SELECT s.*, c.name AS client_name FROM hostwinds_services s
+                                 LEFT JOIN clients c ON c.id = s.client_id ORDER BY s.id DESC")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($rows as $r) {
+                $services[] = [
+                    'id'          => $r['hosting_id'] ?: ('row ' . $r['id']),
+                    'domain'      => $r['domain'] ?: ($r['client_name'] ?: ('client #' . $r['client_id'])),
+                    'package'     => ($r['product_name'] ?: ('product ' . $r['product_id'])) . ($r['client_name'] ? ' · ' . $r['client_name'] : ''),
+                    'status'      => $r['status'],
+                    'nextduedate' => $r['created_at'],
+                    'amount'      => null,
+                ];
+            }
+        } catch (Throwable $e) { $api_error = 'service mirror: ' . $e->getMessage(); }
+    } elseif ($tab === 'accounts') {
+        // The reseller's clients are not enumerable via the API either; show the
+        // portal clients that hold a provisioned Hostwinds service.
+        try {
+            $accounts = $pdo->query("SELECT c.id, c.name, c.email, COUNT(s.id) AS services
+                                     FROM clients c JOIN hostwinds_services s ON s.client_id = c.id
+                                     GROUP BY c.id, c.name, c.email ORDER BY c.name")->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) { $api_error = 'account view: ' . $e->getMessage(); }
+    }
+    // billing: intentionally empty — see the scope card on the page.
 }
 
 $total_services = count($services);
@@ -279,10 +370,113 @@ foreach ($services as $s) {
             <!-- SERVICES TAB                                             -->
             <!-- ════════════════════════════════════════════════════════ -->
             <?php if ($tab === 'services'): ?>
+            <?php
+            /* Which reseller products suit Nextcloud hosting?
+               Nextcloud wants its own VPS, so the SSD Cloud family (managed) is
+               the match — the same SKU Blue Mogul runs on. Present them first. */
+            $nc_products = array_values(array_filter($hw_catalog, fn($p) => stripos($p['group'], 'SSD Cloud') === 0));
+            $other_products = array_values(array_filter($hw_catalog, fn($p) => stripos($p['group'], 'SSD Cloud') !== 0));
+            ?>
+            <div class="bg-white rounded-lg border border-gray-200 mb-4" data-testid="card-hostwinds-provision">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-cloud-arrow-up text-emerald-500 mr-2"></i>Sell Hostwinds services</h2>
+                    <span class="text-xs text-gray-400">Nextcloud hosting · provisions a real sub-account</span>
+                </div>
+                <div class="p-6">
+                    <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm mb-4">
+                        <p class="font-medium mb-1"><i class="fas fa-triangle-exclamation mr-2"></i>This creates a billable service</p>
+                        <p>Submitting calls Hostwinds <code>CreateAccount</code> and provisions a real hosting account for the selected client.
+                           Every attempt is written to <code>hostwinds_orders</code> (request with the password redacted, plus the raw API response) so a rejected attempt is auditable and retryable.</p>
+                    </div>
+                    <form method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="action" value="provision_hostwinds">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Client</label>
+                            <select name="client_id" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-hw-client">
+                                <option value="">— choose a portal client —</option>
+                                <?php
+                                try {
+                                    foreach ($pdo->query("SELECT id, name, email FROM clients ORDER BY name")->fetchAll(PDO::FETCH_ASSOC) as $c) {
+                                        printf('<option value="%d">%s%s</option>', (int)$c['id'],
+                                            htmlspecialchars((string)$c['name']),
+                                            $c['email'] ? ' — ' . htmlspecialchars((string)$c['email']) : '');
+                                    }
+                                } catch (Throwable $e) {}
+                                ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Product <span class="text-gray-400">(SSD Cloud = Nextcloud host)</span></label>
+                            <select name="product_id" required class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" data-testid="select-hw-product"
+                                    onchange="document.querySelector('[name=product_name]').value = this.options[this.selectedIndex].dataset.name || this.options[this.selectedIndex].text;">
+                                <option value="">— choose a product —</option>
+                                <optgroup label="Recommended for Nextcloud hosting">
+                                    <?php foreach ($nc_products as $p): ?>
+                                        <option value="<?= (int)$p['id'] ?>" data-name="<?= htmlspecialchars($p['name']) ?>">
+                                            <?= htmlspecialchars($p['name']) ?><?= $p['monthly'] !== null ? ' — $' . number_format((float)$p['monthly'], 2) . '/mo' : '' ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </optgroup>
+                                <optgroup label="Other products">
+                                    <?php foreach ($other_products as $p): ?>
+                                        <option value="<?= (int)$p['id'] ?>" data-name="<?= htmlspecialchars($p['name']) ?>">
+                                            <?= htmlspecialchars($p['group']) ?> · <?= htmlspecialchars($p['name']) ?><?= $p['monthly'] !== null ? ' — $' . number_format((float)$p['monthly'], 2) . '/mo' : '' ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </optgroup>
+                            </select>
+                            <input type="hidden" name="product_name">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Service label / hostname</label>
+                            <input name="domain" placeholder="nextcloud-clientname" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Notify e-mail</label>
+                            <input name="email" type="email" placeholder="client@example.com" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 md:col-span-2">
+                            <input name="firstname" placeholder="First name" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                            <input name="lastname" placeholder="Last name" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                            <input name="companyname" placeholder="Company" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                            <input name="phonenumber" placeholder="Phone" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                        </div>
+                        <div class="md:col-span-2 flex items-center justify-between">
+                            <label class="text-xs text-gray-500 flex items-center gap-2">
+                                Billing cycle
+                                <select name="billingcycle" class="px-2 py-1 border border-gray-300 rounded-md text-xs">
+                                    <option value="monthly">Monthly</option>
+                                    <option value="quarterly">Quarterly</option>
+                                    <option value="annually">Annually</option>
+                                </select>
+                            </label>
+                            <button class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-md text-sm font-medium transition"
+                                    onclick="return confirm('Provision a real Hostwinds service for this client? This is billable.');"
+                                    data-testid="button-hw-provision">
+                                <i class="fas fa-cloud-arrow-up mr-2"></i>Provision service
+                            </button>
+                        </div>
+                    </form>
+                    <p class="text-xs text-gray-500 mt-3">
+                        After provisioning the returned hosting id is stored in <code>hostwinds_services</code> — that stored id is the
+                        <em>only</em> way to read the service back, because this API cannot list services (see the scope card below).
+                    </p>
+                </div>
+            </div>
             <div class="bg-white rounded-lg border border-gray-200">
                 <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-globe text-cyan-500 mr-2"></i>Hosting Services</h2>
-                    <span class="text-xs text-gray-400"><?= $total_services ?> service(s)</span>
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs text-gray-400"><?= $total_services ?> service(s)</span>
+                        <form method="POST" class="inline">
+                            <?php echo csrf_field(); ?>
+                            <input type="hidden" name="action" value="sync_hostwinds_statuses">
+                            <button class="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50" data-testid="button-hw-sync-status">
+                                <i class="fas fa-rotate mr-1"></i>Refresh statuses
+                            </button>
+                        </form>
+                    </div>
                 </div>
                 <?php if (empty($services) && !$api_error): ?>
                 <div class="p-10 text-center text-gray-400">

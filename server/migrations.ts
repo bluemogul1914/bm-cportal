@@ -742,4 +742,43 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Hostwinds catalogue migration error:", err.message);
               }
+
+              // ── Hostwinds provisioned services + order audit ───────────────
+              // The reseller API cannot enumerate services (GetServicesData needs
+              // hostings_ids from WHMCS's own tblhosting), so the portal records
+              // the hosting id returned by every CreateAccount and polls
+              // ServicesStatus per id. Every provisioning attempt is audited.
+              try {
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS hostwinds_services (
+                    id SERIAL PRIMARY KEY,
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    product_id INTEGER NOT NULL,
+                    product_name TEXT,
+                    hosting_id TEXT,
+                    domain TEXT,
+                    status VARCHAR(40) DEFAULT 'pending',
+                    raw JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_synced_at TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS hostwinds_orders (
+                    id SERIAL PRIMARY KEY,
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    product_id INTEGER,
+                    status VARCHAR(30) DEFAULT 'pending',
+                    request JSONB,
+                    response JSONB,
+                    error TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS hostwinds_services_client_idx ON hostwinds_services (client_id)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS hostwinds_services_hosting_idx ON hostwinds_services (hosting_id)`);
+                console.log("[migrations] Hostwinds service/order migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Hostwinds service/order migration error:", err.message);
+              }
             }

@@ -23,6 +23,10 @@ import { syncAllSources } from "./network-sync";
 import { syncWave, getWaveToken } from "./wave-api";
 import { syncXero, xeroStatus, xeroToken, getXeroConfig, saveXeroConfig, xeroRequest, xeroAuthMode } from "./xero-api";
 import {
+  hwProducts, hwTestConnection, hwCreateAccount, hwServiceStatus, hwServicesData,
+  syncHwServices, saveHwService, logHwOrder, getHwCredentials,
+} from "./hostwinds-api";
+import {
   getOAuthConfig,
   saveOAuthConfig,
   buildAuthorizeUrl,
@@ -783,6 +787,98 @@ app.get("/portal/api/accounting/overview", async (req, res) => {
   }
 
   res.json(result);
+});
+
+// ── Hostwinds white-label reseller: catalogue + provisioning ────────────────
+// Selling Hostwinds services from the portal. CreateAccount is a WRITE action
+// that creates a billable service, so the provision endpoint requires an
+// explicit admin action and audits every attempt.
+
+app.get("/portal/api/admin/hostwinds/catalog", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const [products, test] = await Promise.all([hwProducts(webhookPool), hwTestConnection(webhookPool)]);
+    res.json({ connection: test, products });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/portal/api/admin/hostwinds/services", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const { rows } = await webhookPool.query(
+      `SELECT s.*, c.name AS client_name, c.email AS client_email
+         FROM hostwinds_services s LEFT JOIN clients c ON c.id = s.client_id
+        ORDER BY s.id DESC LIMIT 200`
+    );
+    const orders = await webhookPool.query(
+      `SELECT id, client_id, product_id, status, error, created_at FROM hostwinds_orders ORDER BY id DESC LIMIT 25`
+    );
+    res.json({ services: rows, recent_orders: orders.rows });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Refresh stored service statuses (ids come from our own table).
+app.post("/portal/api/admin/hostwinds/services/sync", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try { res.json(await syncHwServices(webhookPool)); } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ⚠️ WRITE: provisions a client + service at Hostwinds (billable).
+app.post("/portal/api/admin/hostwinds/services/provision", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const b: any = req.body ?? {};
+  const productId = parseInt(String(b.product_id ?? ""), 10);
+  const clientId = parseInt(String(b.client_id ?? ""), 10);
+  if (!Number.isFinite(productId)) return res.status(400).json({ error: "product_id is required" });
+  if (!Number.isFinite(clientId)) return res.status(400).json({ error: "client_id is required" });
+
+  const fields: Record<string, string | number> = { product_id: productId };
+  // Conventional WHMCS-style client/service fields. The API validates them in
+  // its own order and reports "No param - x" for anything it also wants; the
+  // audit row keeps the raw response so the mapping can be completed on the
+  // first real attempt rather than guessed.
+  for (const k of [
+    "firstname", "lastname", "email", "companyname", "address1", "city", "state",
+    "postcode", "country", "phonenumber", "domain", "password", "password2",
+    "billingcycle", "paymentmethod", "notes",
+  ]) {
+    if (b[k] !== undefined && b[k] !== null && String(b[k]) !== "") fields[k] = String(b[k]);
+  }
+
+  let orderId: number | null = null;
+  try {
+    const response = await hwCreateAccount(webhookPool, fields);
+    const ok = Number(response?.result) === 1;
+    orderId = await logHwOrder(webhookPool, {
+      client_id: clientId, product_id: productId,
+      status: ok ? "created" : "rejected",
+      request: fields, response,
+      error: ok ? null : String(response?.msg ?? "unknown"),
+    });
+    if (!ok) {
+      return res.status(400).json({ ok: false, order_id: orderId, api_response: response, hint: "The API rejected the request — its message names the parameter it wants next." });
+    }
+    // Pull the hosting id out of whatever shape the API returned.
+    const hostingId =
+      response?.hosting_id ?? response?.hostingid ?? response?.id ?? response?.service_id ?? null;
+    const productName = String(b.product_name ?? "");
+    await saveHwService(webhookPool, {
+      client_id: clientId,
+      product_id: productId,
+      product_name: productName,
+      hosting_id: hostingId === null ? null : String(hostingId),
+      domain: b.domain ? String(b.domain) : null,
+      status: hostingId === null ? "created (id reported by API in another field — see response)" : "active",
+      raw: response,
+    });
+    res.json({ ok: true, order_id: orderId, hosting_id: hostingId, api_response: response });
+  } catch (e: any) {
+    const id = await logHwOrder(webhookPool, {
+      client_id: clientId, product_id: productId, status: "failed",
+      request: fields, response: null, error: e.message,
+    }).catch(() => null);
+    res.status(500).json({ ok: false, order_id: id, error: e.message });
+  }
 });
 
 // ── Xero OAuth 2.0 consent flow (the Web app) ────────────────────────────────
