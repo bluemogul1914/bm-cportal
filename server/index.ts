@@ -659,7 +659,22 @@ const XERO_OAUTH_DEFAULT_REDIRECT = "https://portal.bluemogul.us/portal/api/xero
 const xeroOauthNotice = (res: any, msg: string) =>
   res.redirect("/portal/admin-xero.php?notice=" + encodeURIComponent(msg));
 
-app.get(["/portal/api/xero/oauth/connect", "/api/xero/oauth/connect"], async (req, res) => {
+// Path aliases matter: the URI REGISTERED on the Xero app is
+// /portal/api/xero/callback (no /oauth/), so both spellings must answer.
+const XERO_OAUTH_CONNECT_PATHS = [
+  "/portal/api/xero/oauth/connect",
+  "/api/xero/oauth/connect",
+  "/portal/api/xero/connect",
+  "/api/xero/connect",
+];
+const XERO_OAUTH_CALLBACK_PATHS = [
+  "/portal/api/xero/oauth/callback",
+  "/api/xero/oauth/callback",
+  "/portal/api/xero/callback",
+  "/api/xero/callback",
+];
+
+app.get(XERO_OAUTH_CONNECT_PATHS, async (req, res) => {
   if (!requireXeroAdmin(req, res)) return;
   try {
     const cfg = await getOAuthConfig(webhookPool);
@@ -678,7 +693,7 @@ app.get(["/portal/api/xero/oauth/connect", "/api/xero/oauth/connect"], async (re
   }
 });
 
-app.get(["/portal/api/xero/oauth/callback", "/api/xero/oauth/callback"], async (req, res) => {
+app.get(XERO_OAUTH_CALLBACK_PATHS, async (req, res) => {
   try {
     const errCode = String(req.query.error || "");
     if (errCode) {
