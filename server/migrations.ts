@@ -414,4 +414,35 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Purchase order migration error:", err.message);
               }
+
+              // ── IP pools + allocations (P3 #8) ──────────────────────────────────
+              try {
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS ip_pools (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(120) NOT NULL,
+                    cidr VARCHAR(64) NOT NULL,
+                    gateway VARCHAR(45),
+                    vlan INTEGER,
+                    site_id INTEGER REFERENCES network_sites(id) ON DELETE SET NULL,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS ip_allocations (
+                    id SERIAL PRIMARY KEY,
+                    pool_id INTEGER REFERENCES ip_pools(id) ON DELETE CASCADE,
+                    ip_address VARCHAR(45) NOT NULL,
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    device_id INTEGER REFERENCES network_devices(id) ON DELETE SET NULL,
+                    status VARCHAR(20) DEFAULT 'assigned',
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                console.log("[migrations] IP pool migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] IP pool migration error:", err.message);
+              }
             }
