@@ -154,6 +154,7 @@ function fmt_money($m) { return '$' . number_format((float)$m, 2); }
                                         <button onclick="openEdit(<?php echo (int)$c['id']; ?>)" class="text-gray-500 hover:text-gray-800 text-xs mr-3">Edit</button>
                                         <form method="POST" class="inline" onsubmit="return confirm('Delete this contract?');">
                                             <input type="hidden" name="action" value="delete_contract">
+                                            <?php echo csrf_field(); ?>
                                             <input type="hidden" name="contract_id" value="<?php echo (int)$c['id']; ?>">
                                             <button class="text-red-500 hover:text-red-700 text-xs">Delete</button>
                                         </form>
@@ -174,6 +175,7 @@ function fmt_money($m) { return '$' . number_format((float)$m, 2); }
         <h3 class="text-lg font-semibold text-gray-900 mb-4">New Contract</h3>
         <form method="POST">
             <input type="hidden" name="action" value="add_contract">
+            <?php echo csrf_field(); ?>
             <div class="mb-4">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Client</label>
                 <select name="client_id" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
@@ -227,6 +229,7 @@ function fmt_money($m) { return '$' . number_format((float)$m, 2); }
         <h3 class="text-lg font-semibold text-gray-900 mb-4">Edit Contract</h3>
         <form method="POST">
             <input type="hidden" name="action" value="update_contract">
+            <?php echo csrf_field(); ?>
             <input type="hidden" name="contract_id" id="edit_id">
             <div class="mb-4">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Client</label>
@@ -263,6 +266,7 @@ function fmt_money($m) { return '$' . number_format((float)$m, 2); }
         <p class="text-sm text-gray-500 mb-4">Response &amp; resolution hours by priority. Tickets auto-set their SLA due time from these.</p>
         <form method="POST">
             <input type="hidden" name="action" value="save_sla">
+            <?php echo csrf_field(); ?>
             <input type="hidden" name="contract_id" id="sla_contract_id">
             <table class="w-full mb-4">
                 <thead class="bg-gray-50">
