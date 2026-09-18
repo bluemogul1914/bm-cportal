@@ -143,6 +143,7 @@ $status_dot = function($s) {
     <link rel="stylesheet" href="/assets/css/style.css">
     <script src="/assets/js/tailwind-shared.js"></script>
     <script>tailwind.config = window.bmTailwindConfig;</script>
+    <style>.grid-cols-7{grid-template-columns:repeat(7,minmax(0,1fr))}</style>
 </head>
 <body class="bg-gray-50 font-sans">
 <div class="flex h-screen overflow-hidden">
