@@ -348,7 +348,39 @@ export async function runPortalMigrations() {
               CREATE INDEX IF NOT EXISTS idx_assets_network_site_id ON assets(network_site_id)
             `);
             console.log("[migrations] Inventory deployed-status migrations applied");
-  } catch (err: any) {
-    console.error("[migrations] Prepaid balance ledger migration error:", err.message);
-  }
-}
+              } catch (err: any) {
+                console.error("[migrations] Prepaid balance ledger migration error:", err.message);
+              }
+
+              // ── Service contracts + SLA terms (P2 #6) ─────────────────────────────
+              try {
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS service_contracts (
+                    id SERIAL PRIMARY KEY,
+                    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    start_date DATE,
+                    end_date DATE,
+                    status VARCHAR(20) DEFAULT 'active',
+                    monthly_value NUMERIC(10,2) DEFAULT 0,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS sla_terms (
+                    id SERIAL PRIMARY KEY,
+                    contract_id INTEGER REFERENCES service_contracts(id) ON DELETE CASCADE,
+                    priority VARCHAR(20) NOT NULL,
+                    response_hours NUMERIC(6,2) DEFAULT 0,
+                    resolution_hours NUMERIC(6,2) DEFAULT 0
+                  )
+                `);
+                await db.execute(sql`
+                  ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_due_at TIMESTAMP
+                `);
+                console.log("[migrations] Service contracts + SLA migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Service contracts + SLA migration error:", err.message);
+              }
+            }

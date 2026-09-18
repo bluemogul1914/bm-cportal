@@ -284,18 +284,26 @@ export async function registerRoutes(
   }
 
   // ── SLA helper ────────────────────────────────────────────────────────────
-  function computeSlaDueAt(priority: string): Date {
-    const now = new Date();
-    const hoursMap: Record<string, number> = {
-      critical: 1,
-      high: 4,
-      medium: 24,
-      low: 72,
-    };
-    const hours = hoursMap[priority] ?? 24;
-    now.setHours(now.getHours() + hours);
-    return now;
-  }
+  async function computeSlaDueAt(priority: string, clientId?: number | null): Promise<Date> {
+      const now = new Date();
+      const defaultMap: Record<string, number> = { critical: 1, high: 4, medium: 24, low: 72 };
+      let hours = defaultMap[priority] ?? 24;
+      if (clientId) {
+        try {
+          const r = await db.execute(sql`
+            SELECT st.resolution_hours FROM sla_terms st
+            JOIN service_contracts sc ON st.contract_id = sc.id
+            WHERE sc.client_id = ${clientId} AND sc.status = 'active' AND st.priority = ${priority}
+            ORDER BY st.resolution_hours ASC LIMIT 1
+          `);
+          if (r.rows?.length && Number(r.rows[0].resolution_hours) > 0) {
+            hours = Number(r.rows[0].resolution_hours);
+          }
+        } catch { /* fall back to default */ }
+      }
+      now.setHours(now.getHours() + hours);
+      return now;
+    }
 
   // ── POST /api/webhook/add-asset ───────────────────────────────────────────
   app.post("/api/webhook/add-asset", requireWebhookToken, async (req, res) => {
@@ -324,7 +332,7 @@ export async function registerRoutes(
   app.post("/api/admin/tickets", async (req, res) => {
     const { clientId, subject, description, priority = "medium", assignedTo, source = "admin" } = req.body;
     if (!subject) return res.status(400).json({ error: "subject is required" });
-    const slaDueAt = computeSlaDueAt(priority);
+    const slaDueAt = await computeSlaDueAt(priority, clientId);
     const createResult = await db.execute(
       sql`INSERT INTO tickets (client_id, subject, description, status, priority, assigned_to, source, sla_due_at, created_at, updated_at)
           VALUES (${clientId ?? null}, ${subject}, ${description ?? null}, 'open', ${priority}, ${assignedTo ?? null}, ${source}, ${slaDueAt.toISOString()}, NOW(), NOW())
@@ -358,7 +366,7 @@ export async function registerRoutes(
     if (!clientId) return res.status(401).json({ error: "Not authenticated" });
     const { subject, description, priority = "medium" } = req.body;
     if (!subject) return res.status(400).json({ error: "subject is required" });
-    const slaDueAt = computeSlaDueAt(priority);
+    const slaDueAt = await computeSlaDueAt(priority, clientId);
     const result = await db.execute(
       sql`INSERT INTO tickets (client_id, subject, description, status, priority, source, sla_due_at, created_at, updated_at)
           VALUES (${clientId}, ${subject}, ${description ?? null}, 'open', ${priority}, 'portal', ${slaDueAt.toISOString()}, NOW(), NOW())
