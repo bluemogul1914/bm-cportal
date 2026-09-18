@@ -48,6 +48,14 @@ async function getClients(pool: pg.Pool): Promise<ClientRecord[]> {
   }));
 }
 
+/** Action1 timestamps look like "2026-09-18_15-02-26" (UTC) — convert to ISO. */
+function action1Timestamp(v: any): string | null {
+  if (!v) return null;
+  const m = String(v).match(/^(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  return `${m[1]}T${m[2]}:${m[3]}:${m[4]}Z`;
+}
+
 /**
  * Load system_settings key-value pairs, keyed by LOWERCASED setting_key.
  *
@@ -112,11 +120,18 @@ function matchClient(
     }
   }
 
-  // 3. Client name (the `name` field) — check if candidate contains client name or vice versa
-  for (const c of clients) {
-    const lowerClient = c.name.toLowerCase().trim();
-    if (lowerName.includes(lowerClient) || lowerClient.includes(lowerName)) {
-      return { clientId: c.id, method: "name_substring" };
+  // 3. Client name or company — check if candidate contains one or vice versa.
+  //    (Action1 orgs are company-shaped: "S2S Couture" must match the client
+  //    whose company is "S2S Couture Hair".)
+  if (lowerName) {
+    for (const c of clients) {
+      for (const [field, raw] of [["name", c.name], ["company", c.company]] as const) {
+        const hay = (raw || "").toLowerCase().trim();
+        if (!hay) continue;
+        if (lowerName.includes(hay) || hay.includes(lowerName)) {
+          return { clientId: c.id, method: `${field}_substring` };
+        }
+      }
     }
   }
 
@@ -162,7 +177,7 @@ async function upsertAsset(
 function normalizeDeviceStatus(status: string): string {
   const s = (status || "").toLowerCase();
   if (["online", "active", "running", "connected", "enabled", "up"].includes(s)) return "online";
-  if (["offline", "inactive", "stopped", "disabled", "down", "terminated"].includes(s)) return "offline";
+  if (["offline", "inactive", "stopped", "disabled", "down", "terminated", "disconnected"].includes(s)) return "offline";
   if (["warning", "degraded", "alert"].includes(s)) return "warning";
   return s || "unknown";
 }
@@ -188,11 +203,21 @@ async function mirrorToNetworkDevices(pool: pg.Pool, asset: AssetRow): Promise<v
     if (!isNaN(d.getTime())) lastSeen = d.toISOString();
   }
 
+  // Sources that report hardware detail (Action1 gives OS/MAC/manufacturer/serial)
+  // enrich the Network Docs columns; COALESCE keeps a later source without those
+  // fields from wiping what an earlier one wrote.
+  const raw: any = asset.raw ?? {};
+  const osName = typeof raw.OS === "string" ? raw.OS : (typeof raw.os_name === "string" ? raw.os_name : null);
+  const macAddress = typeof raw.MAC === "string" && raw.MAC ? raw.MAC : null;
+  const manufacturer = typeof raw.manufacturer === "string" && raw.manufacturer ? raw.manufacturer : null;
+  const serialNumber = typeof raw.serial === "string" && raw.serial ? raw.serial : null;
+
   try {
     await pool.query(
       `INSERT INTO network_devices
-         (client_id, hostname, device_type, ip_address, status, notes, last_seen, source, external_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         (client_id, hostname, device_type, ip_address, status, notes, last_seen, source, external_id,
+          os_name, mac_address, manufacturer, serial_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        ON CONFLICT (source, external_id) DO UPDATE SET
          client_id = COALESCE(EXCLUDED.client_id, network_devices.client_id),
          hostname = EXCLUDED.hostname,
@@ -200,7 +225,11 @@ async function mirrorToNetworkDevices(pool: pg.Pool, asset: AssetRow): Promise<v
          ip_address = EXCLUDED.ip_address,
          status = EXCLUDED.status,
          notes = EXCLUDED.notes,
-         last_seen = COALESCE(EXCLUDED.last_seen, network_devices.last_seen)`,
+         last_seen = COALESCE(EXCLUDED.last_seen, network_devices.last_seen),
+         os_name = COALESCE(EXCLUDED.os_name, network_devices.os_name),
+         mac_address = COALESCE(EXCLUDED.mac_address, network_devices.mac_address),
+         manufacturer = COALESCE(EXCLUDED.manufacturer, network_devices.manufacturer),
+         serial_number = COALESCE(EXCLUDED.serial_number, network_devices.serial_number)`,
       [
         asset.client_id,
         asset.name || asset.external_id,
@@ -211,6 +240,10 @@ async function mirrorToNetworkDevices(pool: pg.Pool, asset: AssetRow): Promise<v
         lastSeen,
         asset.source,
         asset.external_id,
+        osName,
+        macAddress,
+        manufacturer,
+        serialNumber,
       ]
     );
   } catch (e: any) {
@@ -290,29 +323,58 @@ async function syncAction1(
       return result;
     }
 
-    // Fetch endpoints
-    const epResp = await fetch(`${apiUrl}/endpoints`, {
+    // Fetch managed endpoints: Action1 has NO collection-root route
+    // (`/endpoints` returns an Apache HTML 403 — verified 2026-09-18 that a
+    // deliberately bogus path returns the byte-identical page, so that 403
+    // means "no such route", NOT "permission denied"). The documented shape is
+    // organization-scoped: /endpoints/managed/{organization_id}.
+    const orgResp = await fetch(`${apiUrl}/organizations?from=0&limit=50`, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       signal: AbortSignal.timeout(30000),
     });
-    if (!epResp.ok) {
-      result.errors.push(`Action1 endpoints fetch failed: HTTP ${epResp.status}`);
+    if (!orgResp.ok) {
+      result.errors.push(`Action1 organizations fetch failed: HTTP ${orgResp.status}`);
       return result;
     }
-    const epData: any = await epResp.json();
-    const endpoints = epData.items || epData.data || epData.endpoints || [];
+    const orgData: any = await orgResp.json();
+    const orgs: any[] = orgData.items || orgData.data || [];
+
+    const endpoints: any[] = [];
+    for (const org of orgs) {
+      const orgId = String(org.id || "");
+      if (!orgId) continue;
+      for (let from = 0; from < 1000; from += 50) {
+        const epResp = await fetch(
+          `${apiUrl}/endpoints/managed/${orgId}?from=${from}&limit=50`,
+          { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(30000) }
+        );
+        if (!epResp.ok) {
+          result.errors.push(`Action1 endpoints fetch failed for org ${orgId}: HTTP ${epResp.status}`);
+          break;
+        }
+        const page: any = await epResp.json();
+        const items: any[] = page.items || [];
+        for (const ep of items) endpoints.push({ ...ep, _org_name: org.name, _org_id: orgId });
+        const total = Number(page.total_items ?? page.totalItems ?? items.length);
+        if (items.length === 0 || from + 50 >= total) break;
+      }
+    }
 
     for (const ep of endpoints) {
       const externalId = String(ep.id || ep.endpoint_id || "");
       if (!externalId) continue;
 
-      const epName = ep.name || ep.hostname || ep.display_name || "";
-      const ip = ep.ip_address || ep.ip || "";
+      const epName = ep.device_name || ep.name || ep.hostname || ep.display_name || "";
+      const ip = ep.address || ep.ip_address || ep.ip || "";
+      // Action1 reports "Connected" / "Disconnected"; the network_devices
+      // mirror normalises those to online/offline.
       const status = ep.status || ep.connection_status || "unknown";
-      const lastSeen = ep.last_seen || ep.last_contact || null;
+      const lastSeen = action1Timestamp(ep.last_seen || ep.last_contact || null);
 
-      // Match to client by endpoint name/group
-      const match = matchClient(epName, null, clients);
+      // Match on the ORGANIZATION name first (Action1 orgs map 1:1 to clients:
+      // "Blue Mogul", "GEMCOM", "Mahoney Elite Realty", "S2S Couture"), then
+      // fall back to the endpoint name.
+      const match = matchClient(String(ep._org_name || epName), null, clients) || matchClient(String(epName), null, clients);
       const clientId = match?.clientId ?? null;
       if (clientId) result.matched++;
 
@@ -653,48 +715,50 @@ async function syncHostwinds(
     return result;
   }
 
-  // Their endpoint answers HTTP 200 with {"result":0,"msg":"No API KEY in
-  // request"} when it does not recognise the credential field, so a 200 alone
-  // proves nothing. Try the documented field-name shapes (and both action
-  // casings) and only accept a response that is not that error.
+  // Hostwinds' reseller API reads ONLY $_POST and checks three exact,
+  // case-sensitive field names in this order: `action`, `reseller_api_key`,
+  // `reseller_email`. Anything else (apikey/api_key/key, headers, cookies,
+  // JSON, the query string) returns the masking error
+  // {"result":0,"msg":"No API KEY in request"} — verified 2026-09-18 against
+  // Hostwinds' own shipped module source, which contains this endpoint.
   const callHwApi = async (action: string, extra: Record<string, string> = {}): Promise<any> => {
-    const shapes: Record<string, string>[] = [
-      { apikey: apiKey },
-      { api_key: apiKey },
-      { key: apiKey },
-      { identifier: apiEmail, secret: apiKey },
-    ];
-    const actions = [action, action.replace(/^./, (c) => c.toUpperCase())];
-    let lastMsg = "";
-
-    for (const act of actions) {
-      for (const shape of shapes) {
-        const postFields = new URLSearchParams({
-          action: act,
-          email: apiEmail,
-          ...shape,
-          ...extra,
-        });
-        const resp = await fetch(apiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-          body: postFields.toString(),
-          signal: AbortSignal.timeout(30000),
-        });
-        if (!resp.ok) throw new Error(`Hostwinds HTTP ${resp.status}`);
-        const data: any = await resp.json();
-        const msg = String(data?.msg ?? "");
-        if (Number(data?.result) !== 0 && !/no api key/i.test(msg)) return data;
-        lastMsg = msg;
-      }
+    const postFields = new URLSearchParams({
+      action,
+      reseller_email: apiEmail,
+      reseller_api_key: apiKey,
+      ...extra,
+    });
+    const resp = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: postFields.toString(),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!resp.ok) throw new Error(`Hostwinds HTTP ${resp.status}`);
+    const data: any = await resp.json();
+    const msg = String(data?.msg ?? "");
+    if (/api key is invalid/i.test(msg)) {
+      throw new Error("Hostwinds rejected the API key — regenerate it at clients.hostwinds.com -> Reseller -> API users");
     }
-    throw new Error(`Hostwinds rejected every credential shape (last: ${lastMsg || "no message"})`);
+    if (/no api key|no reseller email/i.test(msg)) {
+      throw new Error(`Hostwinds credential fields not accepted: ${msg}`);
+    }
+    if (/params error/i.test(msg)) {
+      throw new Error(`Hostwinds action rejected: ${msg}`);
+    }
+    return data;
   };
 
   try {
-    // Fetch services list (VMs, hosting)
-    const svcData = await callHwApi("getservicelist");
-    const services = svcData.services || svcData.data || [];
+    // Fetch services list (VMs, hosting). The action names are VerbNoun, taken
+    // from Hostwinds' shipped reseller module — `GetServicesData` returns the
+    // reseller's service inventory.
+    const svcData = await callHwApi("GetServicesData");
+    const services = svcData.services || svcData.data || svcData.items || [];
+
+    if (services.length === 0) {
+      result.errors.push("Hostwinds API accepted the credentials but returned no services");
+    }
 
     for (const svc of services) {
       const externalId = String(svc.id || svc.service_id || "");
