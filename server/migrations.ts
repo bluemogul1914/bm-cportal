@@ -604,4 +604,119 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Wave accounting mirror migration error:", err.message);
               }
+
+              // ── Xero Accounting mirror (ITFlow module_financial parity) ───────
+              // Custom-connection client-credentials app: invoices, contacts,
+              // payments, chart of accounts + organisation. See server/xero-api.ts.
+              try {
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS xero_organisation (
+                    id SERIAL PRIMARY KEY,
+                    organisation_id TEXT UNIQUE NOT NULL,
+                    name TEXT,
+                    legal_name TEXT,
+                    base_currency VARCHAR(8),
+                    country_code VARCHAR(8),
+                    org_type VARCHAR(40),
+                    tax_number TEXT,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS xero_contacts (
+                    id SERIAL PRIMARY KEY,
+                    contact_id TEXT UNIQUE NOT NULL,
+                    name TEXT,
+                    email VARCHAR(200),
+                    first_name VARCHAR(120),
+                    last_name VARCHAR(120),
+                    phone VARCHAR(60),
+                    is_customer BOOLEAN DEFAULT false,
+                    is_supplier BOOLEAN DEFAULT false,
+                    status VARCHAR(40),
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS xero_invoices (
+                    id SERIAL PRIMARY KEY,
+                    invoice_id TEXT UNIQUE NOT NULL,
+                    invoice_number VARCHAR(80),
+                    type VARCHAR(20),
+                    contact_id TEXT,
+                    contact_name TEXT,
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    status VARCHAR(30),
+                    invoice_date DATE,
+                    due_date DATE,
+                    subtotal NUMERIC(16,2),
+                    total_tax NUMERIC(16,2),
+                    total NUMERIC(16,2),
+                    amount_paid NUMERIC(16,2),
+                    amount_due NUMERIC(16,2),
+                    amount_credited NUMERIC(16,2),
+                    currency VARCHAR(8),
+                    reference TEXT,
+                    line_item_count INTEGER DEFAULT 0,
+                    updated_utc TEXT,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS xero_payments (
+                    id SERIAL PRIMARY KEY,
+                    payment_id TEXT UNIQUE NOT NULL,
+                    invoice_id TEXT,
+                    invoice_number VARCHAR(80),
+                    contact_name TEXT,
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    payment_date DATE,
+                    amount NUMERIC(16,2),
+                    currency VARCHAR(8),
+                    account_name TEXT,
+                    payment_type VARCHAR(40),
+                    status VARCHAR(30),
+                    reference TEXT,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS xero_accounts (
+                    id SERIAL PRIMARY KEY,
+                    account_id TEXT UNIQUE NOT NULL,
+                    code VARCHAR(40),
+                    name TEXT,
+                    type VARCHAR(60),
+                    tax_type VARCHAR(60),
+                    status VARCHAR(30),
+                    description TEXT,
+                    currency VARCHAR(8),
+                    enable_payments BOOLEAN DEFAULT false,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS xero_sync_runs (
+                    id SERIAL PRIMARY KEY,
+                    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    finished_at TIMESTAMP,
+                    status VARCHAR(20) DEFAULT 'running',
+                    organisation TEXT,
+                    contacts INTEGER DEFAULT 0,
+                    invoices INTEGER DEFAULT 0,
+                    payments INTEGER DEFAULT 0,
+                    accounts INTEGER DEFAULT 0,
+                    error TEXT
+                  )
+                `);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS xero_invoices_client_idx ON xero_invoices (client_id)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS xero_invoices_status_idx ON xero_invoices (status)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS xero_invoices_date_idx ON xero_invoices (invoice_date)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS xero_payments_client_idx ON xero_payments (client_id)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS xero_contacts_client_idx ON xero_contacts (client_id)`);
+                console.log("[migrations] Xero accounting mirror migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Xero accounting mirror migration error:", err.message);
+              }
             }

@@ -101,6 +101,12 @@
                 <span class="ml-auto bg-emerald-500 text-white text-xs px-2 py-0.5 rounded-full">WAVE</span>
             </a>
 
+            <a href="admin-xero.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-xero.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-xero">
+                <i class="fas fa-book w-5 text-sky-400"></i>
+                <span>Xero Accounting</span>
+                <span class="ml-auto bg-sky-500 text-white text-xs px-2 py-0.5 rounded-full">LEDGER</span>
+            </a>
+
             <a href="admin-services.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-services.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                 <i class="fas fa-server w-5"></i>
                 <span>Services</span>

@@ -21,6 +21,7 @@ import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInq
 import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat } from "./bmai";
 import { syncAllSources } from "./network-sync";
 import { syncWave, getWaveToken } from "./wave-api";
+import { syncXero, xeroStatus, xeroToken, getXeroConfig, saveXeroConfig, xeroRequest } from "./xero-api";
 import { checkAllBalances, processPendingTopUps, processPendingServiceInvoices, activatePaidPendingSubscriptions, chargeMonthlySubscriptions } from "./balance-scheduler";
 import { generateReceiptPdfBuffer } from "./receipt-pdf";
 import { generateQuotePdfBuffer } from "./quote-pdf";
@@ -551,137 +552,104 @@ app.post("/portal/api/linkedin-save-url", async (req, res) => {
   }
 });
 
-// ── Xero OAuth ────────────────────────────────────────────────────────────────
-const XERO_CLIENT_ID     = process.env.XERO_CLIENT_ID || "";
-const XERO_CLIENT_SECRET = process.env.XERO_CLIENT_SECRET || "";
-// XERO_REDIRECT_URI must match exactly what is registered in your Xero developer app.
-// e.g. https://portal.bluemogul.us/api/xero/callback
-const XERO_REDIRECT_URI_ENV = process.env.XERO_REDIRECT_URI || "";
-const XERO_SCOPES = "openid profile email accounting.transactions accounting.contacts.read offline_access";
+// ── Xero Accounting (custom connection) ──────────────────────────────────────
+// This Xero app is a CUSTOM CONNECTION: client-credentials grant, NO browser
+// consent / redirect URI, and a mandatory `Xero-tenant-id` header on every call.
+// GET /connections is unavailable to it. Config lives in provider_settings,
+// which is a key/value table (provider, key_name, key_value) — the previous
+// implementation here read/wrote `provider_name`/`settings` columns that do not
+// exist, which is why Xero could never store a token. See server/xero-api.ts.
 
-function getXeroRedirectUri(req: any): string {
-  if (XERO_REDIRECT_URI_ENV) return XERO_REDIRECT_URI_ENV;
-  // Auto-detect: strip /portal prefix from path so it matches portal.bluemogul.us/api/xero/callback
-  const host = (req.headers["x-forwarded-host"] || req.headers.host || "") as string;
-  const proto = (req.headers["x-forwarded-proto"] || req.protocol) as string;
-  return `${proto}://${host}/api/xero/callback`;
+function requireXeroAdmin(req: any, res: any): boolean {
+  const sess = (req as any).session?.portalUser;
+  if (!sess?.is_admin) { res.status(403).json({ error: "Admin only" }); return false; }
+  return true;
 }
 
-async function handleXeroConnect(req: any, res: any) {
-  const session = req.session as any;
-  if (!session?.portalUser?.is_admin) return res.status(403).send("Unauthorized");
-  if (!XERO_CLIENT_ID) return res.status(400).send("XERO_CLIENT_ID not configured. Add it to your environment variables.");
-  const redirectUri = getXeroRedirectUri(req);
-  const state = Math.random().toString(36).slice(2);
-  session.xeroState = state;
-  const url = `https://login.xero.com/identity/connect/authorize?response_type=code&client_id=${XERO_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(XERO_SCOPES)}&state=${state}`;
-  res.redirect(url);
-}
-
-async function handleXeroCallback(req: any, res: any) {
-  const session = req.session as any;
-  const { code, state, error: xeroError } = req.query;
-
-  if (xeroError) {
-    return res.redirect(`/portal/admin-xero.php?error=${encodeURIComponent(`Xero auth error: ${xeroError}`)}`);
-  }
-  // Allow state mismatch gracefully (can happen after session expiry or new tab)
-  if (state && session.xeroState && state !== session.xeroState) {
-    return res.redirect(`/portal/admin-xero.php?error=${encodeURIComponent("State mismatch — please try connecting again.")}`);
-  }
-  if (!code) {
-    return res.redirect(`/portal/admin-xero.php?error=${encodeURIComponent("No authorization code received from Xero.")}`);
-  }
-
-  const redirectUri = getXeroRedirectUri(req);
-  try {
-    const tokenResp = await fetch("https://identity.xero.com/connect/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: "Basic " + Buffer.from(`${XERO_CLIENT_ID}:${XERO_CLIENT_SECRET}`).toString("base64"),
-      },
-      body: new URLSearchParams({ grant_type: "authorization_code", code: String(code), redirect_uri: redirectUri }).toString(),
-    });
-    if (!tokenResp.ok) throw new Error(`Token exchange failed: ${await tokenResp.text()}`);
-    const tokens: any = await tokenResp.json();
-
-    // Get tenant/org list
-    const tenantResp = await fetch("https://api.xero.com/connections", {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
-    });
-    const tenants: any[] = await tenantResp.json();
-    const tenantId = tenants[0]?.tenantId || "";
-
-    // Store tokens in provider_settings
-    await webhookPool.query(
-      `INSERT INTO provider_settings (provider_name, settings, updated_at) VALUES ('xero', $1, NOW())
-       ON CONFLICT (provider_name) DO UPDATE SET settings = $1, updated_at = NOW()`,
-      [JSON.stringify({ access_token: tokens.access_token, refresh_token: tokens.refresh_token, expires_at: Date.now() + tokens.expires_in * 1000, tenant_id: tenantId, tenants })]
-    );
-    res.redirect("/portal/admin-xero.php?connected=1");
-  } catch (e: any) {
-    res.redirect(`/portal/admin-xero.php?error=${encodeURIComponent(e.message)}`);
-  }
-}
-
-// Register both with and without /portal prefix to match any redirect URI config
-app.get("/portal/api/xero/connect", handleXeroConnect);
-app.get("/api/xero/connect",        handleXeroConnect);
-app.get("/portal/api/xero/callback", handleXeroCallback);
-app.get("/api/xero/callback",        handleXeroCallback);
-
-app.post("/portal/api/xero/refresh", async (req, res) => {
-  const session = req.session as any;
-  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
-  try {
-    const row = await webhookPool.query("SELECT settings FROM provider_settings WHERE provider_name='xero'");
-    if (!row.rows.length) return res.status(404).json({ error: "Xero not connected" });
-    const cfg = row.rows[0].settings;
-    const tokenResp = await fetch("https://identity.xero.com/connect/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + Buffer.from(`${XERO_CLIENT_ID}:${XERO_CLIENT_SECRET}`).toString("base64") },
-      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: cfg.refresh_token }).toString(),
-    });
-    const tokens: any = await tokenResp.json();
-    await webhookPool.query("UPDATE provider_settings SET settings = settings || $1::jsonb, updated_at = NOW() WHERE provider_name='xero'",
-      [JSON.stringify({ access_token: tokens.access_token, refresh_token: tokens.refresh_token || cfg.refresh_token, expires_at: Date.now() + (tokens.expires_in || 1800) * 1000 })]);
-    res.json({ success: true });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
+app.get("/portal/api/xero/status", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try { res.json(await xeroStatus(webhookPool)); } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-app.get("/portal/api/xero/data", async (req, res) => {
-  const session = req.session as any;
-  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
-  const { resource } = req.query; // 'invoices', 'contacts', 'accounts', 'reports/BankSummary'
+// Mint a token from the stored credentials — proves the client id/secret work.
+app.post("/portal/api/xero/test", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
   try {
-    const row = await webhookPool.query("SELECT settings FROM provider_settings WHERE provider_name='xero'");
-    if (!row.rows.length) return res.status(404).json({ error: "Xero not connected" });
-    const cfg = row.rows[0].settings;
-    // Auto-refresh if expired
-    if (cfg.expires_at && Date.now() > cfg.expires_at - 60000) {
-      try {
-        const tr = await fetch("https://identity.xero.com/connect/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + Buffer.from(`${XERO_CLIENT_ID}:${XERO_CLIENT_SECRET}`).toString("base64") },
-          body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: cfg.refresh_token }).toString(),
-        });
-        const t: any = await tr.json();
-        cfg.access_token = t.access_token;
-        if (t.refresh_token) cfg.refresh_token = t.refresh_token;
-        await webhookPool.query("UPDATE provider_settings SET settings = settings || $1::jsonb, updated_at = NOW() WHERE provider_name='xero'",
-          [JSON.stringify({ access_token: t.access_token, refresh_token: t.refresh_token || cfg.refresh_token, expires_at: Date.now() + (t.expires_in || 1800) * 1000 })]);
-      } catch (e) { /* use existing token */ }
+    const cfg = await getXeroConfig(webhookPool);
+    if (!cfg.clientId || !cfg.clientSecret) {
+      return res.status(400).json({ error: "Xero client_id / client_secret are not saved yet" });
     }
-    const endpoint = `https://api.xero.com/api.xro/2.0/${resource || "Invoices"}`;
-    const xeroResp = await fetch(`${endpoint}?${new URLSearchParams(req.query as any).toString().replace(/^resource=[^&]*&?/, "")}`, {
-      headers: { Authorization: `Bearer ${cfg.access_token}`, "Xero-Tenant-Id": cfg.tenant_id, Accept: "application/json" },
+    const token = await xeroToken(webhookPool, true);
+    let scopes = 0, expiresIn: number | null = null;
+    try {
+      const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString("utf8"));
+      scopes = Array.isArray(payload.scope) ? payload.scope.length : 0;
+      expiresIn = payload.exp ? payload.exp - Math.floor(Date.now() / 1000) : null;
+    } catch { /* token is opaque — still valid */ }
+    res.json({
+      ok: true,
+      grant: "client_credentials",
+      scopes,
+      expires_in: expiresIn,
+      tenant_configured: !!cfg.tenantId,
+      note: cfg.tenantId
+        ? "Credentials valid — ready to sync."
+        : "Credentials valid — save the Tenant ID to start pulling data.",
     });
-    if (!xeroResp.ok) return res.status(xeroResp.status).json({ error: await xeroResp.text() });
-    res.json(await xeroResp.json());
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
-// ── End Xero OAuth ────────────────────────────────────────────────────────────
+
+app.post("/portal/api/xero/sync", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try { res.json(await syncXero(webhookPool)); } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/xero/settings", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const patch: Record<string, string> = {};
+    for (const k of ["client_id", "client_secret", "tenant_id"]) {
+      const v = req.body?.[k];
+      if (typeof v === "string" && v.trim() !== "") patch[k] = v.trim();
+    }
+    if (!Object.keys(patch).length) return res.status(400).json({ error: "Nothing to save" });
+    await saveXeroConfig(webhookPool, patch);
+    res.json({ ok: true, saved: Object.keys(patch) });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/xero/disconnect", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    await webhookPool.query("DELETE FROM provider_settings WHERE provider = 'xero'");
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Live passthrough for anything not mirrored — reports in particular
+// (?resource=Reports/ProfitAndLoss|BalanceSheet|AgedReceivablesByContact|BankSummary).
+app.get("/portal/api/xero/data", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const resource = String(req.query.resource || "Invoices").replace(/^\/+/, "");
+    const extra: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req.query)) {
+      if (k !== "resource" && typeof v === "string") extra[k] = v;
+    }
+    res.json(await xeroRequest(webhookPool, resource, extra));
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// The old consent-flow routes are kept so any bookmarked link explains itself.
+const xeroNoConsentNeeded = (_req: any, res: any) => res.redirect(
+  "/portal/admin-xero.php?notice=" +
+  encodeURIComponent("This Xero app is a custom connection — no consent step is required. Save the Tenant ID, then press Sync.")
+);
+app.get("/portal/api/xero/connect", xeroNoConsentNeeded);
+app.get("/api/xero/connect", xeroNoConsentNeeded);
+app.get("/portal/api/xero/callback", xeroNoConsentNeeded);
+app.get("/api/xero/callback", xeroNoConsentNeeded);
+// ── End Xero Accounting ───────────────────────────────────────────────────────
 
 const ADMIN_DEALER_PHP_FILES = ["admin-dealers.php", "admin-dealer-detail.php"];
 
@@ -3968,12 +3936,24 @@ async function bootstrapPortalDatabase() {
         created_at  TIMESTAMPTZ DEFAULT NOW()
       )
     `).catch(()=>{});
+    // provider_settings is a KEY/VALUE table (provider, key_name, key_value) —
+    // admin-providers.php / admin-hostwinds.php / admin-enom.php and
+    // server/xero-api.ts all read it that way. This bootstrap used to declare a
+    // (provider_name, settings JSONB) shape instead; because the real table
+    // already existed the CREATE was a silent no-op and the old Xero code's
+    // queries against the phantom columns failed at runtime.
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS provider_settings (
-        provider_name TEXT PRIMARY KEY,
-        settings      JSONB,
-        updated_at    TIMESTAMPTZ DEFAULT NOW()
+        id         SERIAL PRIMARY KEY,
+        provider   VARCHAR(60) NOT NULL,
+        key_name   VARCHAR(60) NOT NULL,
+        key_value  TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       )
+    `).catch(()=>{});
+    await webhookPool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS provider_settings_provider_key_name_key
+        ON provider_settings (provider, key_name)
     `).catch(()=>{});
     await webhookPool.query(`
       CREATE TABLE IF NOT EXISTS crm_social_posts (
@@ -4347,6 +4327,24 @@ const PORTAL_SAFE_MODE =
             }
           } catch (e: any) {
             console.error("[wave] Daily Wave sync error:", e.message);
+          }
+
+          // Xero Accounting mirror. Skipped unless both credentials and a
+          // tenant id are stored (custom connection needs Xero-tenant-id).
+          try {
+            const xcfg = await getXeroConfig(webhookPool);
+            if (xcfg.clientId && xcfg.clientSecret && xcfg.tenantId) {
+              log("[xero] Starting daily Xero sync...");
+              const x = await syncXero(webhookPool);
+              log(
+                `[xero] ${x.organisation ?? "organisation"}: ${x.invoices} invoices, ${x.payments} payments, ${x.contacts} contacts, ${x.accounts} accounts` +
+                  (x.errors.length ? `, errors: ${x.errors.join("; ")}` : "")
+              );
+            } else {
+              log("[xero] skipped (credentials or tenant_id not configured)");
+            }
+          } catch (e: any) {
+            console.error("[xero] Daily Xero sync error:", e.message);
           }
         } catch (e: any) {
           console.error("[network-sync] Daily sync error:", e.message);
