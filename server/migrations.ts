@@ -383,4 +383,35 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Service contracts + SLA migration error:", err.message);
               }
+
+              // ── Purchase orders + approval flow (P2 #7) ─────────────────────────
+              try {
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS purchase_orders (
+                    id SERIAL PRIMARY KEY,
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    supplier VARCHAR(255),
+                    po_number VARCHAR(100),
+                    total NUMERIC(10,2) DEFAULT 0,
+                    status VARCHAR(20) DEFAULT 'draft',
+                    requested_by VARCHAR(200),
+                    approved_by VARCHAR(200),
+                    approved_at TIMESTAMP,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS po_line_items (
+                    id SERIAL PRIMARY KEY,
+                    po_id INTEGER REFERENCES purchase_orders(id) ON DELETE CASCADE,
+                    description TEXT,
+                    qty INTEGER DEFAULT 1,
+                    unit_price NUMERIC(10,2) DEFAULT 0
+                  )
+                `);
+                console.log("[migrations] Purchase order migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Purchase order migration error:", err.message);
+              }
             }
