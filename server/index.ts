@@ -22,6 +22,17 @@ import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat
 import { syncAllSources } from "./network-sync";
 import { syncWave, getWaveToken } from "./wave-api";
 import { syncXero, xeroStatus, xeroToken, getXeroConfig, saveXeroConfig, xeroRequest } from "./xero-api";
+import {
+  getOAuthConfig,
+  saveOAuthConfig,
+  buildAuthorizeUrl,
+  exchangeCode,
+  listConnections,
+  saveConnection,
+  backfillCustomConnectionTenant,
+  oauthStatus,
+  XERO_SCOPES,
+} from "./xero-oauth";
 import { checkAllBalances, processPendingTopUps, processPendingServiceInvoices, activatePaidPendingSubscriptions, chargeMonthlySubscriptions } from "./balance-scheduler";
 import { generateReceiptPdfBuffer } from "./receipt-pdf";
 import { generateQuotePdfBuffer } from "./quote-pdf";
@@ -640,15 +651,94 @@ app.get("/portal/api/xero/data", async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// The old consent-flow routes are kept so any bookmarked link explains itself.
-const xeroNoConsentNeeded = (_req: any, res: any) => res.redirect(
-  "/portal/admin-xero.php?notice=" +
-  encodeURIComponent("This Xero app is a custom connection — no consent step is required. Save the Tenant ID, then press Sync.")
-);
-app.get("/portal/api/xero/connect", xeroNoConsentNeeded);
-app.get("/api/xero/connect", xeroNoConsentNeeded);
-app.get("/portal/api/xero/callback", xeroNoConsentNeeded);
-app.get("/api/xero/callback", xeroNoConsentNeeded);
+// ── Xero OAuth 2.0 consent flow (the Web app) ────────────────────────────────
+// The Custom Connection needs no consent step, but the *Web app* does. This is
+// the flow that returns a Tenant ID: GET /connections is only available to an
+// authorization-code token.
+const XERO_OAUTH_DEFAULT_REDIRECT = "https://portal.bluemogul.us/portal/api/xero/callback";
+const xeroOauthNotice = (res: any, msg: string) =>
+  res.redirect("/portal/admin-xero.php?notice=" + encodeURIComponent(msg));
+
+app.get(["/portal/api/xero/oauth/connect", "/api/xero/oauth/connect"], async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const cfg = await getOAuthConfig(webhookPool);
+    if (!cfg.clientId || !cfg.clientSecret) {
+      return xeroOauthNotice(res, "Save the Web app client_id and client_secret first, then press Connect with Xero.");
+    }
+    if (!cfg.redirectUri) {
+      await saveOAuthConfig(webhookPool, { redirect_uri: XERO_OAUTH_DEFAULT_REDIRECT });
+    }
+    const fresh = await getOAuthConfig(webhookPool);
+    const state = randomUUID();
+    (req.session as any).xeroOauthState = state;
+    res.redirect(buildAuthorizeUrl(fresh, state));
+  } catch (e: any) {
+    xeroOauthNotice(res, "Could not start the Xero consent flow: " + e.message);
+  }
+});
+
+app.get(["/portal/api/xero/oauth/callback", "/api/xero/oauth/callback"], async (req, res) => {
+  try {
+    const errCode = String(req.query.error || "");
+    if (errCode) {
+      return xeroOauthNotice(res, `Xero refused the authorisation (${errCode}) — ${String(req.query.error_description || "")}`);
+    }
+    const code = String(req.query.code || "");
+    const state = String(req.query.state || "");
+    const expected = (req.session as any)?.xeroOauthState;
+    if (!code) return xeroOauthNotice(res, "Xero returned no authorisation code.");
+    if (!expected || state !== expected) {
+      return xeroOauthNotice(res, "OAuth state mismatch — start the connection again from the Xero page.");
+    }
+    (req.session as any).xeroOauthState = undefined;
+
+    await exchangeCode(webhookPool, code);
+    const conns = await listConnections(webhookPool);
+    if (!conns.length) {
+      return xeroOauthNotice(res, "Authorised, but Xero reports no connected organisation. Press Connect with Xero again and pick an organisation on the consent screen.");
+    }
+    const c = conns[0];
+    await saveConnection(webhookPool, c.tenantId, c.tenantName || "");
+    const bridged = await backfillCustomConnectionTenant(webhookPool, c.tenantId);
+    xeroOauthNotice(
+      res,
+      `Connected to ${c.tenantName || "organisation"} — Tenant ID ${c.tenantId} saved.` +
+        (conns.length > 1 ? ` (${conns.length} organisations were authorised; the first is in use.)` : "") +
+        (bridged ? " The Custom Connection tenant_id was empty, so it was back-filled — press “Sync from Xero”." : "")
+    );
+  } catch (e: any) {
+    xeroOauthNotice(res, "Xero OAuth failed: " + e.message);
+  }
+});
+
+app.get("/portal/api/xero/oauth/status", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try { res.json(await oauthStatus(webhookPool)); } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/xero/oauth/settings", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const patch: Record<string, string> = {};
+    for (const k of ["client_id", "client_secret", "redirect_uri", "tenant_id"]) {
+      const v = req.body?.[k];
+      if (typeof v === "string" && v.trim() !== "") patch[k] = v.trim();
+    }
+    if (!patch["redirect_uri"]) patch["redirect_uri"] = XERO_OAUTH_DEFAULT_REDIRECT;
+    await saveOAuthConfig(webhookPool, patch);
+    res.json({ ok: true, saved: Object.keys(patch), scopes: XERO_SCOPES.split(" ") });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/xero/oauth/disconnect", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    await webhookPool.query("DELETE FROM provider_settings WHERE provider = 'xero_oauth'");
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+// ── End Xero OAuth 2.0 ───────────────────────────────────────────────────────
 // ── End Xero Accounting ───────────────────────────────────────────────────────
 
 const ADMIN_DEALER_PHP_FILES = ["admin-dealers.php", "admin-dealer-detail.php"];

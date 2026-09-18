@@ -28,6 +28,7 @@ $internalOrigin = 'http://127.0.0.1:' . (getenv('PORT') ?: '3000');
 $success_message = '';
 $error_message = '';
 $notice = $_GET['notice'] ?? '';
+if ($error_message === '' && isset($_GET['error'])) { $error_message = (string)$_GET['error']; }
 
 /** Call a loopback Xero endpoint with this admin session. */
 function xero_api(string $origin, string $path, ?array $body = null): array {
@@ -106,6 +107,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         } else {
             $error_message = 'Xero sync failed: ' . htmlspecialchars((string)$r['error']);
         }
+    } elseif ($action === 'save_oauth') {
+        $patch = [];
+        foreach (['client_id' => 'oauth_client_id', 'client_secret' => 'oauth_client_secret', 'redirect_uri' => 'oauth_redirect_uri'] as $k => $field) {
+            $v = trim((string)($_POST[$field] ?? ''));
+            if ($v !== '') $patch[$k] = $v;
+        }
+        if (!$patch) {
+            $error_message = 'Nothing to save — paste the Web app client_id (and secret).';
+        } else {
+            $r = xero_api($internalOrigin, '/portal/api/xero/oauth/settings', $patch);
+            if ($r['ok']) {
+                $success_message = 'OAuth 2.0 settings saved: ' . implode(', ', $r['data']['saved'] ?? array_keys($patch)) . '. Now press “Connect with Xero”.';
+            } else {
+                $error_message = 'Could not save OAuth settings: ' . htmlspecialchars((string)$r['error']);
+            }
+        }
+    } elseif ($action === 'oauth_disconnect') {
+        $r = xero_api($internalOrigin, '/portal/api/xero/oauth/disconnect', []);
+        $success_message = $r['ok'] ? 'OAuth 2.0 tokens and settings cleared.' : ('Could not clear OAuth config: ' . htmlspecialchars((string)$r['error']));
     } elseif ($action === 'disconnect') {
         $r = xero_api($internalOrigin, '/portal/api/xero/disconnect', []);
         $success_message = $r['ok'] ? 'Xero configuration cleared.' : ('Could not clear: ' . htmlspecialchars((string)$r['error']));
@@ -124,6 +144,20 @@ $client_secret_set = !empty($kv['client_secret']);
 $tenant_id         = (string)($kv['tenant_id'] ?? '');
 $token_cached      = !empty($kv['access_token']) && (int)($kv['expires_at'] ?? 0) > (time() * 1000);
 $ready             = $client_id_set && $client_secret_set && $tenant_id !== '';
+
+/* ── OAuth 2.0 Web app config (provider = 'xero_oauth') ─────────────────── */
+$okv = [];
+try {
+    $rows = $pdo->query("SELECT key_name, key_value FROM provider_settings WHERE provider = 'xero_oauth'")->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($rows as $r) { $okv[$r['key_name']] = $r['key_value']; }
+} catch (Throwable $e) { $okv = []; }
+
+$oauth_client_id_set = !empty($okv['client_id']);
+$oauth_secret_set    = !empty($okv['client_secret']);
+$oauth_authorised    = !empty($okv['refresh_token']);
+$oauth_tenant_id     = (string)($okv['tenant_id'] ?? '');
+$oauth_tenant_name   = (string)($okv['tenant_name'] ?? '');
+$oauth_redirect      = (string)($okv['redirect_uri'] ?? 'https://portal.bluemogul.us/portal/api/xero/callback');
 
 $last_run = null; $org = null;
 $counts = ['invoices' => 0, 'payments' => 0, 'contacts' => 0, 'accounts' => 0];
@@ -285,6 +319,63 @@ function xero_status_pill($status) {
                         </form>
                     </div>
                 </div>
+            </div>
+
+            <div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">OAuth 2.0 (Web app) &mdash; consent flow</h2>
+                    <?php if ($oauth_authorised): ?>
+                        <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full" data-testid="status-xero-oauth-authorised">Authorised</span>
+                    <?php else: ?>
+                        <span class="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-full" data-testid="status-xero-oauth-pending">Not authorised</span>
+                    <?php endif; ?>
+                </div>
+
+                <p class="text-sm text-gray-600 mb-4">
+                    The custom connection is one-to-one and cannot list its tenant. A <strong>Web app</strong> gets a consent screen,
+                    a refresh token and &mdash; crucially &mdash; <code class="bg-gray-100 px-1 rounded">GET /connections</code>, which returns the
+                    <strong>Tenant ID</strong>. Authorise once here and the field below is filled automatically.
+                </p>
+
+                <?php if ($oauth_tenant_id !== ''): ?>
+                    <div class="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg text-sm mb-4" data-testid="xero-oauth-tenant">
+                        <p class="font-medium mb-1"><i class="fas fa-circle-check mr-2"></i>Connected: <?php echo htmlspecialchars($oauth_tenant_name !== '' ? $oauth_tenant_name : 'organisation'); ?></p>
+                        <p class="font-mono text-xs">Tenant ID: <?php echo htmlspecialchars($oauth_tenant_id); ?></p>
+                        <p class="text-xs mt-1">Copy into the <em>Tenant ID</em> field above if the Custom Connection still shows &ldquo;not saved&rdquo;.</p>
+                    </div>
+                <?php endif; ?>
+
+                <form method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="save_oauth">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Web app Client ID</label>
+                        <input name="oauth_client_id" value="<?php echo $oauth_client_id_set ? htmlspecialchars((string)$okv['client_id']) : ''; ?>" placeholder="from the Web app's Configuration page" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono" data-testid="input-xero-oauth-client-id">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Web app Client secret <span class="text-gray-400">(blank = keep)</span></label>
+                        <input name="oauth_client_secret" type="password" placeholder="<?php echo $oauth_secret_set ? '•••••••• (saved)' : 'paste secret'; ?>" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono" data-testid="input-xero-oauth-secret">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Redirect URI <span class="text-gray-400">(must match the app Configuration exactly)</span></label>
+                        <input name="oauth_redirect_uri" value="<?php echo htmlspecialchars($oauth_redirect); ?>" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono" data-testid="input-xero-oauth-redirect">
+                    </div>
+                    <div class="md:col-span-2 flex flex-wrap gap-3 items-center justify-between">
+                        <div class="flex gap-3">
+                            <button class="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-md text-sm" data-testid="button-xero-oauth-save">Save OAuth settings</button>
+                            <a href="/portal/api/xero/oauth/connect" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm inline-flex items-center gap-2" data-testid="button-xero-oauth-connect">
+                                <i class="fas fa-arrow-up-right-from-square"></i> Connect with Xero
+                            </a>
+                        </div>
+                        <span class="text-xs text-gray-500">Requests 16 scopes incl. <code class="bg-gray-100 px-1 rounded">offline_access</code> (needed for the refresh token) &mdash; all must be ticked on the app&rsquo;s Configuration page.</span>
+                    </div>
+                </form>
+
+                <form method="POST" onsubmit="return confirm('Clear the OAuth 2.0 tokens and settings? The custom connection is untouched.');">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="oauth_disconnect">
+                    <button class="text-xs text-red-600 hover:underline" data-testid="button-xero-oauth-disconnect"><i class="fas fa-link-slash mr-1"></i>Clear OAuth 2.0 config</button>
+                </form>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">

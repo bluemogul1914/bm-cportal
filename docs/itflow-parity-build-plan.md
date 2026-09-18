@@ -44,7 +44,7 @@ bearer token in `system_settings.wave_token`, OAuth client id/secret also stored
 | **2b Expenses & AP** | portal-side `expenses` (vendor, category, amount, date, receipt_doc_id, billable, client_id), `expense_categories` | `admin-expenses.php` + API | **Blocked by Wave**: the public GraphQL API does not expose expenses/transactions. Options: (a) manual entry + receipt upload in the portal, (b) Wave CSV export import, (c) request Wave partner API access |
 | **2c Budgets, taxes, discount codes** | `budgets` (period, category, amount), `taxes` (name, rate, jurisdiction), `discount_codes` (code, type, value, expires_at, max_uses) | `admin-finance-settings.php` + apply logic at checkout | Codes apply on Stripe checkout; taxes reflected on portal invoices |
 | **2d Per-client financials** | — | Wave panel on `admin-client-detail.php` (invoices + outstanding + payments for the matched client) | Wave customer → portal client match is live (email → name → substring); show the client's real Wave balance |
-| **2e Xero ledger mirror** | `xero_organisation`, `xero_contacts`, `xero_invoices`, `xero_payments`, `xero_accounts`, `xero_sync_runs` | `GET /portal/api/xero/status`, `GET /portal/api/xero/data` (live reports), `POST /portal/api/xero/{test,sync,settings,disconnect}`, `admin-xero.php` | **Built 2026-09-18** — blocked on one value: the **Tenant ID** (custom connection; see below) |
+| **2e Xero ledger mirror** | `xero_organisation`, `xero_contacts`, `xero_invoices`, `xero_payments`, `xero_accounts`, `xero_sync_runs` | `GET /portal/api/xero/status`, `GET /portal/api/xero/data` (live reports), `POST /portal/api/xero/{test,sync,settings,disconnect}`, `admin-xero.php` | **Built 2026-09-18**; tenant supplied by the OAuth 2.0 Web app bridge (below) |
 
 ### Xero facts that shaped 2e (verified live 2026-09-18)
 
@@ -60,6 +60,24 @@ bearer token in `system_settings.wave_token`, OAuth client id/secret also stored
   existed, so it always rendered "Not Connected" and could never store a token.
 - The app carries 41 scopes including the full accounting set, so invoices, payments, contacts,
   accounts and reports are all available once the tenant is set.
+
+### OAuth 2.0 Web app bridge (added 2026-09-18)
+
+The Tenant ID has a second, scriptable route. A **Web app** (`Blue Mogul Portal (Web app)`,
+app id `f9323485-4fb5-4d2e-a2b0-553885d518b0`) uses the authorization-code grant, gets a
+**refresh token**, and — unlike the custom connection — `GET https://api.xero.com/connections`
+returns `tenantId`. Authorising it once fills the custom connection's missing value.
+
+- Code: `server/xero-oauth.ts`; routes `GET /portal/api/xero/oauth/{connect,callback,status}`,
+  `POST /portal/api/xero/oauth/{settings,disconnect}`; UI card on `admin-xero.php`.
+- Config lives under `provider = 'xero_oauth'` in the same `provider_settings` k/v table, so the
+  working custom-connection rows (`provider = 'xero'`) are never overwritten.
+- Default redirect URI: `https://portal.bluemogul.us/portal/api/xero/callback` — **must be
+  byte-identical to the app's Configuration page**, and the 16 requested scopes must all be ticked there.
+- On callback the tenant is stored on the `xero_oauth` row and **back-filled into the custom
+  connection only if that `tenant_id` is empty** (so a deliberate value is never clobbered).
+- Access tokens last 30 minutes; the refresh token rotates on every refresh, so the new one must
+  be persisted each time (it is).
 
 **Open decision (2d/2e):** Wave and Xero are both mirrored now. Decide which is the ledger of
 record for the portal's client-facing financial panels — Xero (full ledger + reports) is the
