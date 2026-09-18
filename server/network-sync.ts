@@ -48,14 +48,39 @@ async function getClients(pool: pg.Pool): Promise<ClientRecord[]> {
   }));
 }
 
-/** Load system_settings key-value pairs. */
+/**
+ * Load system_settings key-value pairs, keyed by LOWERCASED setting_key.
+ *
+ * Keys in `system_settings` are stored inconsistently (HOSTWINDS_API_KEY vs
+ * action1_api_key vs voip_ms_username). Lookups used to be exact-case, so any
+ * key whose stored casing differed from the code read as "" and the source
+ * silently reported "not configured" / 401 / 404. Normalising to lowercase here
+ * makes every lookup case-insensitive — always read via `pick()`.
+ */
 async function getSettings(pool: pg.Pool): Promise<Record<string, string>> {
   const { rows } = await pool.query(
     `SELECT setting_key, setting_value FROM system_settings`
   );
   const map: Record<string, string> = {};
-  for (const r of rows) map[r.setting_key] = r.setting_value;
+  for (const r of rows) map[String(r.setting_key).toLowerCase()] = r.setting_value;
   return map;
+}
+
+/**
+ * Resolve a credential: first non-empty `system_settings` key (case-insensitive),
+ * then the matching env var. Returns "" when nothing is configured.
+ */
+function pick(
+  settings: Record<string, string>,
+  settingKeys: string[],
+  envKey?: string
+): string {
+  for (const k of settingKeys) {
+    const v = settings[k.toLowerCase()];
+    if (v) return String(v);
+  }
+  if (envKey && process.env[envKey]) return String(process.env[envKey] as string);
+  return "";
 }
 
 /**
@@ -126,9 +151,72 @@ async function upsertAsset(
       asset.ip,
       asset.status,
       asset.last_seen,
-      JSON.stringify(asset.raw),
+      JSON.stringify(asset.raw ?? {}),
     ]
   );
+
+  await mirrorToNetworkDevices(pool, asset);
+}
+
+/** Map a source-specific status onto the values Network Docs counts. */
+function normalizeDeviceStatus(status: string): string {
+  const s = (status || "").toLowerCase();
+  if (["online", "active", "running", "connected", "enabled", "up"].includes(s)) return "online";
+  if (["offline", "inactive", "stopped", "disabled", "down", "terminated"].includes(s)) return "offline";
+  if (["warning", "degraded", "alert"].includes(s)) return "warning";
+  return s || "unknown";
+}
+
+/**
+ * Mirror a synced asset into `network_devices` — the table Network Docs
+ * (`admin-network.php`) actually reads.
+ *
+ * ROOT CAUSE of "Network Docs is empty even though the sync runs": the six
+ * sync sources only ever wrote `network_assets`, while the admin UI reads
+ * `network_devices`. Both tables existed, so nothing errored — the data simply
+ * landed somewhere the UI never looks. Every upsert now writes both.
+ *
+ * Keyed on (source, external_id) so repeat syncs update in place; rows created
+ * by hand in the admin UI have a NULL source and never collide.
+ */
+async function mirrorToNetworkDevices(pool: pg.Pool, asset: AssetRow): Promise<void> {
+  // network_devices.last_seen is a plain timestamp — drop unparseable values
+  // rather than letting one bad remote field abort the whole sync.
+  let lastSeen: string | null = null;
+  if (asset.last_seen) {
+    const d = new Date(asset.last_seen);
+    if (!isNaN(d.getTime())) lastSeen = d.toISOString();
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO network_devices
+         (client_id, hostname, device_type, ip_address, status, notes, last_seen, source, external_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (source, external_id) DO UPDATE SET
+         client_id = COALESCE(EXCLUDED.client_id, network_devices.client_id),
+         hostname = EXCLUDED.hostname,
+         device_type = EXCLUDED.device_type,
+         ip_address = EXCLUDED.ip_address,
+         status = EXCLUDED.status,
+         notes = EXCLUDED.notes,
+         last_seen = COALESCE(EXCLUDED.last_seen, network_devices.last_seen)`,
+      [
+        asset.client_id,
+        asset.name || asset.external_id,
+        asset.asset_type,
+        asset.ip || null,
+        normalizeDeviceStatus(asset.status),
+        `Synced from ${asset.source} (external id ${asset.external_id})`,
+        lastSeen,
+        asset.source,
+        asset.external_id,
+      ]
+    );
+  } catch (e: any) {
+    // A mirror failure must not lose the network_assets row (already written).
+    console.error(`[network-sync] mirror to network_devices failed for ${asset.source}:${asset.external_id}: ${e.message}`);
+  }
 }
 
 /**
@@ -162,12 +250,20 @@ async function syncAction1(
 ): Promise<SyncResult> {
   const result: SyncResult = { source: "action1", synced: 0, matched: 0, errors: [] };
 
-  const clientId = settings["action1_client_id"] || process.env.ACTION1_CLIENT_ID || "";
-  const apiKey = settings["action1_api_key"] || process.env.ACTION1_API_KEY || "";
-  const apiUrl = settings["action1_api_url"] || process.env.ACTION1_API_URL || "https://app.action1.com/api/3.0";
+  // Action1 client-credentials OAuth: the API KEY is NOT the client secret.
+  // `action1_api_key` holds a separate (non-OAuth) key and passing it as the
+  // secret returns HTTP 401 "Incorrect authentication data"; the OAuth secret
+  // lives in `action1_client_secret`. Verified live 2026-09-18.
+  const clientId = pick(settings, ["action1_client_id"], "ACTION1_CLIENT_ID");
+  const apiKey =
+    pick(settings, ["action1_client_secret"], "ACTION1_CLIENT_SECRET") ||
+    pick(settings, ["action1_api_key"], "ACTION1_API_KEY");
+  const apiUrl =
+    pick(settings, ["action1_api_url"], "ACTION1_API_URL") ||
+    "https://app.action1.com/api/3.0";
 
   if (!clientId || !apiKey) {
-    result.errors.push("Action1 not configured (missing client_id or api_key)");
+    result.errors.push("Action1 not configured (missing client_id or client_secret)");
     return result;
   }
 
@@ -253,28 +349,46 @@ async function syncJumpCloud(
 ): Promise<SyncResult> {
   const result: SyncResult = { source: "jumpcloud", synced: 0, matched: 0, errors: [] };
 
-  const apiKey = settings["jumpcloud_api_key"] || process.env.JUMPCLOUD_API_KEY || "";
-  const apiV2 = "https://console.jumpcloud.com/api/v2";
+  const apiKey = pick(settings, ["jumpcloud_api_key"], "JUMPCLOUD_API_KEY");
 
   if (!apiKey) {
     result.errors.push("JumpCloud not configured (missing api_key)");
     return result;
   }
 
+  // Do NOT send x-org-id: with the stored key it makes JumpCloud answer
+  // 404 "selected organization not found". The key alone selects the tenant.
   const headers = { "x-api-key": apiKey, "Content-Type": "application/json", Accept: "application/json" };
-  const fetchJc = async (path: string) => {
-    const resp = await fetch(`${apiV2}${path}`, { headers, signal: AbortSignal.timeout(30000) });
-    if (!resp.ok) throw new Error(`JumpCloud HTTP ${resp.status}`);
-    return resp.json();
+
+  // The v2 path 404s for this tenant's key; the v1 base (/api) authenticates.
+  // Try v2 first (correct for modern tenants) and fall back on 404.
+  let base = "https://console.jumpcloud.com/api/v2";
+  const fetchJc = async (path: string): Promise<any> => {
+    const attempt = async (b: string) => {
+      const resp = await fetch(`${b}${path}`, { headers, signal: AbortSignal.timeout(30000) });
+      if (!resp.ok) throw new Error(`JumpCloud HTTP ${resp.status}`);
+      return resp.json();
+    };
+    try {
+      return await attempt(base);
+    } catch (e: any) {
+      if (!/404/.test(e.message) || base.endsWith("/api")) throw e;
+      base = "https://console.jumpcloud.com/api";
+      return attempt(base);
+    }
   };
+
+  /** v1 returns {totalCount, results:[…]}; v2 returns a bare array. */
+  const asList = (data: any): any[] =>
+    Array.isArray(data) ? data : (data?.results ?? data?.data ?? []);
 
   try {
     // Fetch systems
-    const systems: any[] = await fetchJc("/systems?limit=200");
+    const systems: any[] = asList(await fetchJc("/systems?limit=200"));
     const sysList = systems || [];
 
     for (const sys of sysList) {
-      const externalId = String(sys.id || "");
+      const externalId = String(sys.id || sys._id || "");
       if (!externalId) continue;
 
       const sysName = sys.displayName || sys.hostname || sys.os || "";
@@ -305,11 +419,11 @@ async function syncJumpCloud(
     }
 
     // Fetch users (match by email domain)
-    const users: any[] = await fetchJc("/users?limit=200");
+    const users: any[] = asList(await fetchJc("/users?limit=200"));
     const userList = users || [];
 
     for (const u of userList) {
-      const externalId = String(u.id || "");
+      const externalId = String(u.id || u._id || "");
       if (!externalId) continue;
 
       const userName = `${u.firstname || ""} ${u.lastname || ""}`.trim() || u.username || "";
@@ -355,9 +469,25 @@ async function syncVoipMs(
 ): Promise<SyncResult> {
   const result: SyncResult = { source: "voipms", synced: 0, matched: 0, errors: [] };
 
-  const username = settings["voip_api_username"] || process.env.VOIP_USERNAME || "";
-  const password = settings["voip_api_password"] || process.env.VOIP_PASSWORD || "";
-  const token = settings["voip_api_token"] || process.env.VOIP_API_TOKEN || "";
+  // Credentials live in system_settings under the `voip_ms_*` names, while this
+  // function used to read `voip_api_*` — every lookup missed and the sync sent
+  // stale env values, so VoIP.ms always answered "Username or Password is
+  // incorrect". Accept both spellings.
+  const username = pick(
+    settings,
+    ["voip_ms_username", "voip_api_username", "voipms_username"],
+    "VOIP_USERNAME"
+  );
+  const password = pick(
+    settings,
+    ["voip_ms_password", "voip_api_password", "voipms_password"],
+    "VOIP_PASSWORD"
+  );
+  const token = pick(
+    settings,
+    ["voip_ms_api_key", "voip_api_token", "voipms_api_key"],
+    "VOIP_API_TOKEN"
+  );
   const apiUrl = "https://voip.ms/api/v1/rest.php";
 
   if (!username || (!password && !token)) {
@@ -441,7 +571,7 @@ async function syncHetzner(
 ): Promise<SyncResult> {
   const result: SyncResult = { source: "hetzner", synced: 0, matched: 0, errors: [] };
 
-  const token = settings["hetzner_api_token"] || process.env.HETZNER_API_TOKEN || "";
+  const token = pick(settings, ["hetzner_api_token", "hetzner_token"], "HETZNER_API_TOKEN");
   const apiUrl = "https://api.hetzner.cloud/v1";
 
   if (!token) {
@@ -510,30 +640,53 @@ async function syncHostwinds(
 ): Promise<SyncResult> {
   const result: SyncResult = { source: "hostwinds", synced: 0, matched: 0, errors: [] };
 
-  const apiEmail = settings["hostwinds_api_email"] || process.env.HOSTWINDS_API_EMAIL || "";
-  const apiKey = settings["hostwinds_api_key"] || process.env.HOSTWINDS_API_KEY || "";
-  const apiUrl = "https://clients.hostwinds.com/HostwindsResellerAPI/api.php";
+  const apiEmail = pick(settings, ["hostwinds_api_email"], "HOSTWINDS_API_EMAIL");
+  const apiKey = pick(settings, ["hostwinds_api_key"], "HOSTWINDS_API_KEY");
+  const apiUrl =
+    pick(settings, ["hostwinds_api_url"], "HOSTWINDS_API_URL") ||
+    "https://clients.hostwinds.com/HostwindsResellerAPI/api.php";
 
   if (!apiEmail || !apiKey) {
     result.errors.push("Hostwinds not configured (missing api_email or api_key)");
     return result;
   }
 
+  // Their endpoint answers HTTP 200 with {"result":0,"msg":"No API KEY in
+  // request"} when it does not recognise the credential field, so a 200 alone
+  // proves nothing. Try the documented field-name shapes (and both action
+  // casings) and only accept a response that is not that error.
   const callHwApi = async (action: string, extra: Record<string, string> = {}): Promise<any> => {
-    const postFields = new URLSearchParams({
-      action,
-      email: apiEmail,
-      apikey: apiKey,
-      ...extra,
-    });
-    const resp = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body: postFields.toString(),
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!resp.ok) throw new Error(`Hostwinds HTTP ${resp.status}`);
-    return resp.json();
+    const shapes: Record<string, string>[] = [
+      { apikey: apiKey },
+      { api_key: apiKey },
+      { key: apiKey },
+      { identifier: apiEmail, secret: apiKey },
+    ];
+    const actions = [action, action.replace(/^./, (c) => c.toUpperCase())];
+    let lastMsg = "";
+
+    for (const act of actions) {
+      for (const shape of shapes) {
+        const postFields = new URLSearchParams({
+          action: act,
+          email: apiEmail,
+          ...shape,
+          ...extra,
+        });
+        const resp = await fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+          body: postFields.toString(),
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!resp.ok) throw new Error(`Hostwinds HTTP ${resp.status}`);
+        const data: any = await resp.json();
+        const msg = String(data?.msg ?? "");
+        if (Number(data?.result) !== 0 && !/no api key/i.test(msg)) return data;
+        lastMsg = msg;
+      }
+    }
+    throw new Error(`Hostwinds rejected every credential shape (last: ${lastMsg || "no message"})`);
   };
 
   try {
@@ -588,8 +741,8 @@ async function syncUisp(
 ): Promise<SyncResult> {
   const result: SyncResult = { source: "uisp", synced: 0, matched: 0, errors: [] };
 
-  const apiKey = settings["uisp_api_key"] || process.env.UISP_API_KEY || "";
-  const apiUrl = (settings["uisp_url"] || process.env.UISP_URL || "").replace(/\/+$/, "");
+  const apiKey = pick(settings, ["uisp_api_key"], "UISP_API_KEY");
+  const apiUrl = pick(settings, ["uisp_url"], "UISP_URL").replace(/\/+$/, "");
 
   if (!apiKey || !apiUrl) {
     result.errors.push("UISP not configured (missing uisp_url or uisp_api_key)");
@@ -641,6 +794,12 @@ async function syncUisp(
         await upsertMapping(pool, clientId, "uisp", externalId, String(name), match?.method ?? "auto");
       }
       result.synced++;
+    }
+
+    if (result.synced === 0) {
+      // Auth and URL are fine (a bad key gives 401 here) — the instance simply
+      // has no devices provisioned yet. Say so instead of reporting silence.
+      result.errors.push("UISP authenticated but returned 0 devices (none provisioned in this UISP instance yet)");
     }
   } catch (e: any) {
     result.errors.push(`UISP device sync error: ${e.message}`);

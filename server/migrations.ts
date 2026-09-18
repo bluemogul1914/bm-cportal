@@ -456,4 +456,20 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Network site geo migration error:", err.message);
               }
+
+              // ── Network device provenance (network-sync mirror) ─────────────────
+              // The 6 sync sources write network_assets; Network Docs reads
+              // network_devices. These columns give the mirror a stable upsert key
+              // so repeated syncs update in place instead of duplicating rows.
+              try {
+                await db.execute(sql`ALTER TABLE network_devices ADD COLUMN IF NOT EXISTS source VARCHAR(40)`);
+                await db.execute(sql`ALTER TABLE network_devices ADD COLUMN IF NOT EXISTS external_id VARCHAR(120)`);
+                await db.execute(sql`
+                  CREATE UNIQUE INDEX IF NOT EXISTS network_devices_source_external_id_key
+                  ON network_devices (source, external_id)
+                `);
+                console.log("[migrations] Network device provenance migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Network device provenance migration error:", err.message);
+              }
             }

@@ -7,7 +7,8 @@ export interface BalanceCheckResult {
   clientId: number;
   clientName: string;
   clientEmail: string;
-  balance: string;
+  /** Numeric dollars — the scheduler parses `clients.credit_balance` with parseFloat. */
+  balance: number;
   status: "ok" | "low_balance" | "suspended";
   actions: string[];
 }
