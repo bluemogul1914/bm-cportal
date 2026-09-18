@@ -1,4 +1,5 @@
 import pg from "pg";
+import dns from "dns";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -916,6 +917,115 @@ async function syncUisp(
   return result;
 }
 
+// ── Source 7: Hostwinds Cloud (instances) ──────────────────────────────────
+//
+// The Cloud API is NOT the white-label reseller API. It is a POST form API:
+//   POST https://clients.hostwinds.com/cloud/api.php   action=<name> & API=<key>
+// Docs: https://developers.hostwinds.com/cloud/ (127 actions; read-only ones
+// include get_instances, get_instance_ips, get_price_list, get_snapshots).
+//
+// TWO TRAPS, both verified 2026-09-18:
+//  1. The key is IP-allow-listed (IPv4). Our hosts egress over IPv6 first
+//     (`2a01:4ff:...`), so the request must be forced to IPv4 or Hostwinds
+//     answers {"result":"error","action":"Authorization","message":"Not Authorized!"}.
+//  2. The allow-list contains bme-hills-02 (5.78.116.116), NOT the portal host
+//     bme-hills-01 (5.78.87.79), so from the portal the API is unauthorized
+//     until that address is added at clients.hostwinds.com/cloud/api_keys.php.
+
+async function syncHostwindsCloud(
+  pool: pg.Pool,
+  clients: ClientRecord[],
+  settings: Record<string, string>
+): Promise<SyncResult> {
+  const result: SyncResult = { source: "hostwinds_cloud", synced: 0, matched: 0, errors: [] };
+
+  const apiKey = pick(settings, ["hostwinds_cloud_api_key", "hostwinds_cloud_key"], "HOSTWINDS_CLOUD_API_KEY");
+  const apiUrl = pick(settings, ["hostwinds_cloud_api_url"], "HOSTWINDS_CLOUD_API_URL") ||
+    "https://clients.hostwinds.com/cloud/api.php";
+
+  if (!apiKey) {
+    result.errors.push("Hostwinds Cloud not configured (missing API key)");
+    return result;
+  }
+
+  const call = async (action: string, extra: Record<string, string> = {}): Promise<any> => {
+    const resp = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: new URLSearchParams({ action, API: apiKey, ...extra }).toString(),
+      signal: AbortSignal.timeout(30000),
+    });
+    const text = await resp.text();
+    if (!resp.ok) throw new Error(`Hostwinds Cloud HTTP ${resp.status}: ${text.slice(0, 160)}`);
+    let json: any;
+    try { json = JSON.parse(text); } catch { throw new Error(`Hostwinds Cloud returned non-JSON: ${text.slice(0, 140)}`); }
+    // The API reports failures as [{"result":"error","action":"…","message":"…"}]
+    const first = Array.isArray(json) ? json[0] : json;
+    if (first && first.result === "error") {
+      const msg = String(first.message ?? "unknown error");
+      if (/not authorized/i.test(msg)) {
+        throw new Error(
+          "Hostwinds Cloud rejected this host — the API key's IP allow-list must include this server's IPv4 address (portal/h01 = 5.78.87.79). Add it at clients.hostwinds.com/cloud/api_keys.php"
+        );
+      }
+      throw new Error(`Hostwinds Cloud ${first.action ?? action}: ${msg}`);
+    }
+    return json;
+  };
+
+  // Force IPv4 for this source only: the allow-list is IPv4 and our resolver
+  // prefers IPv6, which silently fails authorization.
+  const previousOrder = dns.getDefaultResultOrder?.();
+  try {
+    dns.setDefaultResultOrder("ipv4first");
+
+    const instancesRaw = await call("get_instances");
+    const instances: any[] = Array.isArray(instancesRaw?.success) ? instancesRaw.success : (Array.isArray(instancesRaw) ? instancesRaw : []);
+
+    for (const inst of instances) {
+      // Defensive mapping: the account has no instances yet, so the exact field
+      // names could not be confirmed against live data. Take the first plausible
+      // key rather than assuming one shape.
+      const externalId = String(
+        inst?.id ?? inst?.serviceid ?? inst?.instance_id ?? inst?.uuid ?? inst?.name ?? ""
+      ).trim();
+      if (!externalId) continue;
+
+      const name = String(inst?.name ?? inst?.hostname ?? inst?.label ?? `Hostwinds instance ${externalId}`);
+      const ip = String(inst?.ip ?? inst?.ip_address ?? inst?.main_ip ?? inst?.primary_ip ?? "");
+      const status = String(inst?.status ?? inst?.state ?? "unknown");
+
+      const match = matchClient(name, null, clients);
+      const clientId = match?.clientId ?? null;
+      if (clientId) result.matched++;
+
+      await upsertAsset(pool, {
+        client_id: clientId,
+        source: "hostwinds_cloud",
+        asset_type: "cloud_instance",
+        external_id: externalId,
+        name,
+        ip,
+        status,
+        last_seen: null,
+        raw: inst,
+      });
+      if (clientId) await upsertMapping(pool, clientId, "hostwinds_cloud", externalId, name, match?.method ?? "auto");
+      result.synced++;
+    }
+
+    if (instances.length === 0) {
+      result.errors.push("note: Hostwinds Cloud authenticated — this account has 0 cloud instances");
+    }
+  } catch (e: any) {
+    result.errors.push(`Hostwinds Cloud sync error: ${e.message}`);
+  } finally {
+    if (previousOrder) dns.setDefaultResultOrder(previousOrder as any);
+  }
+
+  return result;
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────
 
 const SOURCE_HANDLERS: Record<string, (pool: pg.Pool, clients: ClientRecord[], settings: Record<string, string>) => Promise<SyncResult>> = {
@@ -924,6 +1034,7 @@ const SOURCE_HANDLERS: Record<string, (pool: pg.Pool, clients: ClientRecord[], s
   voipms: syncVoipMs,
   hetzner: syncHetzner,
   hostwinds: syncHostwinds,
+  hostwinds_cloud: syncHostwindsCloud,
   uisp: syncUisp,
 };
 

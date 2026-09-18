@@ -553,7 +553,7 @@ $warning_devices = $pdo->query("SELECT COUNT(*) FROM network_devices WHERE statu
                             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Syncing...';
                             showSyncStatus('Syncing all sources...', false);
 
-                            const sources = ['action1', 'jumpcloud', 'voipms', 'hetzner', 'hostwinds'];
+                            const sources = ['action1', 'jumpcloud', 'voipms', 'hetzner', 'hostwinds', 'hostwinds_cloud', 'uisp'];
                             let allOk = true;
                             let msg = '';
 
