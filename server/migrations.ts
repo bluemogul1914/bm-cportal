@@ -472,4 +472,136 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Network device provenance migration error:", err.message);
               }
+
+              // ── Wave Accounting mirror (ITFlow module_financial parity) ────────
+              // Local read-model of the Wave account: businesses, accounts,
+              // customers, invoices, invoice payments, vendors, plus a sync-run log.
+              // See server/wave-api.ts and docs/itflow-parity-build-plan.md.
+              try {
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS wave_businesses (
+                    id SERIAL PRIMARY KEY,
+                    wave_id TEXT UNIQUE NOT NULL,
+                    name TEXT,
+                    currency VARCHAR(8),
+                    is_personal BOOLEAN DEFAULT false,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS wave_accounts (
+                    id SERIAL PRIMARY KEY,
+                    wave_id TEXT UNIQUE NOT NULL,
+                    business_wave_id TEXT,
+                    name TEXT,
+                    display_id VARCHAR(60),
+                    description TEXT,
+                    type_name VARCHAR(60),
+                    type_value VARCHAR(30),
+                    subtype_name VARCHAR(80),
+                    currency VARCHAR(8),
+                    balance NUMERIC(16,2),
+                    balance_business_currency NUMERIC(16,2),
+                    is_archived BOOLEAN DEFAULT false,
+                    sequence INTEGER,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS wave_customers (
+                    id SERIAL PRIMARY KEY,
+                    wave_id TEXT UNIQUE NOT NULL,
+                    business_wave_id TEXT,
+                    name TEXT,
+                    email VARCHAR(200),
+                    display_id VARCHAR(60),
+                    phone VARCHAR(60),
+                    currency VARCHAR(8),
+                    outstanding NUMERIC(16,2),
+                    overdue NUMERIC(16,2),
+                    is_archived BOOLEAN DEFAULT false,
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS wave_invoices (
+                    id SERIAL PRIMARY KEY,
+                    wave_id TEXT UNIQUE NOT NULL,
+                    business_wave_id TEXT,
+                    invoice_number VARCHAR(60),
+                    status VARCHAR(20),
+                    title TEXT,
+                    po_number VARCHAR(60),
+                    invoice_date DATE,
+                    due_date DATE,
+                    customer_wave_id TEXT,
+                    customer_name TEXT,
+                    customer_email VARCHAR(200),
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    total NUMERIC(16,2),
+                    amount_paid NUMERIC(16,2),
+                    amount_due NUMERIC(16,2),
+                    tax_total NUMERIC(16,2),
+                    subtotal NUMERIC(16,2),
+                    currency VARCHAR(8),
+                    pdf_url TEXT,
+                    view_url TEXT,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS wave_payments (
+                    id SERIAL PRIMARY KEY,
+                    wave_id TEXT UNIQUE NOT NULL,
+                    business_wave_id TEXT,
+                    invoice_wave_id TEXT,
+                    invoice_number VARCHAR(60),
+                    customer_name TEXT,
+                    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                    payment_date DATE,
+                    amount NUMERIC(16,2),
+                    currency VARCHAR(8),
+                    payment_method VARCHAR(80),
+                    memo TEXT,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS wave_vendors (
+                    id SERIAL PRIMARY KEY,
+                    wave_id TEXT UNIQUE NOT NULL,
+                    business_wave_id TEXT,
+                    name TEXT,
+                    email VARCHAR(200),
+                    display_id VARCHAR(60),
+                    phone VARCHAR(60),
+                    is_archived BOOLEAN DEFAULT false,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS wave_sync_runs (
+                    id SERIAL PRIMARY KEY,
+                    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    finished_at TIMESTAMP,
+                    status VARCHAR(20) DEFAULT 'running',
+                    businesses INTEGER DEFAULT 0,
+                    accounts INTEGER DEFAULT 0,
+                    customers INTEGER DEFAULT 0,
+                    invoices INTEGER DEFAULT 0,
+                    payments INTEGER DEFAULT 0,
+                    vendors INTEGER DEFAULT 0,
+                    error TEXT
+                  )
+                `);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS wave_invoices_client_idx ON wave_invoices (client_id)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS wave_invoices_status_idx ON wave_invoices (status)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS wave_invoices_date_idx ON wave_invoices (invoice_date)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS wave_payments_client_idx ON wave_payments (client_id)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS wave_customers_client_idx ON wave_customers (client_id)`);
+                console.log("[migrations] Wave accounting mirror migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Wave accounting mirror migration error:", err.message);
+              }
             }

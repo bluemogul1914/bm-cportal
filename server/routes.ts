@@ -11,6 +11,7 @@ import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClie
 import { db, pool } from "./db";
 import { sql, eq, and } from "drizzle-orm";
 import { syncSource, syncAllSources, getClientAssets, VALID_SOURCES } from "./network-sync";
+import { syncWave, waveStatus, fetchWaveBusinesses, getWaveToken } from "./wave-api";
 import { recordTransaction } from "./balance-scheduler";
 
 /** Resolve a portal user's linked client from the DB (login session carries no client_id). */
@@ -608,6 +609,65 @@ export async function registerRoutes(
     try {
       const results = await syncAllSources(pool);
       res.json({ results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── Wave Accounting (ITFlow module_financial parity) ──────────────────────
+
+  // GET /api/admin/wave/status — connection state + mirror totals
+  app.get("/api/admin/wave/status", requireNetworkAdmin, async (_req, res) => {
+    try {
+      res.json(await waveStatus(pool));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/admin/wave/businesses — live list from Wave (for the selector)
+  app.get("/api/admin/wave/businesses", requireNetworkAdmin, async (_req, res) => {
+    try {
+      const token = await getWaveToken(pool);
+      if (!token) return res.status(400).json({ error: "Wave not configured (missing wave_token)" });
+      const businesses = await fetchWaveBusinesses(token);
+      res.json({ businesses: businesses.map((b: any) => ({ id: b.id, name: b.name, currency: b.currency?.code, is_personal: !!b.isPersonal })) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/admin/wave/sync — pull the selected business into the mirror
+  app.post("/api/admin/wave/sync", requireNetworkAdmin, async (_req, res) => {
+    try {
+      const results = await syncWave(pool);
+      res.json({
+        results,
+        totals: {
+          accounts: results.reduce((n, r) => n + r.accounts, 0),
+          customers: results.reduce((n, r) => n + r.customers, 0),
+          invoices: results.reduce((n, r) => n + r.invoices, 0),
+          payments: results.reduce((n, r) => n + r.payments, 0),
+          vendors: results.reduce((n, r) => n + r.vendors, 0),
+        },
+        errors: results.flatMap((r) => r.errors),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/admin/wave/settings — choose which Wave business to mirror
+  app.post("/api/admin/wave/settings", requireNetworkAdmin, async (req, res) => {
+    try {
+      const businessId = String(req.body?.business_id ?? "").trim();
+      await pool.query(
+        `INSERT INTO system_settings (setting_key, setting_value, updated_at)
+         VALUES ('wave_business_id', $1, NOW())
+         ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW()`,
+        [businessId]
+      );
+      res.json({ ok: true, business_id: businessId });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

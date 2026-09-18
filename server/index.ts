@@ -20,6 +20,7 @@ import connectPgSimple from "connect-pg-simple";
 import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInquiry, dhOrderTracking, dhSearchCatalog, dhCreateSalesOrder, dhOrdersList } from "./dh-api";
 import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat } from "./bmai";
 import { syncAllSources } from "./network-sync";
+import { syncWave, getWaveToken } from "./wave-api";
 import { checkAllBalances, processPendingTopUps, processPendingServiceInvoices, activatePaidPendingSubscriptions, chargeMonthlySubscriptions } from "./balance-scheduler";
 import { generateReceiptPdfBuffer } from "./receipt-pdf";
 import { generateQuotePdfBuffer } from "./quote-pdf";
@@ -189,6 +190,7 @@ const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashb
   "admin-dealers.php", "admin-dealer-detail.php",
   "admin-client-contacts.php", "admin-client-assets.php", "frontier-qualify.php",
   "admin-billing-reminders.php",
+  "admin-financials.php",
   "admin-client-services.php"];
 
 function buildSessionPhpCode(req: Request): string {
@@ -4326,6 +4328,26 @@ const PORTAL_SAFE_MODE =
             log(`[network-sync] ${r.source}: ${r.synced} assets, ${r.matched} matched${r.errors.length ? `, errors: ${r.errors.join("; ")}` : ""}`);
           }
           log("[network-sync] Daily sync complete");
+
+          // Wave Accounting mirror (ITFlow module_financial parity). Skipped
+          // silently when no wave_token is stored.
+          try {
+            if (await getWaveToken(webhookPool)) {
+              log("[wave] Starting daily Wave accounting sync...");
+              const wave = await syncWave(webhookPool);
+              for (const r of wave) {
+                log(
+                  `[wave] ${r.business}: ${r.invoices} invoices, ${r.payments} payments, ${r.customers} customers, ${r.accounts} accounts, ${r.vendors} vendors` +
+                    (r.errors.length ? `, errors: ${r.errors.join("; ")}` : "")
+                );
+              }
+              log("[wave] Daily Wave sync complete");
+            } else {
+              log("[wave] skipped (no wave_token configured)");
+            }
+          } catch (e: any) {
+            console.error("[wave] Daily Wave sync error:", e.message);
+          }
         } catch (e: any) {
           console.error("[network-sync] Daily sync error:", e.message);
         }
