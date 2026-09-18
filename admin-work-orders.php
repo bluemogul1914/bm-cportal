@@ -305,24 +305,38 @@ $status_dot = function($s) {
                                     $firstDow = (int)date('w', strtotime($month . '-01'));
                                     $daysInMonth = (int)date('t', strtotime($month . '-01'));
                                     $byDay = [];
-                                    foreach ($cal_wos as $wo) if ($wo['scheduled_date']) $byDay[(int)date('j', strtotime($wo['scheduled_date']))][] = $wo;
+                                    foreach ($cal_wos as $wo) if ($wo['scheduled_date']) $byDay[date('Y-m-d', strtotime($wo['scheduled_date']))][] = $wo;
+                                    $prevM = date('Y-m', strtotime($month . '-01 -1 month'));
+                                    $nextM = date('Y-m', strtotime($month . '-01 +1 month'));
+                                    $prevLast = (int)date('t', strtotime($prevM . '-01'));
+                                    $cells = [];
+                                    for ($i = $firstDow - 1; $i >= 0; $i--)
+                                        $cells[] = ['d' => $prevM . '-' . str_pad($prevLast - $i, 2, '0', STR_PAD_LEFT), 'n' => $prevLast - $i, 'o' => true];
+                                    for ($d = 1; $d <= $daysInMonth; $d++)
+                                        $cells[] = ['d' => $month . '-' . str_pad($d, 2, '0', STR_PAD_LEFT), 'n' => $d, 'o' => false];
+                                    $trail = (7 - count($cells) % 7) % 7;
+                                    for ($d = 1; $d <= $trail; $d++)
+                                        $cells[] = ['d' => $nextM . '-' . str_pad($d, 2, '0', STR_PAD_LEFT), 'n' => $d, 'o' => true];
                                 ?>
-                                <div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-gray-500 uppercase mb-2">
+                                <div class="grid grid-cols-7 text-center text-[11px] font-semibold text-gray-500 uppercase mb-1">
                                     <?php foreach (['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] as $d): ?><div class="py-1"><?php echo $d; ?></div><?php endforeach; ?>
                                 </div>
-                                <div class="grid grid-cols-7 gap-1">
-                                    <?php for ($i = 0; $i < $firstDow; $i++): ?><div></div><?php endfor; ?>
-                                    <?php for ($d = 1; $d <= $daysInMonth; $d++): ?>
-                                        <?php $dstr = $month . '-' . str_pad($d, 2, '0', STR_PAD_LEFT); $isToday = $dstr === $today; ?>
-                                        <div class="min-h-[80px] border border-gray-100 rounded p-1 <?php echo $isToday ? 'bg-blue-50 ring-1 ring-blue-200' : ''; ?>">
-                                            <div class="text-xs font-medium <?php echo $isToday ? 'text-blue-700' : 'text-gray-500'; ?>"><?php echo $d; ?></div>
-                                            <?php foreach (($byDay[$d] ?? []) as $wo): ?>
-                                                <a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="cal-event block text-[10px] truncate rounded px-1 py-0.5 mb-0.5 border <?php echo $status_color($wo['status']); ?>">
-                                                    <span class="inline-block w-1.5 h-1.5 rounded-full <?php echo $status_dot($wo['status']); ?> mr-1"></span><?php echo htmlspecialchars($wo['site_name'] ?: '#' . $wo['id']); ?>
-                                                </a>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    <?php endfor; ?>
+                                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                                    <div class="grid grid-cols-7">
+                                        <?php foreach ($cells as $c): ?>
+                                            <?php $isToday = $c['d'] === $today; ?>
+                                            <div class="min-h-[80px] p-1 border-r border-b border-gray-200 <?php echo $c['o'] ? 'bg-gray-50' : 'bg-white'; ?>">
+                                                <div class="flex items-center justify-center mb-1">
+                                                    <span class="text-xs font-medium <?php echo $isToday ? 'bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center' : ($c['o'] ? 'text-gray-400' : 'text-gray-600'); ?>"><?php echo $c['n']; ?></span>
+                                                </div>
+                                                <?php foreach (($byDay[$c['d']] ?? []) as $wo): ?>
+                                                    <a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="cal-event block text-[10px] truncate rounded px-1 py-0.5 mb-0.5 border <?php echo $status_color($wo['status']); ?>" title="<?php echo htmlspecialchars($wo['site_name'] ?: '#' . $wo['id']); if ($wo['scheduled_time']) echo ' · ' . substr($wo['scheduled_time'], 0, 5); ?>">
+                                                        <span class="inline-block w-1.5 h-1.5 rounded-full <?php echo $status_dot($wo['status']); ?> mr-1"></span><?php echo htmlspecialchars($wo['site_name'] ?: '#' . $wo['id']); ?>
+                                                    </a>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
                                 </div>
                             <?php elseif ($cal_view === 'week'): ?>
                                 <?php
@@ -507,7 +521,7 @@ $status_dot = function($s) {
                 <label class="block text-sm font-medium text-gray-700 mb-1">Client</label>
                 <select name="client_id" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
                     <option value="">— No client —</option>
-                    <?php foreach ($clients as $c): ?><option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option><?php endforeach; ?>
+                    <?php foreach ($clients as $c): ?><option value="<?php echo $c['id']; ?>" <?php echo ($client_filter > 0 && (int)$c['id'] === $client_filter) ? 'selected' : ''; ?>><?php echo htmlspecialchars($c['name']); ?></option><?php endforeach; ?>
                 </select>
             </div>
             <div class="grid grid-cols-2 gap-4">

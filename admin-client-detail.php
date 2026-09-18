@@ -249,6 +249,13 @@ try {
     $stmt->execute([$client_id]);
     $all_documents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    $stmt = $pdo->prepare("SELECT w.*, t.subject AS ticket_subject, p.name AS project_name FROM work_orders w
+        LEFT JOIN tickets t ON w.ticket_id = t.id
+        LEFT JOIN projects p ON w.project_id = p.id
+        WHERE w.client_id = ? ORDER BY w.scheduled_date DESC NULLS LAST, w.created_at DESC");
+    $stmt->execute([$client_id]);
+    $client_work_orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
     $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) as total FROM invoices WHERE client_id = ? AND status = 'unpaid'");
     $stmt->execute([$client_id]);
     $outstanding = (float)$stmt->fetch(PDO::FETCH_ASSOC)['total'];
@@ -417,6 +424,7 @@ $show_map = $has_location || $has_address;
                     'network'    => 'Network',
                     'cloud'      => 'Cloud',
                     'projects'   => 'Projects',
+                    'workorders' => 'Work Orders',
                     'linkedin'   => '🔗 LinkedIn',
                 ];
                 foreach ($tabs as $tk => $tv):
@@ -1416,6 +1424,49 @@ $show_map = $has_location || $has_address;
                         ?>"><?php echo ucfirst(str_replace('_', ' ', $pj['status'] ?? 'planning')); ?></span>
                     </a>
                     <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <?php elseif ($active_tab === 'workorders'): ?>
+
+            <div class="bg-white rounded-lg border border-gray-200">
+                <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-clipboard-list text-primary mr-2"></i>Work Orders (<?php echo count($client_work_orders); ?>)</h2>
+                    <a href="admin-work-orders.php?client=<?php echo $client_id; ?>" class="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition"><i class="fas fa-plus mr-1"></i>New Work Order</a>
+                </div>
+                <?php if (empty($client_work_orders)): ?>
+                <div class="p-8 text-center text-gray-400">
+                    <i class="fas fa-clipboard-list text-3xl mb-2"></i>
+                    <p>No work orders for this client.</p>
+                    <p class="text-xs mt-1"><a href="admin-work-orders.php?client=<?php echo $client_id; ?>" class="text-blue-600 hover:underline">Schedule a field work order</a></p>
+                </div>
+                <?php else: ?>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">#</th>
+                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Site</th>
+                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Scheduled</th>
+                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Assignee</th>
+                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <?php foreach ($client_work_orders as $wo): ?>
+                            <tr class="hover:bg-gray-100" data-testid="row-workorder-<?php echo $wo['id']; ?>">
+                                <td class="px-4 py-3 text-sm"><a href="admin-work-orders.php?id=<?php echo $wo['id']; ?>" class="text-blue-600 hover:underline">#<?php echo $wo['id']; ?></a></td>
+                                <td class="px-4 py-3 text-sm text-gray-700"><?php echo htmlspecialchars($wo['site_name'] ?: '—'); ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-500"><?php echo $wo['scheduled_date'] ? date('M j, Y', strtotime($wo['scheduled_date'])) . ($wo['scheduled_time'] ? ' · ' . substr($wo['scheduled_time'], 0, 5) : '') : '—'; ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-500"><?php echo htmlspecialchars($wo['assignee'] ?: '—'); ?></td>
+                                <td class="px-4 py-3 text-sm">
+                                    <span class="px-2 py-1 rounded-full text-xs font-medium <?php echo match($wo['status']) { 'open' => 'bg-blue-100 text-blue-700', 'in_progress' => 'bg-yellow-100 text-yellow-700', 'completed' => 'bg-green-100 text-green-700', 'cancelled' => 'bg-gray-200 text-gray-600', default => 'bg-gray-100 text-gray-700' }; ?>"><?php echo ucwords(str_replace('_', ' ', $wo['status'])); ?></span>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 </div>
                 <?php endif; ?>
             </div>
