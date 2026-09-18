@@ -116,11 +116,16 @@
                         </a>
 
                         <a href="admin-inventory.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-inventory.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-inventory">
-                            <i class="fas fa-boxes w-5"></i>
-                            <span>Inventory</span>
-                        </a>
+                                                    <i class="fas fa-boxes w-5"></i>
+                                                    <span>Inventory</span>
+                                                </a>
 
-            <a href="admin-network.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-network.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
+                                                <a href="admin-time-tracking.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo in_array($current_page, ['admin-time-tracking.php']) ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-time-tracking">
+                                                    <i class="fas fa-clock w-5"></i>
+                                                    <span>Time Tracking</span>
+                                                </a>
+
+                                    <a href="admin-network.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-network.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                 <i class="fas fa-network-wired w-5"></i>
                 <span>Network Docs</span>
             </a>
