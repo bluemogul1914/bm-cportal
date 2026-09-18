@@ -579,6 +579,100 @@ async function syncHostwinds(
   return result;
 }
 
+// ── Source 6: UISP (Ubiquiti ISP) ──────────────────────────────────────────
+
+async function syncUisp(
+  pool: pg.Pool,
+  clients: ClientRecord[],
+  settings: Record<string, string>
+): Promise<SyncResult> {
+  const result: SyncResult = { source: "uisp", synced: 0, matched: 0, errors: [] };
+
+  const apiKey = settings["uisp_api_key"] || process.env.UISP_API_KEY || "";
+  const apiUrl = (settings["uisp_url"] || process.env.UISP_URL || "").replace(/\/+$/, "");
+
+  if (!apiKey || !apiUrl) {
+    result.errors.push("UISP not configured (missing uisp_url or uisp_api_key)");
+    return result;
+  }
+
+  const callUisp = async (path: string): Promise<any> => {
+    const resp = await fetch(`${apiUrl}${path}`, {
+      headers: { "x-auth-token": apiKey, Accept: "application/json" },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!resp.ok) throw new Error(`UISP HTTP ${resp.status} on ${path}`);
+    return resp.json();
+  };
+
+  // 1. Devices → network_assets (shown in Network Docs)
+  try {
+    const devices = await callUisp("/nms/api/v2.1/devices");
+    const list = Array.isArray(devices) ? devices : (devices.data || devices.devices || []);
+
+    for (const d of list) {
+      const externalId = String(d.id || d.identification?.id || "");
+      if (!externalId) continue;
+
+      const name = d.identification?.name || d.name || d.hostname || `UISP device ${externalId}`;
+      const ip = d.ipAddress || d.ip || d.identification?.ipAddress || "";
+      const rawStatus = (d.overview?.status || d.status || "").toString().toLowerCase();
+      const status = rawStatus === "active" ? "online" : (rawStatus || "unknown");
+      const deviceType = String(d.identification?.type || d.type || "uisp_device");
+      const lastSeen = d.overview?.lastSeen ? new Date(d.overview.lastSeen).toISOString() : null;
+
+      const match = matchClient(String(name), null, clients);
+      const clientId = match?.clientId ?? null;
+      if (clientId) result.matched++;
+
+      await upsertAsset(pool, {
+        client_id: clientId,
+        source: "uisp",
+        asset_type: deviceType,
+        external_id: externalId,
+        name: String(name),
+        ip: String(ip),
+        status: String(status),
+        last_seen: lastSeen,
+        raw: d,
+      });
+
+      if (clientId) {
+        await upsertMapping(pool, clientId, "uisp", externalId, String(name), match?.method ?? "auto");
+      }
+      result.synced++;
+    }
+  } catch (e: any) {
+    result.errors.push(`UISP device sync error: ${e.message}`);
+  }
+
+  // 2. Sites → network_sites (insert-if-new, by name)
+  try {
+    const sites = await callUisp("/nms/api/v2.1/sites");
+    const siteList = Array.isArray(sites) ? sites : (sites.data || []);
+
+    for (const s of siteList) {
+      const siteName = s.name || s.identification?.name || "";
+      if (!siteName) continue;
+
+      const lat = s.latitude ?? s.location?.latitude ?? null;
+      const lng = s.longitude ?? s.location?.longitude ?? null;
+      const address = s.address || s.location?.address || null;
+
+      await pool.query(
+        `INSERT INTO network_sites (name, address, latitude, longitude, site_type, status)
+         SELECT $1, $2, $3, $4, 'UISP', 'active'
+         WHERE NOT EXISTS (SELECT 1 FROM network_sites WHERE name = $1)`,
+        [siteName, address, lat, lng]
+      );
+    }
+  } catch (e: any) {
+    result.errors.push(`UISP site sync error: ${e.message}`);
+  }
+
+  return result;
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────
 
 const SOURCE_HANDLERS: Record<string, (pool: pg.Pool, clients: ClientRecord[], settings: Record<string, string>) => Promise<SyncResult>> = {
@@ -587,6 +681,7 @@ const SOURCE_HANDLERS: Record<string, (pool: pg.Pool, clients: ClientRecord[], s
   voipms: syncVoipMs,
   hetzner: syncHetzner,
   hostwinds: syncHostwinds,
+  uisp: syncUisp,
 };
 
 export const VALID_SOURCES = Object.keys(SOURCE_HANDLERS);
