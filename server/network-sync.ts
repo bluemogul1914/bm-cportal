@@ -361,7 +361,9 @@ async function syncJumpCloud(
   const headers = { "x-api-key": apiKey, "Content-Type": "application/json", Accept: "application/json" };
 
   // The v2 path 404s for this tenant's key; the v1 base (/api) authenticates.
-  // Try v2 first (correct for modern tenants) and fall back on 404.
+  // Try v2 first (correct for modern tenants) and fall back on 404. Page size
+  // must stay <= 100 — the v1 API answers 400 "limit exceeds maximum value of
+  // 100" for anything larger.
   let base = "https://console.jumpcloud.com/api/v2";
   const fetchJc = async (path: string): Promise<any> => {
     const attempt = async (b: string) => {
@@ -384,7 +386,7 @@ async function syncJumpCloud(
 
   try {
     // Fetch systems
-    const systems: any[] = asList(await fetchJc("/systems?limit=200"));
+    const systems: any[] = asList(await fetchJc("/systems?limit=100"));
     const sysList = systems || [];
 
     for (const sys of sysList) {
@@ -419,7 +421,7 @@ async function syncJumpCloud(
     }
 
     // Fetch users (match by email domain)
-    const users: any[] = asList(await fetchJc("/users?limit=200"));
+    const users: any[] = asList(await fetchJc("/users?limit=100"));
     const userList = users || [];
 
     for (const u of userList) {
