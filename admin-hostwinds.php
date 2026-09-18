@@ -389,6 +389,37 @@ foreach ($services as $s) {
             <?php endif; ?>
 
             <!-- ════════════════════════════════════════════════════════ -->
+            <!-- DATA SCOPE NOTE                                           -->
+            <!-- ════════════════════════════════════════════════════════ -->
+            <div class="bg-white rounded-lg border border-gray-200 mt-4" data-testid="card-hostwinds-scope">
+                <div class="px-6 py-4 border-b border-gray-100">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-circle-info text-gray-400 mr-2"></i>What this integration can and cannot see</h2>
+                </div>
+                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                    <div>
+                        <p class="font-semibold text-gray-800 mb-2">What the White Label Reseller API exposes</p>
+                        <ul class="space-y-1 text-gray-600 list-disc list-inside">
+                            <li>The reseller <strong>product catalogue</strong> (ProductsList) — shown above</li>
+                            <li>Configurable options per product (AllProductsWithConfigurableOptions + product_id)</li>
+                            <li>Per-service status, product and actions <strong>by id</strong>: ServicesStatus, ServicesProduct, SuspendAccount, UnsuspendAccount, TerminateAccount, ChangePassword, ChangePackage, SendWelcomeEmail</li>
+                            <li>Provisioning: <strong>CreateAccount</strong> — how a client/service is added through this API</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <p class="font-semibold text-gray-800 mb-2">What it does NOT expose (and why nothing from the Hostwinds client area appears here)</p>
+                        <ul class="space-y-1 text-gray-600 list-disc list-inside">
+                            <li><strong>No invoice or billing endpoints.</strong> Your Hostwinds invoices (paid/unpaid, balance) live in the client area's WHMCS and are not reachable from this API.</li>
+                            <li><strong>No account-wide service list.</strong> <code>GetServicesData</code> requires <code>hostings_ids</code>, and Hostwinds' own module builds that list from <em>its own WHMCS database</em> (<code>tblhosting</code>) — <code>classes/ServiceSync.php</code>. There is no API-side enumeration.</li>
+                            <li><strong>Not your own Hostwinds services</strong> (e.g. SSD Cloud 1, the White Label Reseller Account itself). Those are parent-account services; cloud instances surface through the <strong>Hostwinds Cloud API</strong> (<code>get_instances</code>) once its IP allow-list includes this server.</li>
+                        </ul>
+                    </div>
+                </div>
+                <p class="px-6 pb-5 text-xs text-gray-500">
+                    Practical consequence: the portal can list the catalogue today, and can track <em>sub-accounts the portal itself creates</em> (store the id returned by CreateAccount, then poll ServicesStatus). Anything that only exists inside Hostwinds' own WHMCS — invoices, parent-account services — must stay in the Hostwinds client area.
+                </p>
+            </div>
+
+            <!-- ════════════════════════════════════════════════════════ -->
             <!-- ACCOUNTS TAB                                             -->
             <!-- ════════════════════════════════════════════════════════ -->
             <?php elseif ($tab === 'accounts'): ?>
