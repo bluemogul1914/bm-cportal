@@ -24,7 +24,7 @@ import { syncWave, getWaveToken } from "./wave-api";
 import { syncXero, xeroStatus, xeroToken, getXeroConfig, saveXeroConfig, xeroRequest, xeroAuthMode } from "./xero-api";
 import {
   hwProducts, hwTestConnection, hwCreateAccount, hwServiceStatus, hwServicesData,
-  syncHwServices, saveHwService, logHwOrder, getHwCredentials,
+  syncHwServices, saveHwService, logHwOrder, getHwCredentials, maybeProvisionHwService,
 } from "./hostwinds-api";
 import {
   getOAuthConfig,
@@ -879,6 +879,37 @@ app.post("/portal/api/admin/hostwinds/services/provision", async (req, res) => {
     }).catch(() => null);
     res.status(500).json({ ok: false, order_id: id, error: e.message });
   }
+});
+
+// Retry provisioning for a service whose attempt was rejected (e.g. after the
+// reseller account is funded, or once the billing-cycle value is corrected).
+// Rejected attempts are recorded, not lost, so this is the recovery path.
+app.post("/portal/api/admin/hostwinds/services/retry", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const serviceId = parseInt(String(req.body?.service_id ?? ""), 10);
+  if (!Number.isFinite(serviceId)) return res.status(400).json({ error: "service_id is required" });
+  try {
+    const { rows } = await webhookPool.query(`SELECT * FROM hostwinds_services WHERE id = $1`, [serviceId]);
+    if (!rows.length) return res.status(404).json({ error: "service not found" });
+    const svc = rows[0];
+    // Clear the failed marker so the idempotency guard lets this run.
+    await webhookPool.query(`UPDATE hostwinds_services SET status = 'retrying' WHERE id = $1`, [serviceId]);
+    const result = await maybeProvisionHwService(webhookPool, {
+      clientId: svc.client_id,
+      subscriptionId: svc.subscription_id ?? 0,
+      portalProductId: svc.portal_product_id ?? 0,
+    });
+    if (result.status === "skipped" || result.status === "failed") {
+      await webhookPool.query(
+        `UPDATE hostwinds_services SET status = 'provision_failed', note = $2 WHERE id = $1`,
+        [serviceId, result.message]
+      );
+    } else {
+      // The fresh row carries the real create; retire the placeholder.
+      await webhookPool.query(`DELETE FROM hostwinds_services WHERE id = $1`, [serviceId]);
+    }
+    res.json({ ok: result.status === "provisioned", result });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Xero OAuth 2.0 consent flow (the Web app) ────────────────────────────────

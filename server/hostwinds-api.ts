@@ -296,7 +296,7 @@ export async function setHwProductMap(pool: pg.Pool, m: {
        billingcycle = EXCLUDED.billingcycle,
        active = EXCLUDED.active,
        updated_at = NOW()`,
-    [m.portal_product_id, m.hostwinds_product_id, m.product_name ?? null, m.billingcycle ?? "monthly", m.active ?? true]
+    [m.portal_product_id, m.hostwinds_product_id, m.product_name ?? null, m.billingcycle ?? "Monthly", m.active ?? true]
   );
 }
 
@@ -327,7 +327,9 @@ export function buildHwCreateFields(client: any, opts: {
     domain: opts.domainLabel,
     password: opts.password,
     password2: opts.password,
-    billingcycle: opts.billingcycle || "monthly",
+    // Hostwinds/WHMCS expects the display form here: "Monthly" works,
+    // lowercase "monthly" is rejected with "This Billing Cycle is not supported".
+    billingcycle: opts.billingcycle || "Monthly",
     notes: `Blue Mogul Suite auto-provision (portal client ${client?.id ?? "?"})`,
   };
 }
@@ -354,8 +356,10 @@ export async function maybeProvisionHwService(pool: pg.Pool, args: {
 
     // Idempotency — one service per subscription, and per (client, product).
     const dup = await pool.query(
-      `SELECT id, hosting_id FROM hostwinds_services
-        WHERE subscription_id = $1 OR (client_id = $2 AND portal_product_id = $3) LIMIT 1`,
+      `SELECT id, hosting_id, status FROM hostwinds_services
+        WHERE (subscription_id = $1 OR (client_id = $2 AND portal_product_id = $3))
+          AND status <> 'provision_failed'
+        LIMIT 1`,
       [args.subscriptionId, args.clientId, args.portalProductId]
     );
     if (dup.rows.length) {

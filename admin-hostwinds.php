@@ -147,6 +147,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $tab = 'services';
 
+        } elseif ($action === 'retry_hostwinds') {
+            $sid = (int)($_POST['service_id'] ?? 0);
+            $ch = curl_init('http://127.0.0.1:' . (getenv('PORT') ?: '3000') . '/portal/api/admin/hostwinds/services/retry');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 180,
+                CURLOPT_POSTFIELDS     => json_encode(['service_id' => $sid]),
+                CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
+                CURLOPT_COOKIE         => 'connect.sid=' . ($_COOKIE['connect.sid'] ?? ''),
+            ]);
+            $resp = curl_exec($ch); $http = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+            $data = json_decode((string)$resp, true);
+            if ($http === 200 && !empty($data['ok'])) {
+                $success_msg = 'Provisioned on retry. Hosting id: ' . ($data['result']['hostingId'] ?? 'see service row') . '.';
+            } else {
+                $error_msg = 'Retry rejected: ' . htmlspecialchars((string)($data['result']['message'] ?? $data['error'] ?? substr((string)$resp, 0, 200)));
+            }
+            $tab = 'services';
+
         } elseif ($action === 'sync_hostwinds_statuses') {
             $ch = curl_init('http://127.0.0.1:' . (getenv('PORT') ?: '3000') . '/portal/api/admin/hostwinds/services/sync');
             curl_setopt_array($ch, [
