@@ -256,6 +256,32 @@ try {
     $stmt->execute([$client_id]);
     $client_work_orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Client service contracts + their SLA terms
+    $stmt = $pdo->prepare("SELECT * FROM service_contracts WHERE client_id = ? ORDER BY (status = 'active') DESC, start_date DESC NULLS LAST, created_at DESC");
+    $stmt->execute([$client_id]);
+    $client_contracts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $client_slas = [];
+    if ($client_contracts) {
+        $ids = array_column($client_contracts, 'id');
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $st2 = $pdo->prepare("SELECT * FROM sla_terms WHERE contract_id IN ($in) ORDER BY contract_id, id");
+        $st2->execute($ids);
+        foreach ($st2->fetchAll(PDO::FETCH_ASSOC) as $s) { $client_slas[(int)$s['contract_id']][] = $s; }
+    }
+
+    // Client purchase orders + their line items
+    $stmt = $pdo->prepare("SELECT * FROM purchase_orders WHERE client_id = ? ORDER BY created_at DESC");
+    $stmt->execute([$client_id]);
+    $client_pos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $client_po_items = [];
+    if ($client_pos) {
+        $pids = array_column($client_pos, 'id');
+        $in = implode(',', array_fill(0, count($pids), '?'));
+        $st3 = $pdo->prepare("SELECT * FROM po_line_items WHERE po_id IN ($in) ORDER BY po_id, id");
+        $st3->execute($pids);
+        foreach ($st3->fetchAll(PDO::FETCH_ASSOC) as $i) { $client_po_items[(int)$i['po_id']][] = $i; }
+    }
+
     $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) as total FROM invoices WHERE client_id = ? AND status = 'unpaid'");
     $stmt->execute([$client_id]);
     $outstanding = (float)$stmt->fetch(PDO::FETCH_ASSOC)['total'];
@@ -425,6 +451,8 @@ $show_map = $has_location || $has_address;
                     'cloud'      => 'Cloud',
                     'projects'   => 'Projects',
                     'workorders' => 'Work Orders',
+                    'contracts'  => 'Contracts' . (count($client_contracts) ? ' (' . count($client_contracts) . ')' : ''),
+                    'purchaseorders' => 'Purchase Orders' . (count($client_pos) ? ' (' . count($client_pos) . ')' : ''),
                     'linkedin'   => '🔗 LinkedIn',
                 ];
                 foreach ($tabs as $tk => $tv):
@@ -1462,6 +1490,105 @@ $show_map = $has_location || $has_address;
                                 <td class="px-4 py-3 text-sm text-gray-500"><?php echo htmlspecialchars($wo['assignee'] ?: '—'); ?></td>
                                 <td class="px-4 py-3 text-sm">
                                     <span class="px-2 py-1 rounded-full text-xs font-medium <?php echo match($wo['status']) { 'open' => 'bg-blue-100 text-blue-700', 'in_progress' => 'bg-yellow-100 text-yellow-700', 'completed' => 'bg-green-100 text-green-700', 'cancelled' => 'bg-gray-200 text-gray-600', default => 'bg-gray-100 text-gray-700' }; ?>"><?php echo ucwords(str_replace('_', ' ', $wo['status'])); ?></span>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <?php elseif ($active_tab === 'contracts'): ?>
+
+            <div class="bg-white rounded-lg border border-gray-200">
+                <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-file-signature text-primary mr-2"></i>Service Contracts (<?php echo count($client_contracts); ?>)</h2>
+                    <a href="admin-contracts.php" class="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition"><i class="fas fa-plus mr-1"></i>Manage Contracts</a>
+                </div>
+                <?php if (empty($client_contracts)): ?>
+                <div class="p-8 text-center text-gray-400">
+                    <i class="fas fa-file-signature text-3xl mb-2"></i>
+                    <p>No service contracts for this client.</p>
+                    <p class="text-xs mt-1"><a href="admin-contracts.php" class="text-blue-600 hover:underline">Create a service contract</a></p>
+                </div>
+                <?php else: ?>
+                <div class="divide-y divide-gray-100">
+                    <?php foreach ($client_contracts as $c): ?>
+                    <div class="p-5" data-testid="row-contract-<?php echo (int)$c['id']; ?>">
+                        <div class="flex items-start justify-between mb-2">
+                            <div>
+                                <h3 class="font-semibold text-gray-900"><?php echo htmlspecialchars($c['name']); ?></h3>
+                                <p class="text-xs text-gray-500">
+                                    <?php echo $c['start_date'] ? date('M j, Y', strtotime($c['start_date'])) : '—'; ?><?php echo $c['end_date'] ? ' &rarr; ' . date('M j, Y', strtotime($c['end_date'])) : ''; ?>
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <span class="px-2 py-1 rounded-full text-xs font-medium <?php echo $c['status'] === 'active' ? 'bg-green-100 text-green-700' : ($c['status'] === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-600'); ?>"><?php echo ucfirst($c['status']); ?></span>
+                                <p class="text-sm font-semibold text-gray-900 mt-1">$<?php echo number_format((float)$c['monthly_value'], 2); ?>/mo</p>
+                            </div>
+                        </div>
+                        <?php $sla = $client_slas[(int)$c['id']] ?? []; ?>
+                        <?php if ($sla): ?>
+                        <div class="mt-3 overflow-x-auto">
+                            <table class="w-full text-xs">
+                                <thead><tr class="text-gray-500">
+                                    <th class="text-left py-1 pr-6 uppercase font-semibold">Priority</th>
+                                    <th class="text-left py-1 pr-6 uppercase font-semibold">Response</th>
+                                    <th class="text-left py-1 uppercase font-semibold">Resolution</th>
+                                </tr></thead>
+                                <tbody class="divide-y divide-gray-100">
+                                <?php foreach ($sla as $s): ?>
+                                    <tr data-testid="row-sla-<?php echo (int)$s['id']; ?>">
+                                        <td class="py-1 pr-6 text-gray-700"><?php echo ucfirst($s['priority']); ?></td>
+                                        <td class="py-1 pr-6 text-gray-500"><?php echo rtrim(rtrim(number_format((float)$s['response_hours'], 2), '0'), '.'); ?> h</td>
+                                        <td class="py-1 text-gray-500"><?php echo rtrim(rtrim(number_format((float)$s['resolution_hours'], 2), '0'), '.'); ?> h</td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <?php elseif ($active_tab === 'purchaseorders'): ?>
+
+            <div class="bg-white rounded-lg border border-gray-200">
+                <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-clipboard-list text-primary mr-2"></i>Purchase Orders (<?php echo count($client_pos); ?>)</h2>
+                    <a href="admin-purchase-orders.php" class="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition"><i class="fas fa-plus mr-1"></i>Manage Purchase Orders</a>
+                </div>
+                <?php if (empty($client_pos)): ?>
+                <div class="p-8 text-center text-gray-400">
+                    <i class="fas fa-clipboard-list text-3xl mb-2"></i>
+                    <p>No purchase orders for this client.</p>
+                    <p class="text-xs mt-1"><a href="admin-purchase-orders.php" class="text-blue-600 hover:underline">Create a purchase order</a></p>
+                </div>
+                <?php else: ?>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">PO #</th>
+                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Supplier</th>
+                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Items</th>
+                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Total</th>
+                                <th class="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <?php foreach ($client_pos as $p): ?>
+                            <tr class="hover:bg-gray-100" data-testid="row-po-<?php echo (int)$p['id']; ?>">
+                                <td class="px-4 py-3 text-sm font-medium"><a href="admin-purchase-orders.php" class="text-blue-600 hover:underline"><?php echo htmlspecialchars($p['po_number'] ?: '#' . $p['id']); ?></a></td>
+                                <td class="px-4 py-3 text-sm text-gray-500"><?php echo htmlspecialchars($p['supplier'] ?: '—'); ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-500"><?php echo count($client_po_items[(int)$p['id']] ?? []); ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-700">$<?php echo number_format((float)$p['total'], 2); ?></td>
+                                <td class="px-4 py-3 text-sm">
+                                    <span class="px-2 py-1 rounded-full text-xs font-medium <?php echo $p['status'] === 'approved' ? 'bg-green-100 text-green-700' : ($p['status'] === 'rejected' ? 'bg-red-100 text-red-700' : ($p['status'] === 'pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-200 text-gray-600')); ?>"><?php echo ucfirst($p['status']); ?></span>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
