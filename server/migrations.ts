@@ -445,4 +445,15 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] IP pool migration error:", err.message);
               }
+
+              // ── Network site geo (P3 #8b) ───────────────────────────────────────
+              try {
+                await db.execute(sql`ALTER TABLE network_sites ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,7)`);
+                await db.execute(sql`ALTER TABLE network_sites ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,7)`);
+                await db.execute(sql`ALTER TABLE network_sites ADD COLUMN IF NOT EXISTS site_type VARCHAR(40)`);
+                await db.execute(sql`ALTER TABLE network_sites ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'`);
+                console.log("[migrations] Network site geo migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Network site geo migration error:", err.message);
+              }
             }

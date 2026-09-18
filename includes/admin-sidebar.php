@@ -143,6 +143,10 @@
                 <i class="fas fa-sitemap w-5"></i>
                 <span>IP Pools</span>
             </a>
+            <a href="admin-network-map.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-network-map.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-network-map">
+                <i class="fas fa-map-marked-alt w-5"></i>
+                <span>Network Map</span>
+            </a>
 
             <a href="admin-knowledge.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-knowledge.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                 <i class="fas fa-book w-5"></i>
