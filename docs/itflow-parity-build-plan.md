@@ -44,6 +44,26 @@ bearer token in `system_settings.wave_token`, OAuth client id/secret also stored
 | **2b Expenses & AP** | portal-side `expenses` (vendor, category, amount, date, receipt_doc_id, billable, client_id), `expense_categories` | `admin-expenses.php` + API | **Blocked by Wave**: the public GraphQL API does not expose expenses/transactions. Options: (a) manual entry + receipt upload in the portal, (b) Wave CSV export import, (c) request Wave partner API access |
 | **2c Budgets, taxes, discount codes** | `budgets` (period, category, amount), `taxes` (name, rate, jurisdiction), `discount_codes` (code, type, value, expires_at, max_uses) | `admin-finance-settings.php` + apply logic at checkout | Codes apply on Stripe checkout; taxes reflected on portal invoices |
 | **2d Per-client financials** | — | Wave panel on `admin-client-detail.php` (invoices + outstanding + payments for the matched client) | Wave customer → portal client match is live (email → name → substring); show the client's real Wave balance |
+| **2e Xero ledger mirror** | `xero_organisation`, `xero_contacts`, `xero_invoices`, `xero_payments`, `xero_accounts`, `xero_sync_runs` | `GET /portal/api/xero/status`, `GET /portal/api/xero/data` (live reports), `POST /portal/api/xero/{test,sync,settings,disconnect}`, `admin-xero.php` | **Built 2026-09-18** — blocked on one value: the **Tenant ID** (custom connection; see below) |
+
+### Xero facts that shaped 2e (verified live 2026-09-18)
+
+- The Xero app is a **custom connection**: `client_credentials` grant, **no redirect URI, no
+  consent screen**, and a mandatory `Xero-tenant-id` header on every call. Setting the app's
+  Redirect URI has no effect on this app type.
+- `GET /connections` **cannot** discover the tenant: with a valid bearer token it returns
+  `400 "Xero-User-Id and/or Xero-Tenant-Id header must be supplied"`, and with a dummy header
+  it returns `200 []`. The tenant id is read from developer.xero.com → app → connected
+  organisation. (Xero's "call /connections after OAuth" doc applies to authorization-code apps.)
+- Credentials live in `provider_settings` — a **key/value** table `(provider, key_name,
+  key_value)`. The previous Xero code read a `provider_name`/`settings` JSONB shape that never
+  existed, so it always rendered "Not Connected" and could never store a token.
+- The app carries 41 scopes including the full accounting set, so invoices, payments, contacts,
+  accounts and reports are all available once the tenant is set.
+
+**Open decision (2d/2e):** Wave and Xero are both mirrored now. Decide which is the ledger of
+record for the portal's client-facing financial panels — Xero (full ledger + reports) is the
+better candidate; Wave then serves as a secondary revenue view.
 
 ## Phase 3 — Support depth
 
