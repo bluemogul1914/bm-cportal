@@ -145,17 +145,20 @@ function fmt_money($m) { return '$' . number_format((float)$m, 2); }
                                         <?php if ($po['status'] === 'pending'): ?>
                                             <form method="POST" class="inline">
                                                 <input type="hidden" name="action" value="approve_po">
+                                                <?php echo csrf_field(); ?>
                                                 <input type="hidden" name="po_id" value="<?php echo (int)$po['id']; ?>">
                                                 <button class="text-green-600 hover:text-green-800 text-xs mr-2">Approve</button>
                                             </form>
                                             <form method="POST" class="inline">
                                                 <input type="hidden" name="action" value="reject_po">
+                                                <?php echo csrf_field(); ?>
                                                 <input type="hidden" name="po_id" value="<?php echo (int)$po['id']; ?>">
                                                 <button class="text-red-500 hover:text-red-700 text-xs mr-2">Reject</button>
                                             </form>
                                         <?php endif; ?>
                                         <form method="POST" class="inline" onsubmit="return confirm('Delete this PO?');">
                                             <input type="hidden" name="action" value="delete_po">
+                                            <?php echo csrf_field(); ?>
                                             <input type="hidden" name="po_id" value="<?php echo (int)$po['id']; ?>">
                                             <button class="text-gray-400 hover:text-gray-700 text-xs">Delete</button>
                                         </form>
@@ -176,6 +179,7 @@ function fmt_money($m) { return '$' . number_format((float)$m, 2); }
         <h3 class="text-lg font-semibold text-gray-900 mb-4">New Purchase Order</h3>
         <form method="POST">
             <input type="hidden" name="action" value="create_po">
+            <?php echo csrf_field(); ?>
             <div class="grid grid-cols-2 gap-4 mb-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Client</label>
