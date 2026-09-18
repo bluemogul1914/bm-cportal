@@ -777,6 +777,26 @@ export async function runPortalMigrations() {
                 `);
                 await db.execute(sql`CREATE INDEX IF NOT EXISTS hostwinds_services_client_idx ON hostwinds_services (client_id)`);
                 await db.execute(sql`CREATE INDEX IF NOT EXISTS hostwinds_services_hosting_idx ON hostwinds_services (hosting_id)`);
+                // Phase B: tie a provisioned service to the subscription/portal
+                // product that paid for it — that pairing is what makes the
+                // auto-provision step idempotent.
+                await db.execute(sql`ALTER TABLE hostwinds_services ADD COLUMN IF NOT EXISTS subscription_id INTEGER`);
+                await db.execute(sql`ALTER TABLE hostwinds_services ADD COLUMN IF NOT EXISTS portal_product_id INTEGER`);
+                await db.execute(sql`ALTER TABLE hostwinds_services ADD COLUMN IF NOT EXISTS note TEXT`);
+                await db.execute(sql`
+                  CREATE UNIQUE INDEX IF NOT EXISTS hostwinds_services_subscription_uniq
+                    ON hostwinds_services (subscription_id) WHERE subscription_id IS NOT NULL
+                `);
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS hostwinds_product_map (
+                    portal_product_id INTEGER PRIMARY KEY,
+                    hostwinds_product_id INTEGER NOT NULL,
+                    product_name TEXT,
+                    billingcycle VARCHAR(30) DEFAULT 'monthly',
+                    active BOOLEAN DEFAULT TRUE,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
                 console.log("[migrations] Hostwinds service/order migrations applied");
               } catch (err: any) {
                 console.error("[migrations] Hostwinds service/order migration error:", err.message);

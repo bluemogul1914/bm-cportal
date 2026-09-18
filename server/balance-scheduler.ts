@@ -1,5 +1,6 @@
 import pg from "pg";
 import { sendEmail } from "./email";
+import { maybeProvisionHwService } from "./hostwinds-api";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -224,7 +225,7 @@ export async function activatePaidPendingSubscriptions(pool: pg.Pool): Promise<P
 
   try {
     const { rows: candidates } = await pool.query(`
-      SELECT s.id AS subscription_id, s.client_id, i.id AS invoice_id,
+      SELECT s.id AS subscription_id, s.client_id, s.product_id, i.id AS invoice_id,
              i.amount::numeric AS inv_amount, p.name AS product_name,
              COALESCE(c.credit_balance, 0)::numeric AS balance
       FROM subscriptions s
@@ -275,6 +276,19 @@ export async function activatePaidPendingSubscriptions(pool: pg.Pool): Promise<P
 
         results.push({ subscriptionId: subId, clientId, productName: prodName, amount: invAmount });
         console.log(`[pending-activation] Subscription ${subId} (${prodName}) activated for client ${clientId}: $${invAmount.toFixed(2)} charged from balance`);
+
+        // Phase B: a product mapped to Hostwinds provisions its server the moment
+        // the subscription is paid for. Never throws; never blocks activation.
+        try {
+          const prov = await maybeProvisionHwService(pool, {
+            clientId, subscriptionId: subId, portalProductId: row.product_id,
+          });
+          if (prov.status !== "skipped") {
+            console.log(`[pending-activation] Hostwinds ${prov.status}: ${prov.message}`);
+          }
+        } catch (e: any) {
+          console.error(`[pending-activation] Hostwinds provisioning error: ${e.message}`);
+        }
       } catch (e: any) {
         console.error(`[pending-activation] Error activating subscription ${row.subscription_id} for client ${row.client_id}:`, e.message);
       }
@@ -554,6 +568,22 @@ export async function processPendingServiceInvoices(pool: pg.Pool): Promise<numb
 
       activated++;
       console.log(`[service-invoice] Activated subscription ${subId} via invoice ${invoiceId} (session ${session.id})`);
+
+      // Phase B: the card-payment route provisions too — a product mapped to
+      // Hostwinds gets its server the moment Stripe confirms the invoice.
+      try {
+        const srow = await pool.query(`SELECT client_id, product_id FROM subscriptions WHERE id = $1`, [subId]);
+        if (srow.rows.length) {
+          const prov = await maybeProvisionHwService(pool, {
+            clientId: srow.rows[0].client_id,
+            subscriptionId: subId,
+            portalProductId: srow.rows[0].product_id,
+          });
+          if (prov.status !== "skipped") console.log(`[service-invoice] Hostwinds ${prov.status}: ${prov.message}`);
+        }
+      } catch (e: any) {
+        console.error(`[service-invoice] Hostwinds provisioning error: ${e.message}`);
+      }
     }
   } catch (e: any) {
     console.error("[service-invoice] Error:", e.message);
