@@ -655,15 +655,25 @@ async function syncUisp(
       const siteName = s.name || s.identification?.name || "";
       if (!siteName) continue;
 
-      const lat = s.latitude ?? s.location?.latitude ?? null;
-      const lng = s.longitude ?? s.location?.longitude ?? null;
-      const address = s.address || s.location?.address || null;
+      const desc = s.description || {};
+      const loc = s.location || desc.location || {};
+      const lat = s.latitude ?? desc.latitude ?? loc.latitude ?? null;
+      const lng = s.longitude ?? desc.longitude ?? loc.longitude ?? null;
+      const address = s.address ?? desc.address ?? loc.address ?? null;
+      const rawStatus = (s.identification?.status || s.status || "").toString().toLowerCase();
+      const siteStatus = rawStatus === "active" ? "active" : "planned";
 
       await pool.query(
         `INSERT INTO network_sites (name, address, latitude, longitude, site_type, status)
-         SELECT $1, $2, $3, $4, 'UISP', 'active'
+         SELECT $1, $2, $3, $4, 'UISP', $5
          WHERE NOT EXISTS (SELECT 1 FROM network_sites WHERE name = $1)`,
-        [siteName, address, lat, lng]
+        [siteName, address, lat, lng, siteStatus]
+      );
+      // Backfill missing geo/address on an existing site (never clobbers user-set values)
+      await pool.query(
+        `UPDATE network_sites SET latitude = COALESCE(latitude, $2), longitude = COALESCE(longitude, $3), address = COALESCE(address, $4)
+         WHERE name = $1`,
+        [siteName, lat, lng, address]
       );
     }
   } catch (e: any) {
