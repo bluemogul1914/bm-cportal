@@ -1,4 +1,5 @@
 import pg from "pg";
+import { getOAuthConfig, oauthAccessToken } from "./xero-oauth";
 
 /**
  * Xero Accounting integration — ITFlow `module_financial` parity (ledger side).
@@ -88,11 +89,33 @@ export async function saveXeroConfig(pool: pg.Pool, patch: Record<string, string
 }
 
 /**
- * Mint (or reuse) an access token. Custom connections have no refresh token —
- * a new one is simply requested when the cached one is within its skew window.
+ * Mint (or reuse) an access token.
+ *
+ * Preference order matters. The **Web app** (authorization code) path is tried
+ * first when a refresh token exists: it is the grant that survives, it carries
+ * a real consent + refresh token, and Xero has been observed to start rejecting
+ * a custom connection's client_credentials with `400 invalid_client` (its secret
+ * regenerated or the app removed) while the same organisation still answers
+ * normally through the OAuth token. Fall back to client_credentials only when no
+ * OAuth authorisation has been stored.
  */
+export async function xeroAuthMode(pool: pg.Pool): Promise<"authorization_code" | "client_credentials" | "none"> {
+  const oauth = await getOAuthConfig(pool);
+  if (oauth.clientId && oauth.clientSecret && oauth.refreshToken) return "authorization_code";
+  const cfg = await getXeroConfig(pool);
+  if (cfg.clientId && cfg.clientSecret) return "client_credentials";
+  return "none";
+}
+
 export async function xeroToken(pool: pg.Pool, force = false): Promise<string> {
   const cfg = await getXeroConfig(pool);
+
+  // ── Preferred: the OAuth Web app (authorization code + refresh token) ──────
+  const oauth = await getOAuthConfig(pool);
+  if (oauth.clientId && oauth.clientSecret && oauth.refreshToken) {
+    return oauthAccessToken(pool, force);
+  }
+
   if (!force && cfg.accessToken && cfg.expiresAt && Date.now() < cfg.expiresAt - TOKEN_SKEW_MS) {
     return cfg.accessToken;
   }
@@ -163,13 +186,34 @@ export async function xeroRequest(pool: pg.Pool, path: string, query: Record<str
   throw new Error(`Xero ${path} failed after token refresh`);
 }
 
-/** Walk a Xero paged endpoint (100 records per page) up to a cap. */
+/**
+ * Walk a Xero paged endpoint (100 records per page) up to a cap.
+ *
+ * Not every 2.0 endpoint honours `page` — `Accounts` ignores it and returns the
+ * full set every time, which made the loop re-append the same rows 30× and
+ * report 3750 accounts for a 125-row chart of accounts. Stop as soon as a page
+ * repeats the previous page's ids, and dedupe by primary id as a backstop.
+ */
 async function xeroPaged(pool: pg.Pool, path: string, collection: string, maxPages = 30): Promise<any[]> {
   const out: any[] = [];
+  const seen = new Set<string>();
+  let prevSignature = "";
   for (let page = 1; page <= maxPages; page++) {
     const data = await xeroRequest(pool, path, { page });
     const batch: any[] = data?.[collection] ?? [];
-    out.push(...batch);
+    if (!batch.length) break;
+
+    const ids = batch.map((r: any) => String(r[`${collection.replace(/s$/, "")}ID`] ?? r.ID ?? r[Object.keys(r)[0]] ?? ""));
+    const signature = ids.join("|");
+    if (signature === prevSignature) break; // endpoint ignores paging — one page is all there is
+    prevSignature = signature;
+
+    for (let i = 0; i < batch.length; i++) {
+      const key = ids[i] || `row-${page}-${i}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(batch[i]);
+    }
     if (batch.length < 100) break;
   }
   return out;
@@ -182,7 +226,7 @@ async function xeroPaged(pool: pg.Pool, path: string, collection: string, maxPag
 export async function syncXero(pool: pg.Pool): Promise<XeroSyncResult> {
   const r: XeroSyncResult = { organisation: null, contacts: 0, invoices: 0, payments: 0, accounts: 0, errors: [] };
   const cfg = await getXeroConfig(pool);
-  if (!cfg.clientId || !cfg.clientSecret) throw new Error("Xero not configured (missing client_id / client_secret)");
+  if ((await xeroAuthMode(pool)) === "none") throw new Error("Xero not configured (no OAuth Web app token and no custom connection credentials)");
 
   const { rows: runRows } = await pool.query(`INSERT INTO xero_sync_runs (status) VALUES ('running') RETURNING id`);
   const runId = runRows[0].id;

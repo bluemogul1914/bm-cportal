@@ -21,7 +21,7 @@ import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInq
 import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat } from "./bmai";
 import { syncAllSources } from "./network-sync";
 import { syncWave, getWaveToken } from "./wave-api";
-import { syncXero, xeroStatus, xeroToken, getXeroConfig, saveXeroConfig, xeroRequest } from "./xero-api";
+import { syncXero, xeroStatus, xeroToken, xeroAuthMode, getXeroConfig, saveXeroConfig, xeroRequest } from "./xero-api";
 import {
   getOAuthConfig,
   saveOAuthConfig,
@@ -587,10 +587,11 @@ app.post("/portal/api/xero/test", async (req, res) => {
   if (!requireXeroAdmin(req, res)) return;
   try {
     const cfg = await getXeroConfig(webhookPool);
-    if (!cfg.clientId || !cfg.clientSecret) {
-      return res.status(400).json({ error: "Xero client_id / client_secret are not saved yet" });
+    if ((await xeroAuthMode(webhookPool)) === "none") {
+      return res.status(400).json({ error: "No Xero credentials saved (neither the OAuth Web app nor a custom connection)" });
     }
     const token = await xeroToken(webhookPool, true);
+    const grant = await xeroAuthMode(webhookPool);
     let scopes = 0, expiresIn: number | null = null;
     try {
       const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString("utf8"));
@@ -599,12 +600,12 @@ app.post("/portal/api/xero/test", async (req, res) => {
     } catch { /* token is opaque — still valid */ }
     res.json({
       ok: true,
-      grant: "client_credentials",
+      grant,
       scopes,
       expires_in: expiresIn,
       tenant_configured: !!cfg.tenantId,
       note: cfg.tenantId
-        ? "Credentials valid — ready to sync."
+        ? `Credentials valid (${grant === "authorization_code" ? "OAuth Web app" : "custom connection"}) — ready to sync.`
         : "Credentials valid — save the Tenant ID to start pulling data.",
     });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
