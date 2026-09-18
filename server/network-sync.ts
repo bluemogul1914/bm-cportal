@@ -750,47 +750,55 @@ async function syncHostwinds(
   };
 
   try {
-    // Fetch services list (VMs, hosting). The action names are VerbNoun, taken
-    // from Hostwinds' shipped reseller module — `GetServicesData` returns the
-    // reseller's service inventory.
-    const svcData = await callHwApi("GetServicesData");
-    const services = svcData.services || svcData.data || svcData.items || [];
-
-    if (services.length === 0) {
-      result.errors.push("Hostwinds API accepted the credentials but returned no services");
+    // 1) Health check. Hostwinds answers {"result":1,"msg":"OK"} for good
+    //    credentials; anything else is a real failure worth surfacing.
+    const health = await callHwApi("TestConnection");
+    if (Number(health?.result) !== 1) {
+      result.errors.push(`Hostwinds TestConnection failed: ${health?.msg ?? "unknown"}`);
+      return result;
     }
 
-    for (const svc of services) {
-      const externalId = String(svc.id || svc.service_id || "");
-      if (!externalId) continue;
-
-      const svcName = svc.name || svc.domain || svc.hostname || svc.service || "";
-      const ip = svc.ip || svc.ip_address || svc.dedicated_ip || "";
-      const status = svc.status || svc.domainstatus || "active";
-      const lastSeen = null;
-
-      // Match by client name / service name
-      const match = matchClient(svcName, null, clients);
-      const clientId = match?.clientId ?? null;
-      if (clientId) result.matched++;
-
-      await upsertAsset(pool, {
-        client_id: clientId,
-        source: "hostwinds",
-        asset_type: "vm",
-        external_id: externalId,
-        name: svcName,
-        ip,
-        status,
-        last_seen: lastSeen,
-        raw: svc,
-      });
-
-      if (clientId) {
-        await upsertMapping(pool, clientId, "hostwinds", externalId, svcName, match?.method ?? "auto");
+    // 2) Reseller product catalogue — the only ACCOUNT-WIDE listing this API
+    //    exposes. Mirrored into hostwinds_products: these are sellable products,
+    //    not customer devices, so they do not belong in network_assets.
+    const catalogue = await callHwApi("ProductsList");
+    const groups: Record<string, any[]> = catalogue?.products ?? {};
+    let mirrored = 0;
+    for (const [group, items] of Object.entries(groups)) {
+      for (const p of Array.isArray(items) ? items : []) {
+        const pid = Number(p?.id);
+        if (!Number.isFinite(pid)) continue;
+        const price = p?.price ?? {};
+        const monthly = price.monthly ?? price.msetupfee ?? null;
+        await pool.query(
+          `INSERT INTO hostwinds_products (product_id, name, product_group, description, price_paytype, price_monthly, raw, synced_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+           ON CONFLICT (product_id) DO UPDATE SET name = EXCLUDED.name, product_group = EXCLUDED.product_group,
+             description = EXCLUDED.description, price_paytype = EXCLUDED.price_paytype,
+             price_monthly = EXCLUDED.price_monthly, raw = EXCLUDED.raw, synced_at = NOW()`,
+          [
+            pid,
+            p?.name ?? null,
+            group,
+            String(p?.description ?? "").slice(0, 4000) || null,
+            price.paytype ?? null,
+            monthly === null || monthly === undefined || monthly === "" ? null : Number(monthly),
+            JSON.stringify(p),
+          ]
+        );
+        mirrored++;
       }
-      result.synced++;
     }
+    result.synced = mirrored;
+    if (mirrored === 0) result.errors.push("Hostwinds returned an empty product catalogue");
+
+    // 3) Services: this API has NO account-wide service list. GetServicesData
+    //    requires hostings_ids and ServicesStatus / ServicesProduct require
+    //    hosting_id — those ids live in the reseller module that created the
+    //    accounts. Say so instead of reporting a misleading zero.
+    result.errors.push(
+      `note: Hostwinds exposes no account-wide service list (GetServicesData needs hostings_ids, ServicesStatus needs hosting_id) — ${mirrored} reseller product(s) catalogued instead`
+    );
   } catch (e: any) {
     result.errors.push(`Hostwinds sync error: ${e.message}`);
   }

@@ -719,4 +719,27 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Xero accounting mirror migration error:", err.message);
               }
+
+              // ── Hostwinds reseller catalogue ───────────────────────────────
+              // The white-label API exposes no account-wide service list (services
+              // are fetched by hostings_ids, which the reseller module allocates),
+              // but ProductsList does return the reseller catalogue.
+              try {
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS hostwinds_products (
+                    id SERIAL PRIMARY KEY,
+                    product_id INTEGER UNIQUE NOT NULL,
+                    name TEXT,
+                    product_group VARCHAR(80),
+                    description TEXT,
+                    price_paytype VARCHAR(40),
+                    price_monthly NUMERIC(12,2),
+                    raw JSONB,
+                    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+                `);
+                console.log("[migrations] Hostwinds catalogue migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Hostwinds catalogue migration error:", err.message);
+              }
             }

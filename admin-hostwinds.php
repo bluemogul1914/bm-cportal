@@ -332,6 +332,62 @@ foreach ($services as $s) {
                 <?php endif; ?>
             </div>
 
+            <?php
+            /* Reseller product catalogue — mirrored by the daily Hostwinds sync
+               (server/network-sync.ts → hostwinds_products). The white-label API
+               exposes no account-wide SERVICE list, so this catalogue is the
+               account-wide data it does provide. */
+            $hw_products = [];
+            try {
+                $hw_products = $pdo->query("SELECT product_group, name, product_id, price_paytype, price_monthly
+                                            FROM hostwinds_products ORDER BY product_group, name")->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Throwable $e) { $hw_products = []; }
+            if (!empty($hw_products)):
+                $hw_by_group = [];
+                foreach ($hw_products as $hp) { $hw_by_group[$hp['product_group'] ?: 'Other'][] = $hp; }
+            ?>
+            <div class="bg-white rounded-lg border border-gray-200 mt-4" data-testid="card-hostwinds-catalogue">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-tags text-cyan-500 mr-2"></i>Reseller Catalogue</h2>
+                    <span class="text-xs text-gray-400"><?= count($hw_products) ?> product(s) &middot; from ProductsList</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm" data-testid="table-hostwinds-catalogue">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Product</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">ID</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Billing</th>
+                                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Price</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                        <?php foreach ($hw_by_group as $grp => $items): ?>
+                            <tr class="bg-gray-50">
+                                <td colspan="4" class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                    <?= htmlspecialchars((string)$grp) ?> &middot; <?= count($items) ?>
+                                </td>
+                            </tr>
+                            <?php foreach ($items as $it): ?>
+                            <tr class="hover:bg-gray-50" data-testid="row-hw-product-<?= (int)$it['product_id'] ?>">
+                                <td class="px-4 py-3 font-medium text-gray-900"><?= htmlspecialchars((string)$it['name']) ?></td>
+                                <td class="px-4 py-3 text-gray-400 font-mono text-xs"><?= (int)$it['product_id'] ?></td>
+                                <td class="px-4 py-3 text-gray-500 text-xs"><?= htmlspecialchars((string)($it['price_paytype'] ?? '—')) ?></td>
+                                <td class="px-4 py-3 text-right font-semibold text-gray-900"><?= $it['price_monthly'] !== null ? '$'.number_format((float)$it['price_monthly'],2) : '—' ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="px-6 py-3 text-xs text-gray-500 border-t border-gray-100">
+                    The Hostwinds white-label API exposes no account-wide service list — services are fetched by
+                    <code>hostings_ids</code>, which the reseller module allocates. This catalogue is the account-wide
+                    data the API does provide.
+                </p>
+            </div>
+            <?php endif; ?>
+
             <!-- ════════════════════════════════════════════════════════ -->
             <!-- ACCOUNTS TAB                                             -->
             <!-- ════════════════════════════════════════════════════════ -->
