@@ -44,6 +44,12 @@ export const XERO_SCOPES = [
   "accounting.banktransactions.read",
   "accounting.reports.aged.read",
   "accounting.reports.balancesheet.read",
+  // Banksummary / P&L / trial balance were missing from the first consent, which
+  // is why those reports answered 401 while the balance sheet worked. Tick these
+  // same scopes on the app's Configuration page, then re-run "Connect with Xero".
+  "accounting.reports.banksummary.read",
+  "accounting.reports.profitandloss.read",
+  "accounting.reports.trialbalance.read",
   "accounting.attachments.read",
 ].join(" ");
 

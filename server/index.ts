@@ -21,7 +21,7 @@ import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInq
 import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat } from "./bmai";
 import { syncAllSources } from "./network-sync";
 import { syncWave, getWaveToken } from "./wave-api";
-import { syncXero, xeroStatus, xeroToken, xeroAuthMode, getXeroConfig, saveXeroConfig, xeroRequest } from "./xero-api";
+import { syncXero, xeroStatus, xeroToken, getXeroConfig, saveXeroConfig, xeroRequest, xeroAuthMode } from "./xero-api";
 import {
   getOAuthConfig,
   saveOAuthConfig,
@@ -203,6 +203,7 @@ const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashb
   "admin-client-contacts.php", "admin-client-assets.php", "frontier-qualify.php",
   "admin-billing-reminders.php",
   "admin-financials.php",
+  "admin-accounting.php",
   "admin-client-services.php"];
 
 function buildSessionPhpCode(req: Request): string {
@@ -289,8 +290,36 @@ function handlePhpResponse(stdout: string, req: Request, res: Response) {
   res.send(stdout);
 }
 
+/**
+ * Give PHP the request cookies.
+ *
+ * PHP runs here as a CLI child process (no web SAPI), so `$_COOKIE` is ALWAYS
+ * empty unless we set it. Any page that forwards its session to the loopback
+ * API — `CURLOPT_COOKIE => 'connect.sid=' . $_COOKIE['connect.sid']` — was
+ * therefore sending an empty cookie and getting "Admin only" / 403 back from
+ * admin-gated endpoints. (That is what produced the Xero page's
+ * "Could not save: Admin only" error.) Populate both $_SERVER['HTTP_COOKIE']
+ * and a parsed $_COOKIE so pages behave as they would under a normal SAPI.
+ */
+function buildCookiePhpCode(req: Request): string {
+  const raw = String(req.headers.cookie || "");
+  if (!raw) return "";
+  const esc = (x: string) => x.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  return `
+$_SERVER['HTTP_COOKIE'] = '${esc(raw)}';
+$_COOKIE = [];
+foreach (explode(';', '${esc(raw)}') as $__pair) {
+    $__pair = trim($__pair);
+    if ($__pair === '') continue;
+    $__kv = explode('=', $__pair, 2);
+    if (count($__kv) === 2) $_COOKIE[$__kv[0]] = urldecode($__kv[1]);
+}
+`;
+}
+
 function executePhpFile(filePath: string, req: Request, res: Response) {
   const sessionCode = buildSessionPhpCode(req);
+  const cookieCode = buildCookiePhpCode(req);
   const queryParams = Object.entries(req.query || {}).map(([k, v]) => `$_GET['${k.replace(/'/g, "\\'")}'] = '${String(v).replace(/'/g, "\\'")}';`).join("\n");
   const phpSelf = '/' + filePath.replace(/\\/g, '/').split('/').pop();
   const phpCode = `<?php
@@ -299,6 +328,7 @@ $_SERVER['PHP_SELF'] = '${phpSelf.replace(/'/g, "\\'")}';
 $_SERVER['SCRIPT_NAME'] = '${phpSelf.replace(/'/g, "\\'")}';
 session_start();
 ${sessionCode}
+${cookieCode}
 ${queryParams}
 require '${filePath.replace(/'/g, "\\'")}';
 `;
@@ -652,6 +682,109 @@ app.get("/portal/api/xero/data", async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /portal/api/accounting/overview — aggregated live accounting snapshot.
+// Feeds the Accounting tab (the bookkeeper's workspace). Every section is
+// isolated: a scope-denied report degrades to null + an entry in `errors`
+// instead of blanking the whole response.
+app.get("/portal/api/accounting/overview", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const money = (v: any): number => {
+    if (v === null || v === undefined || v === "") return 0;
+    const n = typeof v === "number" ? v : parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const flattenRows = (rows: any[], depth = 0, out: any[] = []): any[] => {
+    for (const r of rows || []) {
+      if (Array.isArray(r.Cells) && r.Cells.length) {
+        out.push({ depth, type: r.RowType, title: r.Title ?? null, cells: r.Cells.map((c: any) => c.Value ?? "") });
+      }
+      if (Array.isArray(r.Rows) && r.Rows.length) flattenRows(r.Rows, depth + 1, out);
+    }
+    return out;
+  };
+
+  const result: any = { generated_at: new Date().toISOString(), sections: {}, errors: [] };
+  const section = async (name: string, fn: () => Promise<any>) => {
+    try { result.sections[name] = await fn(); }
+    catch (e: any) { result.errors.push(`${name}: ${e.message}`); result.sections[name] = null; }
+  };
+
+  await section("auth", async () => ({ mode: await xeroAuthMode(webhookPool), status: await xeroStatus(webhookPool) }));
+
+  await section("bank_accounts", async () => {
+    const d = await xeroRequest(webhookPool, "Accounts");
+    const all: any[] = d?.Accounts ?? [];
+    const banks = all.filter((a) => a.Type === "BANK");
+    return {
+      total_accounts: all.length,
+      bank_account_count: banks.length,
+      accounts: banks.map((a: any) => ({
+        name: a.Name ?? null, code: a.Code ?? null, status: a.Status ?? null,
+        number: a.BankAccountNumber ?? null, currency: a.CurrencyCode ?? null, system: !!a.SystemAccount,
+      })),
+    };
+  });
+
+  await section("bank_transactions", async () => {
+    const d = await xeroRequest(webhookPool, "BankTransactions", { page: 1 });
+    const list: any[] = d?.BankTransactions ?? [];
+    const unreconciled = list.filter((t) => !t.IsReconciled);
+    return {
+      sample_size: list.length,
+      unreconciled: unreconciled.length,
+      reconciled: list.length - unreconciled.length,
+      oldest_unreconciled: unreconciled.length
+        ? unreconciled.map((t) => String(t.Date ?? "").slice(0, 10)).sort()[0] : null,
+      recent: list.slice(0, 25).map((t) => ({
+        date: String(t.Date ?? "").slice(0, 10), type: t.Type ?? null,
+        contact: t.Contact?.Name ?? null, reference: t.Reference ?? null,
+        account: t.BankAccount?.Name ?? null, total: money(t.Total),
+        status: t.Status ?? null, reconciled: !!t.IsReconciled,
+      })),
+    };
+  });
+
+  await section("ledger", async () => {
+    const [inv, con, pay] = await Promise.all([
+      xeroRequest(webhookPool, "Invoices", { page: 1 }),
+      xeroRequest(webhookPool, "Contacts", { page: 1 }),
+      xeroRequest(webhookPool, "Payments", { page: 1 }),
+    ]);
+    const list: any[] = inv?.Invoices ?? [];
+    const byStatus = (s: string) => list.filter((i) => i.Status === s).length;
+    return {
+      invoices: { total: list.length, draft: byStatus("DRAFT"), awaiting_payment: byStatus("AUTHORISED"), paid: byStatus("PAID") },
+      receivable: list.reduce((n, i) => n + money(i.AmountDue), 0),
+      contacts: (con?.Contacts ?? []).length,
+      payments: (pay?.Payments ?? []).length,
+    };
+  });
+
+  await section("balance_sheet", async () => {
+    const d = await xeroRequest(webhookPool, "Reports/BalanceSheet");
+    const rpt = (d?.Reports ?? [])[0];
+    if (!rpt) return { available: false, rows: [] };
+    return { available: true, name: rpt.ReportName ?? "Balance Sheet", rows: flattenRows(rpt.Rows ?? []).slice(0, 40) };
+  });
+
+  try {
+    const c = await webhookPool.query(
+      `SELECT (SELECT COUNT(*)::int FROM xero_invoices) AS invoices,
+              (SELECT COUNT(*)::int FROM xero_contacts) AS contacts,
+              (SELECT COUNT(*)::int FROM xero_payments) AS payments,
+              (SELECT COUNT(*)::int FROM xero_accounts) AS accounts,
+              (SELECT COUNT(*)::int FROM wave_invoices) AS wave_invoices,
+              (SELECT COUNT(*)::int FROM wave_accounts) AS wave_accounts`
+    );
+    const run = await webhookPool.query(`SELECT * FROM xero_sync_runs ORDER BY id DESC LIMIT 1`);
+    result.sections.mirror = { counts: c.rows[0], last_sync_run: run.rows[0] ?? null };
+  } catch (e: any) {
+    result.errors.push(`mirror: ${e.message}`);
+  }
+
+  res.json(result);
+});
+
 // ── Xero OAuth 2.0 consent flow (the Web app) ────────────────────────────────
 // The Custom Connection needs no consent step, but the *Web app* does. This is
 // the flow that returns a Tenant ID: GET /connections is only available to an
@@ -769,6 +902,7 @@ app.get("/portal/admin/:file", (req, res) => {
 
 function executePhpPost(filePath: string, req: Request, res: Response) {
   const sessionCode = buildSessionPhpCode(req);
+  const cookieCode = buildCookiePhpCode(req);
   const formParts: string[] = [];
   for (const [key, value] of Object.entries(req.body || {})) {
     if (Array.isArray(value)) {
@@ -792,6 +926,7 @@ $_SERVER['PHP_SELF'] = '${phpSelf.replace(/'/g, "\\'")}';
 $_SERVER['SCRIPT_NAME'] = '${phpSelf.replace(/'/g, "\\'")}';
 session_start();
 ${sessionCode}
+${cookieCode}
 $_SERVER['REQUEST_METHOD'] = 'POST';
 parse_str('${postData}', $_POST);
 $_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
