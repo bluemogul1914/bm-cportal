@@ -23,23 +23,37 @@ export type PayoutMethod = "paypal" | "stripe_connect" | "ach" | "manual";
  * (provider='paypal', key_name IN ('client_id','client_secret','env')).
  * The DB fallback means the key can be rotated from the portal without a redeploy.
  */
-export async function paypalCreds(pool: pg.Pool): Promise<{ clientId: string; clientSecret: string; env: "sandbox" | "live" }> {
+export async function paypalCreds(pool: pg.Pool): Promise<{
+  clientId: string; clientSecret: string; env: "sandbox" | "live"; livePairStored: boolean;
+}> {
   let clientId = process.env.PAYPAL_CLIENT_ID || "";
   let clientSecret = process.env.PAYPAL_CLIENT_SECRET || "";
   let env = (process.env.PAYPAL_ENV || "").toLowerCase();
+  let liveId = "", liveSecret = "", sandboxId = "", sandboxSecret = "";
   try {
     const { rows } = await pool.query(
-      `SELECT key_name, key_value FROM provider_settings
-        WHERE provider = 'paypal' AND key_name IN ('client_id','client_secret','env')`
+      `SELECT key_name, key_value FROM provider_settings WHERE provider = 'paypal'`
     );
-    for (const r of rows) {
-      const v = String(r.key_value ?? "");
-      if (r.key_name === "client_id"     && !clientId)     clientId = v;
-      if (r.key_name === "client_secret" && !clientSecret) clientSecret = v;
-      if (r.key_name === "env"           && !env)          env = v.toLowerCase();
-    }
+    const kv: Record<string, string> = {};
+    for (const r of rows) kv[String(r.key_name)] = String(r.key_value ?? "");
+    if (!clientId)   clientId   = kv.client_id || "";
+    if (!clientSecret) clientSecret = kv.client_secret || "";
+    if (!env)        env        = (kv.env || "").toLowerCase();
+    liveId = kv.live_client_id || "";          liveSecret = kv.live_client_secret || "";
+    sandboxId = kv.sandbox_client_id || "";    sandboxSecret = kv.sandbox_client_secret || "";
   } catch { /* table unavailable — env only */ }
-  return { clientId, clientSecret, env: env === "live" ? "live" : "sandbox" };
+
+  const isLive = env === "live";
+  // Prefer the pair stored FOR THE SELECTED ENVIRONMENT, then the generic pair.
+  // Keeping both pairs means switching env is a one-field change, and the live
+  // credentials can sit stored but inert while sandbox mode is active.
+  const id     = (isLive ? liveId : sandboxId) || clientId;
+  const secret = (isLive ? liveSecret : sandboxSecret) || clientSecret;
+  return {
+    clientId: id, clientSecret: secret,
+    env: isLive ? "live" : "sandbox",
+    livePairStored: Boolean(liveId && liveSecret),
+  };
 }
 
 export function paypalBaseUrl(env: "sandbox" | "live"): string {
@@ -61,6 +75,9 @@ export async function payoutCapabilities(pool: pg.Pool): Promise<PayoutCapabilit
   const paypalEnv = pc.env;
   const stripeKey = process.env.STRIPE_SECRET_KEY || "";
   const paypal_configured = Boolean(pc.clientId && pc.clientSecret);
+  if (pc.livePairStored && paypalEnv === "sandbox") {
+    notes.push("LIVE PayPal credentials are stored but SANDBOX mode is active — payouts move test money only. Set provider_settings paypal.env=live to move real money.");
+  }
   if (paypal_configured) notes.push(`PayPal configured in ${paypalEnv} mode — this app is a platform/partner app; classic Payouts (batch, email-based) is authorised, and referenced payouts are available for per-sale referencing.`);
 
   if (!paypal_configured) {
