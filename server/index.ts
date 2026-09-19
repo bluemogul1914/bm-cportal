@@ -23,6 +23,10 @@ import { syncAllSources } from "./network-sync";
 import { syncWave, getWaveToken } from "./wave-api";
 import { syncXero, xeroStatus, xeroToken, getXeroConfig, saveXeroConfig, xeroRequest, xeroAuthMode } from "./xero-api";
 import {
+  payoutCapabilities, savePayoutDestination, getPayoutProfile, listPayableCommissions,
+  createDealerPayout, sendDealerPayout, listDealerPayouts, stripeAccountCheck,
+} from "./dealer-payouts";
+import {
   hwProducts, hwTestConnection, hwCreateAccount, hwServiceStatus, hwServicesData,
   syncHwServices, saveHwService, logHwOrder, getHwCredentials, maybeProvisionHwService,
 } from "./hostwinds-api";
@@ -910,6 +914,99 @@ app.post("/portal/api/admin/hostwinds/services/retry", async (req, res) => {
     }
     res.json({ ok: result.status === "provisioned", result });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Dealer payouts: PayPal / Stripe Connect ─────────────────────────────────
+// Paying dealers for sales. Creating the payout record and MOVING the money are
+// separate calls on purpose: a missing provider credential or an outage must
+// never lose the record of what a dealer is owed.
+
+app.get("/portal/api/admin/dealer-payouts/capabilities", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try { res.json(await payoutCapabilities(webhookPool)); } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/portal/api/admin/dealer-payouts/overview", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const dealerId = parseInt(String(req.query.dealer_id ?? ""), 10);
+  if (!Number.isFinite(dealerId)) return res.status(400).json({ error: "dealer_id is required" });
+  try {
+    const [profile, commissions, payouts, caps] = await Promise.all([
+      getPayoutProfile(webhookPool, dealerId),
+      listPayableCommissions(webhookPool, dealerId),
+      listDealerPayouts(webhookPool, dealerId),
+      payoutCapabilities(webhookPool),
+    ]);
+    if (!profile) return res.status(404).json({ error: "dealer not found" });
+    res.json({ dealer: profile, payable_commissions: commissions, payouts, capabilities: caps });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/admin/dealer-payouts/destination", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const b: any = req.body ?? {};
+  const dealerId = parseInt(String(b.dealer_id ?? ""), 10);
+  const method = String(b.method ?? "");
+  if (!Number.isFinite(dealerId)) return res.status(400).json({ error: "dealer_id is required" });
+  if (!["paypal", "stripe_connect", "ach", "manual"].includes(method)) {
+    return res.status(400).json({ error: "method must be paypal, stripe_connect, ach or manual" });
+  }
+  try {
+    await savePayoutDestination(webhookPool, {
+      dealerId, method: method as any,
+      paypalEmail: b.paypal_email ? String(b.paypal_email) : null,
+      stripeAccountId: b.stripe_account_id ? String(b.stripe_account_id) : null,
+    });
+    res.json({ ok: true, dealer: await getPayoutProfile(webhookPool, dealerId) });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// Pre-flight: confirm a Stripe connected account can actually receive money.
+app.post("/portal/api/admin/dealer-payouts/check-account", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const acct = String(req.body?.stripe_account_id ?? "");
+  if (!acct) return res.status(400).json({ error: "stripe_account_id is required" });
+  try { res.json(await stripeAccountCheck(acct)); } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Record a payout (no money moves here).
+app.post("/portal/api/admin/dealer-payouts/create", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const b: any = req.body ?? {};
+  const dealerId = parseInt(String(b.dealer_id ?? ""), 10);
+  const method = String(b.method ?? "manual");
+  // Accept either cents or a dollar string.
+  const amountCents = b.amount_cents !== undefined
+    ? parseInt(String(b.amount_cents), 10)
+    : Math.round(parseFloat(String(b.amount ?? "0")) * 100);
+  if (!Number.isFinite(dealerId)) return res.status(400).json({ error: "dealer_id is required" });
+  if (!Number.isFinite(amountCents) || amountCents <= 0) return res.status(400).json({ error: "amount must be greater than zero" });
+  try {
+    const profile = await getPayoutProfile(webhookPool, dealerId);
+    if (!profile) return res.status(404).json({ error: "dealer not found" });
+    const r = await createDealerPayout(webhookPool, {
+      dealerId, amountCents, method: method as any,
+      destination: profile.destination,
+      commissionIds: Array.isArray(b.commission_ids) ? b.commission_ids.map((n: any) => parseInt(String(n), 10)) : [],
+      note: b.note ? String(b.note) : null,
+      reference: b.reference ? String(b.reference) : null,
+      actor: (req as any).session?.user_name || (req as any).user?.name || "admin",
+    });
+    res.json({ ok: true, ...r, dealer: profile });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// Dispatch a recorded payout through its provider.
+app.post("/portal/api/admin/dealer-payouts/send", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const payoutId = parseInt(String(req.body?.payout_id ?? ""), 10);
+  if (!Number.isFinite(payoutId)) return res.status(400).json({ error: "payout_id is required" });
+  try {
+    const r = await sendDealerPayout(webhookPool, payoutId, (req as any).session?.user_name || "admin");
+    res.json({ ok: r.status === "sent", ...r });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
 });
 
 // ── Xero OAuth 2.0 consent flow (the Web app) ────────────────────────────────

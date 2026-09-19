@@ -801,4 +801,30 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Hostwinds service/order migration error:", err.message);
               }
+
+              // ── Dealer payouts via PayPal / Stripe Connect ─────────────────
+              // dealers: where to pay. dealer_payouts: how it was paid and by whom.
+              try {
+                await db.execute(sql`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS payout_method VARCHAR(20) DEFAULT 'manual'`);
+                await db.execute(sql`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS paypal_email VARCHAR(160)`);
+                await db.execute(sql`ALTER TABLE dealers ADD COLUMN IF NOT EXISTS stripe_account_id VARCHAR(80)`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS method VARCHAR(20)`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS destination VARCHAR(200)`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS reference VARCHAR(80)`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS note TEXT`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS created_by VARCHAR(120)`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS paid_by VARCHAR(120)`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS provider_ref VARCHAR(120)`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS provider_status VARCHAR(40)`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS provider_response JSONB`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS failure_reason TEXT`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS commission_ids JSONB`);
+                await db.execute(sql`ALTER TABLE dealer_payouts ADD COLUMN IF NOT EXISTS initiated_at TIMESTAMP`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS dealer_payouts_dealer_idx ON dealer_payouts (dealer_id)`);
+                // dealer_commissions.payout_id is what links a commission to the payout that cleared it
+                await db.execute(sql`ALTER TABLE dealer_commissions ADD COLUMN IF NOT EXISTS payout_id INTEGER`);
+                console.log("[migrations] Dealer payout migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Dealer payout migration error:", err.message);
+              }
             }

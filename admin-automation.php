@@ -27,6 +27,10 @@ try {
     $errors_today = 0;
 }
 
+// NOTE 2026-09-19 (Tracey): ITarian was REMOVED from this build roadmap and from the
+// integration list below — it is out of build scope. The stored Service Desk credential
+// (provider_settings provider='itarian') and admin-itarian.php were deliberately left in
+// place; delete those too only if asked.
 $deployment_roadmap = [
     [
         'week' => 1,
@@ -35,7 +39,6 @@ $deployment_roadmap = [
         'status' => 'complete',
         'tasks' => [
             ['Install Uptime-Kuma on Coolify', true],
-            ['Configure ITarian API webhooks to N8N', true],
             ['Build SENTINEL-001 workflow (alert triage)', true],
             ['Train AnythingLLM on past ticket data', true],
             ['Build GUARDIAN-001 workflow (email → ticket)', true],
@@ -122,14 +125,6 @@ $integrations = [
         'description' => 'Local LLM inference — zero API costs for AI processing',
         'status' => 'connected',
         'url_label' => 'Self-hosted',
-    ],
-    [
-        'name' => 'ITarian RMM',
-        'icon' => 'fa-desktop',
-        'color' => 'cyan',
-        'description' => 'Remote monitoring & management for all client devices',
-        'status' => 'connected',
-        'url_label' => 'Cloud service (free tier)',
     ],
     [
         'name' => 'ITFlow',
