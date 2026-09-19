@@ -18,6 +18,34 @@ import pg from "pg";
 
 export type PayoutMethod = "paypal" | "stripe_connect" | "ach" | "manual";
 
+/**
+ * PayPal credentials: process env first, then provider_settings
+ * (provider='paypal', key_name IN ('client_id','client_secret','env')).
+ * The DB fallback means the key can be rotated from the portal without a redeploy.
+ */
+export async function paypalCreds(pool: pg.Pool): Promise<{ clientId: string; clientSecret: string; env: "sandbox" | "live" }> {
+  let clientId = process.env.PAYPAL_CLIENT_ID || "";
+  let clientSecret = process.env.PAYPAL_CLIENT_SECRET || "";
+  let env = (process.env.PAYPAL_ENV || "").toLowerCase();
+  try {
+    const { rows } = await pool.query(
+      `SELECT key_name, key_value FROM provider_settings
+        WHERE provider = 'paypal' AND key_name IN ('client_id','client_secret','env')`
+    );
+    for (const r of rows) {
+      const v = String(r.key_value ?? "");
+      if (r.key_name === "client_id"     && !clientId)     clientId = v;
+      if (r.key_name === "client_secret" && !clientSecret) clientSecret = v;
+      if (r.key_name === "env"           && !env)          env = v.toLowerCase();
+    }
+  } catch { /* table unavailable — env only */ }
+  return { clientId, clientSecret, env: env === "live" ? "live" : "sandbox" };
+}
+
+export function paypalBaseUrl(env: "sandbox" | "live"): string {
+  return env === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+}
+
 export interface PayoutCapabilities {
   paypal_configured: boolean;
   paypal_env: "sandbox" | "live";
@@ -29,11 +57,11 @@ export interface PayoutCapabilities {
 /** Which rails can actually move money right now. */
 export async function payoutCapabilities(pool: pg.Pool): Promise<PayoutCapabilities> {
   const notes: string[] = [];
-  const paypalId = process.env.PAYPAL_CLIENT_ID || "";
-  const paypalSecret = process.env.PAYPAL_CLIENT_SECRET || "";
-  const paypalEnv = (process.env.PAYPAL_ENV || "sandbox").toLowerCase() === "live" ? "live" : "sandbox";
+  const pc = await paypalCreds(pool);
+  const paypalEnv = pc.env;
   const stripeKey = process.env.STRIPE_SECRET_KEY || "";
-  const paypal_configured = Boolean(paypalId && paypalSecret);
+  const paypal_configured = Boolean(pc.clientId && pc.clientSecret);
+  if (paypal_configured) notes.push(`PayPal configured in ${paypalEnv} mode — this app is a platform/partner app; classic Payouts (batch, email-based) is authorised, and referenced payouts are available for per-sale referencing.`);
 
   if (!paypal_configured) {
     notes.push("PayPal not configured: set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET (and PAYPAL_ENV=sandbox|live). The Payouts feature must also be enabled on the PayPal app.");
@@ -160,12 +188,10 @@ export async function createDealerPayout(pool: pg.Pool, args: {
 
 /* ── PayPal Payouts ────────────────────────────────────────────────────────── */
 
-async function paypalAccessToken(): Promise<string> {
-  const id = process.env.PAYPAL_CLIENT_ID || "";
-  const secret = process.env.PAYPAL_CLIENT_SECRET || "";
-  if (!id || !secret) throw new Error("PayPal is not configured (PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET missing)");
-  const base = (process.env.PAYPAL_ENV || "sandbox").toLowerCase() === "live"
-    ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+async function paypalAccessToken(pool: pg.Pool): Promise<string> {
+  const { clientId: id, clientSecret: secret, env } = await paypalCreds(pool);
+  if (!id || !secret) throw new Error("PayPal is not configured (set client_id / client_secret, in the portal or PAYPAL_* env)");
+  const base = paypalBaseUrl(env);
   const resp = await fetch(`${base}/v1/oauth2/token`, {
     method: "POST",
     headers: {
@@ -188,9 +214,8 @@ async function paypalAccessToken(): Promise<string> {
 export async function sendPayoutViaPayPal(pool: pg.Pool, payout: any, dealer: any): Promise<{ providerRef: string; raw: any }> {
   const receiver = dealer.paypal_email || dealer.destination;
   if (!receiver) throw new Error("This dealer has no PayPal email on file");
-  const base = (process.env.PAYPAL_ENV || "sandbox").toLowerCase() === "live"
-    ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
-  const token = await paypalAccessToken();
+  const base = paypalBaseUrl((await paypalCreds(pool)).env);
+  const token = await paypalAccessToken(pool);
   const body = {
     sender_batch_header: {
       sender_batch_id: `bm-payout-${payout.id}-${Date.now()}`,
