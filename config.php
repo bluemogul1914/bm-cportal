@@ -143,9 +143,37 @@ define('ACTION1_API_URL', getenv('ACTION1_API_URL') ?: 'https://app.action1.com/
 define('ITARIAN_SD_API_KEY', getenv('ITARIAN_SD_API_KEY') ?: '');
 define('ITARIAN_SD_URL', getenv('ITARIAN_SD_URL') ?: 'https://bluemogultech.ticketing-us.itarian.com');
 
+/**
+ * Resolve Service Desk credentials: environment first, then provider_settings
+ * (provider='itarian', key_name IN ('sd_api_key','sd_url')). The DB fallback lets
+ * an admin rotate the key without a redeploy — same pattern as the Hostwinds page.
+ */
+function itarian_sd_creds(): array {
+    $key = ITARIAN_SD_API_KEY;
+    $url = ITARIAN_SD_URL;
+    try {
+        $r = getDB()->prepare("SELECT key_name, key_value FROM provider_settings
+                                WHERE provider = 'itarian' AND key_name IN ('sd_api_key','sd_url')");
+        $r->execute();
+        foreach ($r->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if ($row['key_name'] === 'sd_api_key' && empty($key)) $key = (string)$row['key_value'];
+            if ($row['key_name'] === 'sd_url'     && empty($url)) $url = (string)$row['key_value'];
+        }
+    } catch (Throwable $e) { /* table or DB unavailable — fall back to env */ }
+    return ['key' => $key, 'url' => $url];
+}
+
 function itarian_sd_api($serviceName, $body = []) {
-    $base = rtrim(ITARIAN_SD_URL, '/');
-    $url = $base . '/clientapi/index.php?serviceName=' . urlencode($serviceName);
+    $creds = itarian_sd_creds();
+    $base = rtrim($creds['url'], '/');
+    // Service Desk service names are lowercase and concatenated: listtickets,
+    // closeticket, getcategories, getusers, createcustomer, ticketpostreply.
+    $url = $base . '/clientapi/index.php?serviceName=' . urlencode(strtolower($serviceName));
+    // Per the API docs a caller authenticates with EITHER an SD API key in
+    // Authorization OR a C1 portal access token in X-ACCESS-TOKEN.
+    $authHeaders = (strpos($creds['key'], 'eyJ') === 0)
+        ? ['X-ACCESS-TOKEN: ' . $creds['key']]
+        : ['Authorization: ' . $creds['key']];
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,
@@ -153,11 +181,10 @@ function itarian_sd_api($serviceName, $body = []) {
         CURLOPT_TIMEOUT => 30,
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode($body),
-        CURLOPT_HTTPHEADER => [
+        CURLOPT_HTTPHEADER => array_merge([
             'Content-Type: application/json',
             'Accept: application/json',
-            'Authorization: ' . ITARIAN_SD_API_KEY,
-        ],
+        ], $authHeaders),
     ]);
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
