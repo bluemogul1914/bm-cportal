@@ -21,8 +21,14 @@ body {
     font-family: var(--bm-font-sans);
 }
 
-/* Neutralize the legacy dark sidebar token (was #0d1b3e) */
-.bg-secondary { background-color: var(--bm-primary) !important; }
+/* Sidebar colour is DELIBERATELY left to the sidebar itself.
+   .bg-secondary is used by exactly one thing in this codebase — includes/admin-sidebar.php,
+   includes/client-sidebar.php and includes/dealer-sidebar.php (verified 2026-09-19) — and those files
+   declare the canonical dark navy #0d1b3e. Remapping the token here (it used to force
+   var(--bm-primary) = #1a56db with !important) made every page that loads admin.css render a
+   BRIGHT BLUE sidebar while newer pages that load only tailwind.css + style.css rendered NAVY, so
+   the same sidebar looked different depending on which page you were on. Do not re-add an override:
+   to restyle the sidebar, change the three includes (or add a --sidebar-bg token used by all three). */
 .bg-primary   { background-color: var(--bm-primary) !important; }
 .bg-blue-mogul-primary    { background-color: var(--bm-primary) !important; }
 .bg-blue-mogul-secondary  { background-color: var(--bm-primary-dark) !important; }
