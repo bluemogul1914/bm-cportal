@@ -401,7 +401,10 @@ export async function ensureConnectAccount(pool: pg.Pool, dealerId: number): Pro
     "business_type": (d.company || d.company_name) ? "company" : "individual",
     "business_profile[mcc]": "4816",
     "business_profile[product_description]": "Referral partner payouts for internet and managed IT services",
-    "settings[payouts][schedule][interval]": "manual",
+    // Payout schedule deliberately NOT set: Stripe's default applies, so the dealer
+    // receives transfers automatically. Setting interval=manual would force the dealer
+    // to request every payout themselves.
+
     "metadata[dealer_id]": String(dealerId),
   });
   if (d.email) form.set("email", String(d.email));
