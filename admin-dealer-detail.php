@@ -67,6 +67,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if (isset($_POST['payout_connect'])) {
+        $r = dp_api($internalOrigin, '/portal/api/admin/dealer-payouts/connect-link', [
+            'dealer_id'  => $did,
+            'return_url' => 'https://portal.bluemogul.us/portal/admin-dealer-detail.php?id=' . $did,
+        ]);
+        if (!empty($r['url'])) { header('Location: ' . $r['url']); exit; }
+        $error = 'Could not start Stripe onboarding: ' . ($r['error'] ?? 'unknown error');
+    }
+
     if (isset($_POST['payout_send'])) {
         $r = dp_api($internalOrigin, '/portal/api/admin/dealer-payouts/send', ['payout_id' => (int)($_POST['payout_id'] ?? 0)]);
         if (!empty($r['ok'])) $success = 'Payout sent. Provider ref: ' . ($r['providerRef'] ?? 'n/a');
@@ -108,6 +117,7 @@ $smtp=$pdo->prepare("SELECT * FROM dealer_smtp_settings WHERE dealer_id=?"); $sm
 
 // ── Payout rails (PayPal / Stripe Connect) ───────────────────────────────────
 $payoutCaps    = dp_api($internalOrigin, '/portal/api/admin/dealer-payouts/capabilities');
+$connectStatus = dp_api($internalOrigin, '/portal/api/admin/dealer-payouts/connect-status?dealer_id=' . $did);
 $payable       = [];
 $dpayouts      = [];
 $payableTotal  = 0.0;
@@ -345,6 +355,28 @@ $ord_cfg=['pending'=>'bg-yellow-100 text-yellow-800','in_progress'=>'bg-blue-100
                         <span class="text-[11px] text-gray-500">current: <span class="font-mono"><?= htmlspecialchars((string)$currentDest) ?></span></span>
                     </div>
                 </form>
+
+                <?php
+                $cc = is_array($connectStatus) && empty($connectStatus['error']) ? $connectStatus : [];
+                ?>
+                <div class="flex flex-wrap items-center gap-3 text-xs border-t border-gray-100 pt-3" data-testid="row-stripe-connect">
+                    <span class="font-medium text-gray-700"><i class="fab fa-stripe-s text-indigo-500 mr-1"></i>Stripe Connect:</span>
+                    <?php if (!empty($cc['account_id'])): ?>
+                        <span class="font-mono text-gray-600"><?= htmlspecialchars((string)$cc['account_id']) ?></span>
+                        <span class="px-2 py-0.5 rounded-full <?= !empty($cc['ready']) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700' ?>">
+                            <?= !empty($cc['ready']) ? 'ready for transfers' : 'onboarding incomplete' ?>
+                        </span>
+                    <?php else: ?>
+                        <span class="text-gray-500">no connected account yet</span>
+                    <?php endif; ?>
+                    <span class="text-gray-500"><?= htmlspecialchars((string)($cc['message'] ?? 'Stripe status unavailable')) ?></span>
+                    <form method="post" class="inline ml-auto">
+                        <?= csrf_field() ?><input type="hidden" name="payout_connect" value="1">
+                        <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium" data-testid="button-connect-stripe">
+                            <i class="fab fa-stripe-s mr-1"></i><?= !empty($cc['account_id']) ? 'Continue Stripe onboarding' : 'Connect with Stripe' ?>
+                        </button>
+                    </form>
+                </div>
 
                 <form method="post" data-testid="form-payout-create">
                     <?= csrf_field() ?><input type="hidden" name="payout_record" value="1">

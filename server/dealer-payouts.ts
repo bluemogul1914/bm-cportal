@@ -377,3 +377,99 @@ export async function listDealerPayouts(pool: pg.Pool, dealerId: number, limit =
   );
   return rows;
 }
+
+/* ── Stripe Connect onboarding ─────────────────────────────────────────────── */
+
+/**
+ * Get the dealer's connected account, creating an Express one if they have none.
+ * Express + platform-created is the pattern that lets a dealer onboard from OUR
+ * page; a Standard account created in the Stripe dashboard can only be onboarded
+ * inside Stripe's own UI.
+ */
+export async function ensureConnectAccount(pool: pg.Pool, dealerId: number): Promise<string> {
+  const key = process.env.STRIPE_SECRET_KEY || "";
+  if (!key) throw new Error("Stripe is not configured (STRIPE_SECRET_KEY missing)");
+  const { rows } = await pool.query(`SELECT * FROM dealers WHERE id = $1`, [dealerId]);
+  if (!rows.length) throw new Error(`Dealer ${dealerId} not found`);
+  const d = rows[0];
+  if (d.stripe_account_id) return String(d.stripe_account_id);
+
+  const form = new URLSearchParams({
+    type: "express",
+    country: "US",
+    "capabilities[transfers][requested]": "true",
+    "business_type": (d.company || d.company_name) ? "company" : "individual",
+    "business_profile[mcc]": "4816",
+    "business_profile[product_description]": "Referral partner payouts for internet and managed IT services",
+    "settings[payouts][schedule][interval]": "manual",
+    "metadata[dealer_id]": String(dealerId),
+  });
+  if (d.email) form.set("email", String(d.email));
+  if (d.company || d.company_name) form.set("business_profile[name]", String(d.company || d.company_name));
+  if (d.phone) form.set("individual[phone]", String(d.phone).replace(/\D/g, "").slice(-10) || "");
+
+  const resp = await fetch("https://api.stripe.com/v1/accounts", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+    signal: AbortSignal.timeout(45000),
+  });
+  const j: any = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(`Stripe account create failed: ${j?.error?.message || `HTTP ${resp.status}`}`);
+  await pool.query(`UPDATE dealers SET stripe_account_id = $2, payout_method = 'stripe_connect', updated_at = NOW() WHERE id = $1`,
+    [dealerId, j.id]);
+  return j.id as string;
+}
+
+/**
+ * Mint a Stripe-hosted onboarding URL for a dealer's connected account.
+ * The dealer completes it, Stripe flips payouts_enabled, and transfers work.
+ */
+export async function createConnectOnboardingLink(pool: pg.Pool, dealerId: number, returnUrl: string): Promise<{
+  accountId: string; url: string; expiresAt: number | null;
+}> {
+  const key = process.env.STRIPE_SECRET_KEY || "";
+  if (!key) throw new Error("Stripe is not configured (STRIPE_SECRET_KEY missing)");
+  const accountId = await ensureConnectAccount(pool, dealerId);
+  const form = new URLSearchParams({
+    account: accountId,
+    type: "account_onboarding",
+    refresh_url: returnUrl,
+    return_url: returnUrl,
+  });
+  const resp = await fetch("https://api.stripe.com/v1/account_links", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+    signal: AbortSignal.timeout(45000),
+  });
+  const j: any = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(`Stripe account link failed: ${j?.error?.message || `HTTP ${resp.status}`}`);
+  return { accountId, url: j.url as string, expiresAt: j.expires_at ?? null };
+}
+
+/** Full onboarding snapshot for the UI: account id + whether it can receive money. */
+export async function connectAccountStatus(pool: pg.Pool, dealerId: number): Promise<any> {
+  const { rows } = await pool.query(`SELECT stripe_account_id FROM dealers WHERE id = $1`, [dealerId]);
+  const accountId = rows[0]?.stripe_account_id || null;
+  if (!accountId) return { account_id: null, ready: false, message: "No connected account yet — create one to start onboarding." };
+  const key = process.env.STRIPE_SECRET_KEY || "";
+  if (!key) return { account_id: accountId, ready: false, message: "Stripe secret key not configured." };
+  const resp = await fetch(`https://api.stripe.com/v1/accounts/${encodeURIComponent(accountId)}`, {
+    headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(30000),
+  });
+  const a: any = await resp.json().catch(() => ({}));
+  if (!resp.ok) return { account_id: accountId, ready: false, message: a?.error?.message || `HTTP ${resp.status}` };
+  const due = (a.requirements?.currently_due || []).length;
+  return {
+    account_id: accountId,
+    ready: a.payouts_enabled === true,
+    payouts_enabled: a.payouts_enabled === true,
+    details_submitted: a.details_submitted === true,
+    transfers: a.capabilities?.transfers ?? null,
+    requirements_due: due,
+    message: a.payouts_enabled === true
+      ? "Connected account is fully onboarded — Stripe transfers will work."
+      : `Onboarding incomplete: ${due} requirement(s) still due${a.requirements?.disabled_reason ? " (" + a.requirements.disabled_reason + ")" : ""}.`,
+  };
+}

@@ -25,6 +25,7 @@ import { syncXero, xeroStatus, xeroToken, getXeroConfig, saveXeroConfig, xeroReq
 import {
   payoutCapabilities, savePayoutDestination, getPayoutProfile, listPayableCommissions,
   createDealerPayout, sendDealerPayout, listDealerPayouts, stripeAccountCheck,
+  ensureConnectAccount, createConnectOnboardingLink, connectAccountStatus,
 } from "./dealer-payouts";
 import {
   hwProducts, hwTestConnection, hwCreateAccount, hwServiceStatus, hwServicesData,
@@ -883,6 +884,25 @@ app.post("/portal/api/admin/hostwinds/services/provision", async (req, res) => {
     }).catch(() => null);
     res.status(500).json({ ok: false, order_id: id, error: e.message });
   }
+});
+
+// Stripe Connect onboarding for a dealer: status + hosted onboarding link.
+app.get("/portal/api/admin/dealer-payouts/connect-status", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const dealerId = parseInt(String(req.query.dealer_id ?? ""), 10);
+  if (!Number.isFinite(dealerId)) return res.status(400).json({ error: "dealer_id is required" });
+  try { res.json(await connectAccountStatus(webhookPool, dealerId)); } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/admin/dealer-payouts/connect-link", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const dealerId = parseInt(String(req.body?.dealer_id ?? ""), 10);
+  if (!Number.isFinite(dealerId)) return res.status(400).json({ error: "dealer_id is required" });
+  const returnUrl = String(req.body?.return_url || "https://portal.bluemogul.us/portal/admin-dealer-detail.php?id=" + dealerId);
+  try {
+    const r = await createConnectOnboardingLink(webhookPool, dealerId, returnUrl);
+    res.json({ ok: true, ...r });
+  } catch (e: any) { res.status(400).json({ ok: false, error: e.message }); }
 });
 
 // Retry provisioning for a service whose attempt was rejected (e.g. after the
