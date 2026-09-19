@@ -320,7 +320,7 @@ $integrations = [
                             <span class="font-semibold text-sm">Week 1</span>
                         </div>
                         <p class="text-sm font-medium">Build SENTINEL (8 hours)</p>
-                        <p class="text-xs text-green-200 mt-1">ITarian monitoring → N8N alert triage → ITFlow tickets</p>
+                        <p class="text-xs text-green-200 mt-1">Action1 monitoring → N8N alert triage → ITFlow tickets</p>
                     </div>
                     <div class="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
                         <div class="flex items-center gap-2 mb-2">
