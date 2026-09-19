@@ -30,6 +30,11 @@ $_initials = strtoupper(
   <title><?= htmlspecialchars($page_title) ?> — Blue Mogul Dealer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tailwind.css">
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="/assets/js/tailwind-shared.js"></script>
+  <script>tailwind.config = window.bmTailwindConfig;</script>
   <style>
     *{margin:0;padding:0;box-sizing:border-box;}
     :root{
@@ -149,55 +154,12 @@ $_initials = strtoupper(
 </head>
 <body>
 
-<!-- ── SIDEBAR ── -->
-<aside class="sidebar">
-  <div class="sidebar-logo">
-    <div class="wordmark">BLUEMOGUL</div>
-    <div class="panel-label">Dealer Panel</div>
-  </div>
-
-  <nav class="sidebar-nav">
-    <div class="nav-section">Main</div>
-    <a href="/portal/dealer-dashboard.php" class="nav-item <?= nav_active('dealer-dashboard') ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-      Dashboard
-    </a>
-    <a href="/portal/dealer-orders.php" class="nav-item <?= nav_active('dealer-orders') ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-      Submit order
-    </a>
-    <a href="/portal/dealer-commissions.php" class="nav-item <?= nav_active('dealer-commissions') ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-      Commissions
-    </a>
-    <a href="/portal/dealer-payouts.php" class="nav-item <?= nav_active('dealer-payouts') ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-      Payouts
-    </a>
-
-    <div class="nav-section" style="margin-top:8px;">Reference</div>
-    <a href="/portal/dealer-spiffs.php" class="nav-item <?= nav_active('dealer-spiffs') ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      Products &amp; spiffs
-    </a>
-    <a href="/portal/dealer-training.php" class="nav-item <?= nav_active('dealer-training') ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
-      Training docs
-    </a>
-  </nav>
-
-  <div class="sidebar-foot">
-    <div class="sys-status"><span class="status-dot"></span> System online</div>
-    <div class="dealer-chip">
-      <div class="dealer-av"><?= htmlspecialchars($_initials) ?></div>
-      <div>
-        <div class="dealer-name"><?= htmlspecialchars($_dealer['full_name']) ?></div>
-        <div class="dealer-code"><?= htmlspecialchars($_dealer['dealer_code'] ?? '') ?></div>
-      </div>
-    </div>
-    <a href="/portal/logout.php" class="logout-link">Sign out</a>
-  </div>
-</aside>
+<!-- ── SIDEBAR (canonical implementation — same scheme as the admin/client sidebars) ── -->
+<?php
+// dealer-sidebar.php reads $dealer['referral_code']; this header tracks $_dealer.
+if (!isset($dealer)) { $dealer = ['referral_code' => $_dealer['dealer_code'] ?? '']; }
+include __DIR__ . '/dealer-sidebar.php';
+?>
 
 <!-- ── MAIN starts; each page adds topbar + page-body ── -->
 <div class="main">

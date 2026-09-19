@@ -76,7 +76,19 @@ try {
     error_log("contacts load error: " . $e->getMessage());
 }
 ?>
-<?php include 'includes/header.php'; ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blue Mogul</title>
+    <link rel="stylesheet" href="/assets/css/tailwind.css">
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="/assets/js/tailwind-shared.js"></script>
+    <script>tailwind.config = window.bmTailwindConfig;</script>
+</head>
+<body class="bg-gray-100 font-sans">
 <div class="flex h-screen overflow-hidden bg-gray-100">
     <?php include 'includes/admin-sidebar.php'; ?>
     <div class="flex-1 flex flex-col overflow-hidden">
