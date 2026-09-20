@@ -11,7 +11,7 @@ $totals = $pdo->prepare(
      COALESCE(SUM(amount) FILTER (WHERE status='paid'),     0) AS paid,
      COALESCE(SUM(amount) FILTER (WHERE status='pending'),  0) AS pending,
      COUNT(*)                                                          AS total_count
-   FROM commissions WHERE dealer_id=?"
+   FROM dealer_commissions WHERE dealer_id=?"
 );
 $totals->execute([$dealer['id']]);
 $t = $totals->fetch();
@@ -19,7 +19,7 @@ $t = $totals->fetch();
 $filter  = in_array($_GET['status'] ?? '', ['pending','approved','paid','reversed']) ? $_GET['status'] : '';
 $sql     = "SELECT c.id, c.amount, c.status, c.approved_at, c.paid_at, c.created_at,
                    o.order_ref, o.client_name, o.product_line, o.plan_name, o.created_at AS order_date
-            FROM commissions c
+            FROM dealer_commissions c
             JOIN dealer_orders o ON o.id = c.order_id
             WHERE c.dealer_id=?";
 $params  = [$dealer['id']];
