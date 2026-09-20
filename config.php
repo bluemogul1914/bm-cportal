@@ -327,14 +327,26 @@ function getDB() {
                 $pdo = new PDO($dsn, $user, $pass, [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_EMULATE_PREPARES => false,
+                    // 2026-09-20: EMULATE_PREPARES = true. Server-side prepared statements
+                    // against a pooled DB cache the result descriptor, so ANY migration to a
+                    // table invalidates them: "cached plan must not change result type"
+                    // (SQLSTATE 0A000), which surfaced as random 500s and truncated pages.
+                    // Emulated prepares keep PDO placeholders but interpolate client-side,
+                    // so no server-side plan is cached. Do not flip this back.
+                    PDO::ATTR_EMULATE_PREPARES => true,
                 ]);
             } else {
                 $dsn = DB_TYPE . ':host=' . DB_HOST . ';port=' . DB_PORT . ';dbname=' . DB_NAME;
                 $pdo = new PDO($dsn, DB_USER, DB_PASS, [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_EMULATE_PREPARES => false,
+                    // 2026-09-20: EMULATE_PREPARES = true. Server-side prepared statements
+                    // against a pooled DB cache the result descriptor, so ANY migration to a
+                    // table invalidates them: "cached plan must not change result type"
+                    // (SQLSTATE 0A000), which surfaced as random 500s and truncated pages.
+                    // Emulated prepares keep PDO placeholders but interpolate client-side,
+                    // so no server-side plan is cached. Do not flip this back.
+                    PDO::ATTR_EMULATE_PREPARES => true,
                 ]);
             }
         } catch (PDOException $e) {
