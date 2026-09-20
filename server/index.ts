@@ -1445,6 +1445,13 @@ app.post("/portal/:file", (req, res) => {
 
   const filePath = join(projectRoot, phpFile);
   const sessionCode = buildSessionPhpCode(req);
+  // This top-level POST path used to inject ONLY the session and not the cookies,
+  // so $_COOKIE was always empty for /portal/<page>.php POSTs and any page that
+  // forwards its session to the loopback API (CURLOPT_COOKIE => 'connect.sid=' .
+  // $_COOKIE['connect.sid']) sent an empty cookie and got 403 back. Admin pages
+  // live under /portal/admin/:file, which always had the cookie code — that is why
+  // admin saves worked while a dealer page's save failed. Mirror executePhpPost.
+  const cookieCode = buildCookiePhpCode(req);
 
   const formParts: string[] = [];
   for (const [key, value] of Object.entries(req.body || {})) {
@@ -1472,6 +1479,7 @@ $_SERVER['PHP_SELF'] = '${phpSelfPost.replace(/'/g, "\\'")}';
 $_SERVER['SCRIPT_NAME'] = '${phpSelfPost.replace(/'/g, "\\'")}';
 session_start();
 ${sessionCode}
+${cookieCode}
 $_SERVER['REQUEST_METHOD'] = 'POST';
 parse_str('${postData}', $_POST);
 $_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
