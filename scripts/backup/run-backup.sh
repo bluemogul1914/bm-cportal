@@ -15,6 +15,11 @@ set -eu
 : "${BACKUP_DIR:=/backups}"
 : "${BACKUP_INTERVAL_SECONDS:=86400}"
 
+# Assigning with ${VAR:=default} does NOT export the variable in POSIX sh, so
+# pg_dump would not see these and would fall back to a local unix socket
+# ("No such file or directory" on /var/run/postgresql/.s.PGSQL.5432).
+export PGHOST PGUSER PGDATABASE
+
 echo "[backup] starting; host=$PGHOST db=$PGDATABASE interval=${BACKUP_INTERVAL_SECONDS}s retention=${RETENTION_DAYS}d"
 mkdir -p "$BACKUP_DIR"
 

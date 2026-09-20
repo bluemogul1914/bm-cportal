@@ -112,7 +112,9 @@ services:
       - "${PORT:-3000}:3000"
     healthcheck:
       # Built-in health route: GET /?health → 200 {"status":"ok"}
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/?health"]
+      # Use the IPv4 literal: inside the container `localhost` resolves to ::1
+      # first, where the app is not listening, so the check could never pass.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/?health"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -130,6 +132,12 @@ services:
         condition: service_healthy
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Set explicitly rather than relying on the script's defaults: the official
+      # postgres images ship a PGHOST that points at a local socket, and unexported
+      # shell defaults are invisible to pg_dump.
+      PGHOST: db
+      PGUSER: portal
+      PGDATABASE: bluemogul_portal
       RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
     entrypoint: ["/bin/sh", "/backup/run-backup.sh"]
     volumes:
