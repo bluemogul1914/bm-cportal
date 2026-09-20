@@ -186,6 +186,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Load data
 $orders=$pdo->prepare("SELECT id, dealer_id, product_line, customer_name, customer_email, customer_phone, customer_address, details, status, commission_amount, admin_notes, created_at, updated_at, order_ref, client_name, client_email, client_phone, service_address, plan_name, plan_price_cents, spiff_cents, tier_at_order, dealer_notes, activated_at, ticket_id, invoice_id, sales_user_id, sales_name, lead_id, client_id FROM dealer_orders WHERE dealer_id=? ORDER BY created_at DESC LIMIT 20"); $orders->execute([$did]); $orders=$orders->fetchAll(PDO::FETCH_ASSOC);
 $commissions=$pdo->prepare("SELECT dc.*,dord.product_line,dord.customer_name FROM dealer_commissions dc LEFT JOIN dealer_orders dord ON dc.order_id=dord.id WHERE dc.dealer_id=? ORDER BY dc.created_at DESC LIMIT 20"); $commissions->execute([$did]); $commissions=$commissions->fetchAll(PDO::FETCH_ASSOC);
+
+// ── Per-rep performance (P4): who on this dealer's team sold what ────────────
+// Figures are per-rep reporting only — the dealer pays their own reps.
+$rep_perf = [];
+try {
+    $__r = $pdo->prepare("
+        SELECT COALESCE(NULLIF(TRIM(o.sales_name), ''), '(unassigned)') AS rep,
+               o.sales_user_id,
+               COUNT(DISTINCT o.id) AS orders,
+               COALESCE(SUM(c.amount) FILTER (WHERE c.status = 'pending'),  0) AS pending,
+               COALESCE(SUM(c.amount) FILTER (WHERE c.status = 'approved'), 0) AS approved,
+               COALESCE(SUM(c.amount) FILTER (WHERE c.status = 'paid'),     0) AS paid,
+               COALESCE(SUM(c.amount), 0) AS total
+          FROM dealer_orders o
+          LEFT JOIN dealer_commissions c ON c.order_id = o.id
+         WHERE o.dealer_id = ?
+         GROUP BY 1, 2
+         ORDER BY total DESC, orders DESC");
+    $__r->execute([$did]);
+    $rep_perf = $__r->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) { $rep_perf = []; }
+$rep_total = 0.0; foreach ($rep_perf as $r) { $rep_total += (float)$r['total']; }
 $payouts=$pdo->prepare("SELECT * FROM dealer_payout_requests WHERE dealer_id=? ORDER BY created_at DESC LIMIT 10"); $payouts->execute([$did]); $payouts=$payouts->fetchAll(PDO::FETCH_ASSOC);
 $smtp=$pdo->prepare("SELECT * FROM dealer_smtp_settings WHERE dealer_id=?"); $smtp->execute([$did]); $smtp=$smtp->fetch(PDO::FETCH_ASSOC) ?: [];
 
@@ -326,6 +348,47 @@ $ord_cfg=['pending'=>'bg-yellow-100 text-yellow-800','in_progress'=>'bg-blue-100
 
     <!-- Commissions & Orders (right 2 cols) -->
     <div class="lg:col-span-2 space-y-5">
+
+        <!-- Per-rep sales performance (P4) -->
+        <div class="bg-white rounded-xl border border-gray-200" data-testid="card-rep-performance">
+            <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                <h3 class="font-semibold text-gray-900 text-sm">Sales Team Performance</h3>
+                <span class="text-xs text-gray-500"><?= count($rep_perf) ?> rep(s)</span>
+            </div>
+            <?php if ($rep_perf): ?>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Salesperson</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Orders</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Pending</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Approved</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Paid</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        <?php foreach ($rep_perf as $r): ?>
+                        <tr>
+                            <td class="px-4 py-2 font-medium text-gray-800"><?= htmlspecialchars($r['rep']) ?><?php if (empty($r['sales_user_id'])): ?><span class="text-[11px] text-gray-400 ml-1">named only</span><?php endif; ?></td>
+                            <td class="px-4 py-2 text-gray-600"><?= (int)$r['orders'] ?></td>
+                            <td class="px-4 py-2 text-amber-600">$<?= number_format((float)$r['pending'], 2) ?></td>
+                            <td class="px-4 py-2 text-green-600">$<?= number_format((float)$r['approved'], 2) ?></td>
+                            <td class="px-4 py-2 text-teal-600">$<?= number_format((float)$r['paid'], 2) ?></td>
+                            <td class="px-4 py-2 font-semibold text-gray-800">$<?= number_format((float)$r['total'], 2) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                    <tfoot class="bg-gray-50">
+                        <tr><td class="px-4 py-2 text-xs text-gray-500" colspan="5">All reps (dealer pays them from their own payout)</td><td class="px-4 py-2 font-semibold text-gray-800">$<?= number_format($rep_total, 2) ?></td></tr>
+                    </tfoot>
+                </table>
+            </div>
+            <?php else: ?>
+            <p class="px-5 py-8 text-center text-gray-400 text-sm">No sales attributed yet — pick a salesperson on an order to start tracking per-rep numbers.</p>
+            <?php endif; ?>
+        </div>
         <!-- Commissions -->
         <div class="bg-white rounded-xl border border-gray-200">
             <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">

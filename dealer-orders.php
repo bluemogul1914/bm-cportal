@@ -136,6 +136,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sales_user_id, $sales_name, $lead_id,
         ]);
         $order_id = (int)$ins->fetchColumn();
+        // ── Per-rep commission attribution (P4) ────────────────────────────
+        // The DEALER pays their reps out of their own payout, so no separate payout
+        // rails are needed — but the sale must record WHO sold it, and the
+        // commission row is where per-rep reporting reads from.
+        // `amount` is in CENTS (the payout engine consumes it as amount_cents).
+        try {
+            $exists = $pdo->prepare("SELECT 1 FROM dealer_commissions WHERE order_id = ? LIMIT 1");
+            $exists->execute([$order_id]);
+            if (!$exists->fetchColumn()) {
+                $pdo->prepare("INSERT INTO dealer_commissions
+                        (dealer_id, order_id, amount, status, notes, sales_user_id, sales_name, created_at)
+                        VALUES (?,?,?, 'pending', ?, ?, ?, NOW())")
+                    ->execute([$dealer['id'], $order_id, (int)$spiff_cents,
+                               'Order ' . $order_ref . ($plan_name ? ' — ' . $plan_name : ''),
+                               $sales_user_id, $sales_name]);
+            }
+        } catch (Throwable $e) { /* commission bookkeeping must never break the order */ }
 
         // ── Promote the dealer's customer to a real portal client ──────────
         // Attributed to this dealer via clients.dealer_id, and linked back on the
