@@ -887,6 +887,44 @@ export async function runPortalMigrations() {
                 await db.execute(sql`CREATE INDEX IF NOT EXISTS clients_dealer_idx ON clients (dealer_id)`);
                 console.log("[migrations] Dealer customer-to-client migrations applied");
               } catch (err: any) {
+                console.error("[migrations] Dealer customer link migration error:", err.message);
+              }
+
+              // ── Phase 1a: credential vault (ITFlow parity) ──────────────────
+              // Secrets are stored ONLY as AES-256-GCM ciphertext (see
+              // server/credential-vault.ts). Plaintext never lands in a column,
+              // never reaches a list response, and every reveal is audited.
+              try {
+                await db.execute(sql`CREATE TABLE IF NOT EXISTS credentials (
+                  id SERIAL PRIMARY KEY,
+                  client_id INTEGER,
+                  asset_id INTEGER,
+                  service_id INTEGER,
+                  label VARCHAR(160) NOT NULL,
+                  username VARCHAR(240),
+                  secret_cipher TEXT,
+                  otp_secret_cipher TEXT,
+                  url VARCHAR(500),
+                  notes TEXT,
+                  category VARCHAR(60) DEFAULT 'general',
+                  key_version INTEGER DEFAULT 1,
+                  rotation_days INTEGER,
+                  last_rotated_at TIMESTAMP,
+                  created_by INTEGER,
+                  created_at TIMESTAMP DEFAULT NOW(),
+                  updated_at TIMESTAMP DEFAULT NOW()
+                )`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS credentials_client_idx ON credentials (client_id)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS credentials_category_idx ON credentials (category)`);
+                await db.execute(sql`CREATE TABLE IF NOT EXISTS credential_tags (
+                  id SERIAL PRIMARY KEY,
+                  credential_id INTEGER NOT NULL,
+                  tag VARCHAR(60) NOT NULL,
+                  created_at TIMESTAMP DEFAULT NOW()
+                )`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS credential_tags_cred_idx ON credential_tags (credential_id)`);
+                console.log("[migrations] Credential vault migrations applied");
+              } catch (err: any) {
                 console.error("[migrations] Dealer lead migration error:", err.message);
               }
             }

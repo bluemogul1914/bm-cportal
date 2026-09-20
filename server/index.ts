@@ -32,6 +32,10 @@ import {
   syncHwServices, saveHwService, logHwOrder, getHwCredentials, maybeProvisionHwService,
 } from "./hostwinds-api";
 import {
+  vaultStatus, listCredentials, createCredential, revealCredential, rotateCredential,
+  updateCredentialMeta, listClientCredentials, hasVaultKey,
+} from "./credential-vault";
+import {
   getOAuthConfig,
   saveOAuthConfig,
   buildAuthorizeUrl,
@@ -213,7 +217,7 @@ const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashb
   "admin-billing-reminders.php",
   "admin-financials.php",
   "admin-accounting.php",
-  "admin-client-services.php"];
+  "admin-client-services.php", "admin-credentials.php"];
 
 function buildSessionPhpCode(req: Request): string {
   const sess = (req.session as any)?.portalUser;
@@ -908,6 +912,114 @@ app.post("/portal/api/admin/dealer-payouts/connect-link", async (req, res) => {
 // Retry provisioning for a service whose attempt was rejected (e.g. after the
 // reseller account is funded, or once the billing-cycle value is corrected).
 // Rejected attempts are recorded, not lost, so this is the recovery path.
+// ── Phase 1a: credential vault (ITFlow parity) ────────────────────────────────
+// Secrets are encrypted at rest with a key derived from PORTAL_SECRET, the list
+// endpoints never return a secret, and every reveal/rotate writes an audit row.
+function vaultActor(req: Request) {
+  const s: any = (req.session as any)?.portalUser || {};
+  const fwd = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return { userId: s.user_id ?? null, email: s.user_email ?? null, ip: fwd || req.ip || null };
+}
+
+app.get("/portal/api/admin/credentials/status", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try { res.json(await vaultStatus(webhookPool)); }
+  catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/portal/api/admin/credentials", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const clientId = req.query.client_id ? parseInt(String(req.query.client_id), 10) : undefined;
+    const credentials = await listCredentials(webhookPool, {
+      clientId: Number.isFinite(clientId as number) ? (clientId as number) : undefined,
+      category: req.query.category ? String(req.query.category) : undefined,
+      q: req.query.q ? String(req.query.q) : undefined,
+    });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ credentials, vault_ready: hasVaultKey(), count: credentials.length });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/admin/credentials", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const b = req.body || {};
+  try {
+    const id = await createCredential(webhookPool, {
+      clientId: b.client_id ? parseInt(String(b.client_id), 10) : null,
+      assetId: b.asset_id ? parseInt(String(b.asset_id), 10) : null,
+      serviceId: b.service_id ? parseInt(String(b.service_id), 10) : null,
+      label: String(b.label || ""),
+      username: b.username ?? null,
+      secret: b.secret ?? null,
+      otpSecret: b.otp_secret ?? null,
+      url: b.url ?? null,
+      notes: b.notes ?? null,
+      category: b.category ?? null,
+      rotationDays: b.rotation_days ? parseInt(String(b.rotation_days), 10) : null,
+      tags: Array.isArray(b.tags) ? b.tags : (b.tags ? String(b.tags).split(",") : []),
+    }, vaultActor(req));
+    res.json({ success: true, id });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/portal/api/admin/credentials/:id/reveal", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const kind = String(req.body?.kind || "secret") === "otp" ? "otp" : "secret";
+    const out = await revealCredential(webhookPool, id, vaultActor(req), kind as any);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true, ...out });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/portal/api/admin/credentials/:id/rotate", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const label = await rotateCredential(webhookPool, id, {
+      secret: req.body?.secret ?? null,
+      otpSecret: req.body?.otp_secret ?? null,
+      notes: req.body?.notes,
+      rotationDays: req.body?.rotation_days ? parseInt(String(req.body.rotation_days), 10) : undefined,
+    }, vaultActor(req));
+    res.json({ success: true, label });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/portal/api/admin/credentials/:id/update", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const label = await updateCredentialMeta(webhookPool, id, {
+      label: req.body?.label,
+      username: req.body?.username,
+      url: req.body?.url,
+      notes: req.body?.notes,
+      category: req.body?.category,
+      clientId: req.body?.client_id !== undefined && req.body?.client_id !== "" ? parseInt(String(req.body.client_id), 10) : undefined,
+      rotationDays: req.body?.rotation_days !== undefined && req.body?.rotation_days !== "" ? parseInt(String(req.body.rotation_days), 10) : undefined,
+      tags: Array.isArray(req.body?.tags) ? req.body.tags : (req.body?.tags ? String(req.body.tags).split(",") : undefined),
+    }, vaultActor(req));
+    res.json({ success: true, label });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// Client-profile panel: this client's credentials, metadata only.
+app.get("/portal/api/admin/clients/:id/credentials", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ credentials: await listClientCredentials(webhookPool, id) });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 app.post("/portal/api/admin/hostwinds/services/retry", async (req, res) => {
   if (!requireXeroAdmin(req, res)) return;
   const serviceId = parseInt(String(req.body?.service_id ?? ""), 10);
