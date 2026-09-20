@@ -12,12 +12,13 @@ $pdo    = get_db();
 $internalOrigin = 'http://127.0.0.1:' . (getenv('PORT') ?: '3000');
 
 function dpd_api(string $origin, string $path, ?array $body = null): array {
+    $cookie = (string)($_COOKIE['connect.sid'] ?? '');
     $ch = curl_init($origin . $path);
     $opts = [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 60,
         CURLOPT_HTTPHEADER     => ['Accept: application/json', 'Content-Type: application/json'],
-        CURLOPT_COOKIE         => 'connect.sid=' . ($_COOKIE['connect.sid'] ?? ''),
+        CURLOPT_COOKIE         => 'connect.sid=' . $cookie,
     ];
     if ($body !== null) { $opts[CURLOPT_POST] = true; $opts[CURLOPT_POSTFIELDS] = json_encode($body); }
     curl_setopt_array($ch, $opts);
@@ -25,10 +26,14 @@ function dpd_api(string $origin, string $path, ?array $body = null): array {
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);
     curl_close($ch);
-    if ($err) return ['error' => $err, 'http_code' => 0];
+    // Session-cookie presence is reported in every response so a 403 can never be
+    // mistaken for a logic error: the platform's PHP child process only has a
+    // session cookie if the shim forwarded it (see buildCookiePhpCode).
+    $diag = ['cookie_present' => $cookie !== '', 'cookie_len' => strlen($cookie), 'http_code' => $code];
+    if ($err) return ['error' => $err, 'http_code' => 0] + $diag;
     $j = json_decode((string)$resp, true);
-    return is_array($j) ? ($j + ['http_code' => $code])
-                        : ['error' => 'Invalid JSON (HTTP ' . $code . ')', 'http_code' => $code];
+    return is_array($j) ? ($j + $diag)
+                        : ['error' => 'Invalid JSON (HTTP ' . $code . ')', 'http_code' => $code] + $diag;
 }
 
 /** Redirect even though this page's shell has already been printed. */
@@ -143,7 +148,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_p
         unset($_SESSION['dealer_cache']);
         $dealer = dealer_me();
     } else {
-        $error = 'Could not save payout method: ' . ($r['error'] ?? 'unknown error');
+        $error = 'Could not save payout method: ' . ($r['error'] ?? 'unknown error')
+               . ' [session cookie forwarded: ' . (!empty($r['cookie_present']) ? 'yes' : 'NO — please log out and back in') . ']';
     }
 }
 
