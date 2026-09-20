@@ -55,6 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['convert_id'])) {
 // Delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     $pdo->prepare("DELETE FROM dealer_customers WHERE id=? AND dealer_id=?")->execute([(int)($_POST['delete_id'] ?? 0),$dealer_id]);
+    $success = 'Customer removed.';
 }
 
 // Promote a dealer customer to a REAL portal client, attributed to this dealer.
@@ -122,10 +123,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['portal_invite'])) {
                              : 'Email could not be sent — send this link: ' . htmlspecialchars($link);
         }
     } catch (Throwable $e) { $error = 'Invite failed: ' . $e->getMessage(); }
-}
-
-if (false) {
-    $success = 'Customer removed.';
 }
 
 $filter_type = $_GET['type'] ?? '';
