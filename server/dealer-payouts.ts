@@ -394,10 +394,23 @@ export async function ensureConnectAccount(pool: pg.Pool, dealerId: number): Pro
   const d = rows[0];
   if (d.stripe_account_id) return String(d.stripe_account_id);
 
+  // Capability set is configurable because Stripe gates them differently:
+  //  - "transfers" alone = the semantically right config for paying dealers, but Stripe
+  //    requires PLATFORM APPROVAL ("Your platform needs approval for accounts to have
+  //    requested the transfers capability without the card_payments capability").
+  //  - "card_payments,transfers" = works self-serve today; the dealer's onboarding is
+  //    heavier (they can also accept card payments).
+  // Stored in provider_settings as connect_capabilities; override to "transfers" once
+  // Stripe approves the payout-only pattern.
+  let caps = "card_payments,transfers";
+  try {
+    const cr = await pool.query(`SELECT key_value FROM provider_settings WHERE provider='stripe' AND key_name='connect_capabilities'`);
+    if (cr.rows.length && String(cr.rows[0].key_value).trim()) caps = String(cr.rows[0].key_value).trim();
+  } catch { /* default */ }
+
   const form = new URLSearchParams({
     type: "express",
     country: "US",
-    "capabilities[transfers][requested]": "true",
     "business_type": (d.company || d.company_name) ? "company" : "individual",
     "business_profile[mcc]": "4816",
     "business_profile[product_description]": "Referral partner payouts for internet and managed IT services",
@@ -407,6 +420,9 @@ export async function ensureConnectAccount(pool: pg.Pool, dealerId: number): Pro
 
     "metadata[dealer_id]": String(dealerId),
   });
+  for (const cap of caps.split(",").map((c: string) => c.trim()).filter(Boolean)) {
+    form.set(`capabilities[${cap}][requested]`, "true");
+  }
   if (d.email) form.set("email", String(d.email));
   if (d.company || d.company_name) form.set("business_profile[name]", String(d.company || d.company_name));
   if (d.phone) form.set("individual[phone]", String(d.phone).replace(/\D/g, "").slice(-10) || "");
@@ -418,7 +434,13 @@ export async function ensureConnectAccount(pool: pg.Pool, dealerId: number): Pro
     signal: AbortSignal.timeout(45000),
   });
   const j: any = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(`Stripe account create failed: ${j?.error?.message || `HTTP ${resp.status}`}`);
+  if (!resp.ok) {
+    const msg = j?.error?.message || `HTTP ${resp.status}`;
+    const hint = /needs approval for accounts to have requested the `?transfers`?/i.test(msg)
+      ? " — set provider_settings stripe.connect_capabilities to 'card_payments,transfers' to create accounts self-serve today, or ask Stripe to approve transfers-only."
+      : "";
+    throw new Error(`Stripe account create failed: ${msg}${hint}`);
+  }
   await pool.query(`UPDATE dealers SET stripe_account_id = $2, payout_method = 'stripe_connect', updated_at = NOW() WHERE id = $1`,
     [dealerId, j.id]);
   return j.id as string;
