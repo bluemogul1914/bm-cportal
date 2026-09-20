@@ -308,7 +308,7 @@ try {
 
     $devices = [];
     try {
-        $stmt = $pdo->prepare("SELECT * FROM network_devices WHERE client_id = ? ORDER BY hostname ASC");
+        $stmt = $pdo->prepare("SELECT id, client_id, hostname, device_type, manufacturer, model, serial_number, ip_address, mac_address, os_name, os_version, cpu, ram_gb, disk_gb, status, notes, last_seen, created_at, source, external_id FROM network_devices WHERE client_id = ? ORDER BY hostname ASC");
         $stmt->execute([$client_id]);
         $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (\Exception $e) {}
