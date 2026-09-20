@@ -7,6 +7,16 @@ $pdo    = get_db();
 
 $success = $error = '';
 
+// Active logins on this dealer's team (tenant members) — used for sales attribution.
+$team = [];
+try {
+    $tq = $pdo->prepare("SELECT du.user_id, du.role, u.name
+                           FROM dealer_users du JOIN users u ON u.id = du.user_id
+                          WHERE du.dealer_id = ? AND COALESCE(du.status,'active') = 'active'
+                          ORDER BY u.name");
+    $tq->execute([$dealer['id']]); $team = $tq->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) { $team = []; }
+
 $product_labels = [
     'frontier_fiber'  => 'Frontier Fiber',
     'xfinity_prepaid' => 'Xfinity Prepaid Internet',
@@ -44,6 +54,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Generate order ref
         $order_ref = 'ORD-' . date('Ymd') . '-' . str_pad(random_int(1,9999),4,'0',STR_PAD_LEFT);
         $plan_price_cents = $plan_price > 0 ? (int)round($plan_price * 100) : null;
+
+        // Who on the dealer's team made the sale. Either a team login (id) or a
+        // typed name — a dealer with no logins yet can still attribute the sale.
+        $sales_user_id = (int)($_POST['sales_user_id'] ?? 0) ?: null;
+        $sales_name_in = trim((string)($_POST['sales_name'] ?? ''));
+        $sales_name = null;
+        if ($sales_user_id) {
+            foreach ($team as $tm) { if ((int)$tm['user_id'] === $sales_user_id) { $sales_name = $tm['name']; break; } }
+            if ($sales_name === null) $sales_user_id = null; // id not on this dealer's team — ignore it
+        }
+        if ($sales_name === null && $sales_name_in !== '') $sales_name = mb_substr($sales_name_in, 0, 120);
         $product_label    = $product_labels[$product_line] ?? $product_line;
 
         // ── 1. Insert dealer order (RETURNING id) ─────────────
@@ -51,8 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             "INSERT INTO dealer_orders
                (dealer_id, order_ref, client_name, client_email, client_phone,
                 service_address, product_line, plan_name, plan_price_cents,
-                spiff_cents, tier_at_order, dealer_notes)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                spiff_cents, tier_at_order, dealer_notes, sales_user_id, sales_name)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
              RETURNING id"
         );
         $ins->execute([
@@ -62,6 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $plan_name ?: null,
             $plan_price_cents,
             $spiff_cents, $tier, $dealer_notes ?: null,
+            $sales_user_id, $sales_name,
         ]);
         $order_id = (int)$ins->fetchColumn();
 
@@ -278,6 +300,23 @@ $all_orders = $history->fetchAll();
               <input type="number" name="plan_price" class="form-control" step="0.01" min="0"
                      placeholder="0.00" value="<?= htmlspecialchars($_POST['plan_price'] ?? '') ?>">
             </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Sold by <span style="color:var(--text-lt);font-weight:400;">(your sales team)</span></label>
+            <?php if ($team): ?>
+            <select name="sales_user_id" class="form-control">
+              <option value="">— not specified —</option>
+              <?php foreach ($team as $tm): ?>
+              <option value="<?= (int)$tm['user_id'] ?>" <?= (int)($_POST['sales_user_id'] ?? 0) === (int)$tm['user_id'] ? 'selected' : '' ?>>
+                <?= htmlspecialchars((string)$tm['name']) ?><?= $tm['role'] !== 'sales' ? ' (' . htmlspecialchars((string)$tm['role']) . ')' : '' ?>
+              </option>
+              <?php endforeach; ?>
+            </select>
+            <?php else: ?>
+            <input type="text" name="sales_name" class="form-control" placeholder="Rep name (no team logins yet)"
+                   value="<?= htmlspecialchars($_POST['sales_name'] ?? '') ?>">
+            <?php endif; ?>
           </div>
 
           <div class="form-group">

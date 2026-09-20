@@ -82,6 +82,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         else $error = 'Payout not sent: ' . ($r['error'] ?? 'unknown error');
     }
 
+    // ── Sales team (dealer tenant membership) ────────────────────────────────
+    if (isset($_POST['team_add'])) {
+        require_once 'includes/email.php';
+        $tname = trim((string)($_POST['team_name'] ?? ''));
+        $temail = strtolower(trim((string)($_POST['team_email'] ?? '')));
+        $trole = in_array(($_POST['team_role'] ?? ''), ['owner', 'manager', 'sales'], true) ? $_POST['team_role'] : 'sales';
+        if ($tname === '' || !filter_var($temail, FILTER_VALIDATE_EMAIL)) {
+            $error = 'Team member needs a name and a valid email address.';
+        } else {
+            try {
+                $q = $pdo->prepare('SELECT id, role, is_admin FROM users WHERE LOWER(email) = ?');
+                $q->execute([$temail]);
+                $existing = $q->fetch(PDO::FETCH_ASSOC);
+                if ($existing && !$existing['is_admin'] && $existing['role'] !== 'dealer') {
+                    $error = 'That email belongs to a non-dealer portal user; use a different address.';
+                } else {
+                    $token = bin2hex(random_bytes(32));
+                    if ($existing) {
+                        $uid = (int)$existing['id'];
+                    } else {
+                        // Login exists but no usable password yet: they set it via the invite link.
+                        $seed = bin2hex(random_bytes(16));
+                        $ins = $pdo->prepare("INSERT INTO users (email, password, name, role, status, created_at)
+                                              VALUES (?, ?, ?, 'dealer', 'active', NOW()) RETURNING id");
+                        $ins->execute([$temail, password_hash($seed, PASSWORD_DEFAULT), $tname]);
+                        $uid = (int)$ins->fetchColumn();
+                    }
+                    // Reuse the existing password-reset mechanism for the invite link.
+                    $pdo->prepare("UPDATE users SET remember_token = ?, remember_token_expires = ? WHERE id = ?")
+                        ->execute([hash('sha256', $token), date('Y-m-d H:i:s', time() + 7 * 86400), $uid]);
+                    $pdo->prepare("INSERT INTO dealer_users (dealer_id, user_id, role, status, updated_at)
+                                   VALUES (?, ?, ?, 'active', NOW())
+                                   ON CONFLICT (user_id) DO UPDATE SET dealer_id = EXCLUDED.dealer_id,
+                                     role = EXCLUDED.role, status = 'active', updated_at = NOW()")
+                        ->execute([$did, $uid, $trole]);
+                    $link = portal_base_url() . '/portal/reset-password.php?token=' . $token;
+                    $dealer_name = $d['company_name'] ?: ($d['full_name'] ?: 'your dealership');
+                    $html = '<p>Hi ' . htmlspecialchars($tname) . ',</p>'
+                          . '<p>You have been added to the <strong>' . htmlspecialchars((string)$dealer_name) . '</strong> sales team on the Blue Mogul Partner Portal as <strong>' . htmlspecialchars($trole) . '</strong>.</p>'
+                          . '<p>Set your password to activate the account:</p>'
+                          . '<p><a href="' . htmlspecialchars($link) . '">Set my password</a></p>'
+                          . '<p>This link expires in 7 days. If it has expired, use "Forgot password" on the portal.</p>'
+                          . '<p>— Blue Mogul Enterprise LLC</p>';
+                    $sent = send_email($temail, 'Your Blue Mogul Partner Portal login', $html, "Set your password: $link\nLink expires in 7 days.");
+                    $success = 'Team member added (' . htmlspecialchars($trole) . '). '
+                             . ($sent ? 'Invite emailed to ' . htmlspecialchars($temail) . '.' : 'Email could not be sent — send them this link: ' . htmlspecialchars($link));
+                }
+            } catch (Throwable $e) { $error = 'Could not add team member: ' . $e->getMessage(); }
+        }
+    }
+
+    if (isset($_POST['team_role'])) {
+        $mid = (int)($_POST['member_id'] ?? 0);
+        $trole = in_array(($_POST['team_role'] ?? ''), ['owner', 'manager', 'sales'], true) ? $_POST['team_role'] : 'sales';
+        try {
+            $pdo->prepare("UPDATE dealer_users SET role = ?, updated_at = NOW() WHERE id = ? AND dealer_id = ?")
+                ->execute([$trole, $mid, $did]);
+            $success = 'Team role updated.';
+        } catch (Throwable $e) { $error = $e->getMessage(); }
+    }
+
+    if (isset($_POST['team_toggle'])) {
+        $mid = (int)($_POST['member_id'] ?? 0);
+        try {
+            $pdo->prepare("UPDATE dealer_users SET status = CASE WHEN status = 'active' THEN 'inactive' ELSE 'active' END, updated_at = NOW()
+                            WHERE id = ? AND dealer_id = ?")->execute([$mid, $did]);
+            // Deactivating also blocks their login so a removed rep cannot sign in.
+            $pdo->prepare("UPDATE users u SET status = CASE WHEN du.status = 'active' THEN 'active' ELSE 'inactive' END
+                            FROM dealer_users du WHERE du.user_id = u.id AND du.id = ? AND du.dealer_id = ?")
+                ->execute([$mid, $did]);
+            $success = 'Team member status updated.';
+        } catch (Throwable $e) { $error = $e->getMessage(); }
+    }
+
     if (isset($_POST['update_dealer'])) {
         $pdo->prepare("UPDATE dealers SET company_name=?,commission_rate=?,status=?,notes=?,full_name=? WHERE id=?")
             ->execute([trim($_POST['company_name'] ?? ''??''), max(0,min(100,(float)($_POST['commission_rate'] ?? 10??10))), $_POST['status']??'active', trim($_POST['notes'] ?? ''??''), trim($_POST['user_name']??''), $did]);
@@ -130,6 +204,16 @@ try {
     $q = $pdo->prepare("SELECT * FROM dealer_payouts WHERE dealer_id=? ORDER BY id DESC LIMIT 12");
     $q->execute([$did]); $dpayouts = $q->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) { $payable = []; $dpayouts = []; }
+
+// ── Sales team (dealer tenant membership) ────────────────────────────────────
+$team = [];
+try {
+    $q = $pdo->prepare("SELECT du.id, du.role, du.status, du.commission_rate_override, du.created_at,
+                               u.id AS user_id, u.name, u.email, u.status AS user_status, u.last_login
+                          FROM dealer_users du JOIN users u ON u.id = du.user_id
+                         WHERE du.dealer_id = ? ORDER BY CASE du.role WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END, u.name");
+    $q->execute([$did]); $team = $q->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) { $team = []; }
 
 $currentMethod = $d['payout_method'] ?? 'manual';
 $currentDest   = $currentMethod === 'paypal'         ? ($d['paypal_email'] ?? '')
@@ -461,6 +545,95 @@ $ord_cfg=['pending'=>'bg-yellow-100 text-yellow-800','in_progress'=>'bg-blue-100
                 <?php else: ?>
                 <p class="text-xs text-gray-400 text-center py-2">No PayPal / Stripe Connect payouts recorded yet.</p>
                 <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Sales team (dealer tenant membership) -->
+        <div class="bg-white rounded-xl border border-gray-200 mb-4" data-testid="card-dealer-team">
+            <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                <h3 class="font-semibold text-gray-900 text-sm"><i class="fas fa-users-gear text-indigo-500 mr-2"></i>Sales team</h3>
+                <span class="text-xs text-gray-400"><?= count($team) ?> member<?= count($team) === 1 ? '' : 's' ?> · this dealer's tenant</span>
+            </div>
+            <div class="p-5 space-y-4">
+                <?php if ($team): ?>
+                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                            <tr><th class="text-left px-3 py-2">Name</th><th class="text-left px-3 py-2">Email</th><th class="text-left px-3 py-2">Role</th><th class="text-left px-3 py-2">Status</th><th class="text-left px-3 py-2">Last login</th><th class="px-3 py-2"></th></tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-50">
+                        <?php foreach ($team as $m): ?>
+                            <tr data-testid="row-team-<?= (int)$m['id'] ?>">
+                                <td class="px-3 py-2 font-medium text-gray-900"><?= htmlspecialchars((string)$m['name']) ?></td>
+                                <td class="px-3 py-2 text-xs text-gray-600"><?= htmlspecialchars((string)$m['email']) ?></td>
+                                <td class="px-3 py-2">
+                                    <form method="post" class="flex items-center gap-1">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="team_role" value="1">
+                                        <input type="hidden" name="member_id" value="<?= (int)$m['id'] ?>">
+                                        <select name="team_role" class="px-2 py-1 border border-gray-300 rounded text-xs">
+                                            <?php foreach (['owner'=>'Owner','manager'=>'Manager','sales'=>'Sales'] as $rv=>$rl): ?>
+                                            <option value="<?= $rv ?>" <?= $m['role'] === $rv ? 'selected' : '' ?>><?= $rl ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <button class="text-[11px] text-blue-600 hover:underline">save</button>
+                                    </form>
+                                </td>
+                                <td class="px-3 py-2">
+                                    <?php $isActive = ($m['status'] ?? '') === 'active' && ($m['user_status'] ?? '') !== 'inactive'; ?>
+                                    <span class="text-xs px-2 py-0.5 rounded-full <?= $isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600' ?>"><?= $isActive ? 'active' : 'inactive' ?></span>
+                                </td>
+                                <td class="px-3 py-2 text-xs text-gray-500"><?= $m['last_login'] ? fmt_date($m['last_login'], 'M j, Y') : 'never' ?></td>
+                                <td class="px-3 py-2 text-right">
+                                    <form method="post" class="inline">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="team_toggle" value="1">
+                                        <input type="hidden" name="member_id" value="<?= (int)$m['id'] ?>">
+                                        <button class="text-xs px-2.5 py-1 rounded border border-gray-300 hover:bg-gray-50" data-testid="button-team-toggle-<?= (int)$m['id'] ?>">
+                                            <?= $isActive ? 'Deactivate' : 'Activate' ?>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php else: ?>
+                <p class="text-xs text-gray-400 border border-dashed border-gray-200 rounded-lg px-3 py-4 text-center">
+                    No logins on this dealer yet — add the owner first so they can sign into the partner portal.
+                </p>
+                <?php endif; ?>
+
+                <form method="post" class="grid grid-cols-1 md:grid-cols-4 gap-2 items-end" data-testid="form-team-add">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="team_add" value="1">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                        <input name="team_name" placeholder="Rep name" class="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Email (login)</label>
+                        <input name="team_email" type="email" placeholder="rep@dealer.com" class="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                        <select name="team_role" class="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                            <option value="sales">Sales</option>
+                            <option value="manager">Manager</option>
+                            <option value="owner">Owner</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium" data-testid="button-team-invite">
+                            <i class="fas fa-paper-plane mr-1"></i>Send invite
+                        </button>
+                    </div>
+                </form>
+                <p class="text-[11px] text-gray-500">
+                    The invite emails a set-password link (valid 7 days). Deactivating a member also blocks their login.
+                    Money still flows Blue Mogul → dealer: reps are paid by the dealer, so no separate payout destination is needed.
+                </p>
             </div>
         </div>
 

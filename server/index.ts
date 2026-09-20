@@ -941,14 +941,19 @@ app.post("/portal/api/admin/hostwinds/services/retry", async (req, res) => {
 // dealer portal. SECURITY: the dealer id is ALWAYS taken from the session —
 // never from the request body — so a dealer can only ever touch their own
 // payout details and their own connected account.
-function requireDealer(req: any, res: any): { dealerId: number; name: string | null } | null {
+function requireDealer(req: any, res: any): { dealerId: number; name: string | null; role: string; userId: number | null } | null {
   const sess = (req as any).session?.portalUser;
   const dealerId = Number(sess?.dealer_id || 0);
   if (!Number.isFinite(dealerId) || dealerId <= 0) {
     res.status(403).json({ error: "Dealer login required" });
     return null;
   }
-  return { dealerId, name: sess?.user_name ?? null };
+  return {
+    dealerId,
+    name: sess?.user_name ?? null,
+    role: String(sess?.dealer_role || "sales"),
+    userId: Number(sess?.user_id || 0) || null,
+  };
 }
 
 app.get("/portal/api/dealer/payout-profile", async (req, res) => {
@@ -1600,13 +1605,30 @@ async function handleLogin(req: Request, res: Response) {
       return res.json({ success: false, message: 'Your account has been deactivated. Please contact support.' });
     }
 
-    // Look up dealer_id if user has dealer role
+    // Resolve the dealer this user belongs to. A dealer is a tenant: membership lives
+    // in dealer_users (role owner|manager|sales). dealers.user_id is the legacy
+    // single-login fallback, so pre-existing dealers keep working unchanged.
     let dealer_id: number | null = null;
+    let dealer_role: string | null = null;
     if ((user.role || 'user') === 'dealer') {
-      const dResult = await webhookPool.query(
-        'SELECT id FROM dealers WHERE user_id = $1 LIMIT 1', [user.id]
+      const mResult = await webhookPool.query(
+        `SELECT du.dealer_id, du.role
+           FROM dealer_users du
+           JOIN dealers d ON d.id = du.dealer_id
+          WHERE du.user_id = $1 AND COALESCE(du.status,'active') = 'active'
+            AND COALESCE(d.status,'active') <> 'suspended'
+          LIMIT 1`,
+        [user.id]
       ).catch(() => ({ rows: [] as any[] }));
-      if (dResult.rows.length) dealer_id = dResult.rows[0].id;
+      if (mResult.rows.length) {
+        dealer_id = mResult.rows[0].dealer_id;
+        dealer_role = mResult.rows[0].role || 'sales';
+      } else {
+        const dResult = await webhookPool.query(
+          'SELECT id FROM dealers WHERE user_id = $1 LIMIT 1', [user.id]
+        ).catch(() => ({ rows: [] as any[] }));
+        if (dResult.rows.length) { dealer_id = dResult.rows[0].id; dealer_role = 'owner'; }
+      }
     }
 
     // Set session
@@ -1618,6 +1640,7 @@ async function handleLogin(req: Request, res: Response) {
       user_role: user.role || 'user',
       role: Boolean(user.is_admin) ? 'admin' : (user.role || 'user'),
       dealer_id,
+      dealer_role,
       logged_in_at: Math.floor(Date.now() / 1000),
       last_activity: Math.floor(Date.now() / 1000),
     };

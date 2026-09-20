@@ -827,4 +827,39 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Dealer payout migration error:", err.message);
               }
+
+              // ── Dealer tenancy: sales team + per-salesperson attribution ────
+              // A dealer is a tenant; dealer_users is its membership. dealers.user_id
+              // stays as the legacy single-login fallback, so existing dealers keep
+              // working without a data migration.
+              try {
+                await db.execute(sql`
+                  CREATE TABLE IF NOT EXISTS dealer_users (
+                    id SERIAL PRIMARY KEY,
+                    dealer_id INTEGER REFERENCES dealers(id) ON DELETE CASCADE,
+                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    role VARCHAR(20) DEFAULT 'sales',
+                    status VARCHAR(20) DEFAULT 'active',
+                    commission_rate_override NUMERIC(5,2),
+                    invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (user_id)
+                  )
+                `);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS dealer_users_dealer_idx ON dealer_users (dealer_id)`);
+                await db.execute(sql`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS sales_user_id INTEGER`);
+                await db.execute(sql`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS sales_name VARCHAR(120)`);
+                await db.execute(sql`ALTER TABLE dealer_commissions ADD COLUMN IF NOT EXISTS sales_user_id INTEGER`);
+                await db.execute(sql`ALTER TABLE dealer_commissions ADD COLUMN IF NOT EXISTS sales_name VARCHAR(120)`);
+                // Backfill: every dealer's existing single login becomes their 'owner' membership.
+                await db.execute(sql`
+                  INSERT INTO dealer_users (dealer_id, user_id, role, status)
+                  SELECT id, user_id, 'owner', 'active' FROM dealers WHERE user_id IS NOT NULL
+                  ON CONFLICT (user_id) DO NOTHING
+                `);
+                console.log("[migrations] Dealer tenancy migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Dealer tenancy migration error:", err.message);
+              }
             }
