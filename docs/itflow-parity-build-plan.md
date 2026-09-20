@@ -32,7 +32,7 @@ bearer token in `system_settings.wave_token`, OAuth client id/secret also stored
 
 | Slice | Data model | Endpoints / pages | Acceptance |
 |---|---|---|---|
-| **1a Credential vault** | `credentials` (client_id, asset_id, service_id, label, username, secret_cipher, otp_secret_cipher, url, notes, category, rotation_days, last_rotated_at, created_by), `credential_tags` | `GET/POST /api/admin/credentials`, `POST /api/admin/credentials/:id/reveal` (audited), `admin-credentials.php`, client-profile tab | Secrets encrypted at rest with a key derived from `PORTAL_SECRET`; plaintext never sent to the list view; every reveal writes `activity_log` |
+| **1a Credential vault** | `credentials` (client_id, asset_id, service_id, label, username, secret_cipher, otp_secret_cipher, url, notes, category, key_version, rotation_days, last_rotated_at, created_by), `credential_tags` | `GET /api/admin/credentials[/status]`, `POST /api/admin/credentials`, `POST /api/admin/credentials/:id/{reveal,rotate,update}`, `GET /api/admin/clients/:id/credentials`, `admin-credentials.php` (sidebar: Credentials) | **BUILT + VERIFIED 2026-09-20** (commit `5dc8359`). AES-256-GCM, key = HKDF(PORTAL_SECRET) and never stored; list is metadata-only (proved: plaintext and ciphertext both absent from the API response); reveal/rotate each write `activity_log`; unauth 403; rotate makes the old value unrecoverable |
 | **1b Software licences** | `software` (name, vendor, licence_type), `software_keys` (software_id, client_id, asset_id, key_cipher, seats, expires_at, cost) | `admin-software.php` + API | Per-client licence list with seats/expiry; expiring-in-30-days alert |
 | **1c Domain & certificate expiry** | `domains` (client_id, name, registrar, expires_at, auto_renew), `domain_history`, `certificates` (hostname, issuer, expires_at, last_checked_at), `certificate_history` | Node prober (RDAP + TLS handshake) on the daily cron, `admin-domains.php` | Daily check; expiry buckets 30/14/7 days surface on the dashboard; history rows appended on change |
 
@@ -122,6 +122,18 @@ better candidate; Wave then serves as a secondary revenue view.
 | **6d Per-user-per-client RBAC** | `user_client_permissions`, `api_keys` as first-class records | Roles matrix exists; per-client scoping not started |
 | **6e Saved payment methods** | `client_saved_payment_methods` (Stripe PM id) | Needed for auto-top-up |
 | **6f Vendors + AP documents** | `vendors`, `vendor_documents`, `vendor_credentials` | Wave vendors mirrored (3); no doc/credential store |
+
+## Shipped since this plan was written (not ITFlow-parity items)
+
+- **Dealer multi-tenancy (P1-P4)**: `dealer_users` tenant roles, sales attribution on orders, dealer-owned leads with
+  lead→order auto-fill, dealer customers promoted to real portal clients (`clients.dealer_id`), per-rep commission
+  attribution + reporting, two payout rails (PayPal, Stripe Connect).
+- **Hostwinds sell loop**: reseller provisioning from a paid order (prepaid wallet and Stripe paths), credentials
+  emailed, retry endpoint. Blocked on reseller credit.
+- **Portal-wide fix**: `PDO::ATTR_EMULATE_PREPARES => true` in `config.php` — ended the `cached plan must not change
+  result type` class of 500s/truncated pages that had silently broken several pages.
+- **Read-only client snapshot for dealers** on the dealer customer page (services, invoice status, open tickets),
+  gated on `clients.dealer_id`.
 
 ## Decisions needed from Tracey
 
