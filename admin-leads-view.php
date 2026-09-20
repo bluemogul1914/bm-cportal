@@ -10,6 +10,12 @@ if (!$lead_id) { portal_redirect("admin-leads-list.php"); }
 
 $lead = $pdo->prepare("SELECT * FROM leads WHERE id=?");
 $lead->execute([$lead_id]);
+// Partner assignment options: every dealer plus each dealer's active team members.
+$partner_dealers = []; $partner_members = [];
+try {
+    $partner_dealers = $pdo->query("SELECT id, COALESCE(NULLIF(company_name,''), NULLIF(full_name,''), 'Dealer ' || id) AS nm FROM dealers ORDER BY nm")->fetchAll(PDO::FETCH_ASSOC);
+    $partner_members = $pdo->query("SELECT du.dealer_id, du.user_id, du.role, u.name FROM dealer_users du JOIN users u ON u.id = du.user_id WHERE COALESCE(du.status,'active') = 'active' ORDER BY u.name")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) { $partner_dealers = []; $partner_members = []; }
 $lead = $lead->fetch(PDO::FETCH_ASSOC);
 if (!$lead) { portal_redirect("admin-leads-list.php"); }
 
@@ -51,6 +57,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $lead['pipeline_status'] = $stat;
                 $success_msg = "Pipeline updated to ".ucwords(str_replace('_',' ',$stat)).".";
             }
+
+        // Partner (dealer tenant) assignment — Blue Mogul can hand a lead to a dealer
+        } elseif ($action === 'set_partner') {
+            $pdealer = (int)($_POST['partner_dealer_id'] ?? 0) ?: null;
+            $prep    = (int)($_POST['partner_user_id'] ?? 0) ?: null;
+            if ($prep !== null) {
+                if ($pdealer === null) { $prep = null; }
+                else {
+                    $ck = $pdo->prepare("SELECT 1 FROM dealer_users WHERE dealer_id = ? AND user_id = ? AND COALESCE(status,'active') = 'active'");
+                    $ck->execute([$pdealer, $prep]);
+                    if (!$ck->fetchColumn()) $prep = null;   // that rep is not on that dealer's team
+                }
+            }
+            $pdo->prepare("UPDATE leads SET dealer_id = ?, assigned_user_id = ?, updated_at = NOW() WHERE id = ?")
+                ->execute([$pdealer, $prep, $lead_id]);
+            $lead['dealer_id'] = $pdealer;
+            $lead['assigned_user_id'] = $prep;
+            $pdo->prepare("INSERT INTO lead_activities (lead_id,action,actor) VALUES (?,?,?)")
+                ->execute([$lead_id, 'Partner assignment updated', $_SESSION['user_name'] ?? 'Admin']);
+            $success_msg = $pdealer ? 'Lead assigned to partner — it now appears in that dealer\'s portal.' : 'Partner assignment cleared.';
 
         // Update deal value
         } elseif ($action === 'update_deal') {
@@ -197,6 +223,54 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
             </form>
             <?php endforeach; ?>
         </div>
+    </div>
+
+    <!-- Partner (dealer tenant) assignment -->
+    <div class="bg-white rounded-xl border border-gray-200 p-4 mt-4" data-testid="card-lead-partner">
+        <div class="flex flex-wrap items-center gap-3">
+            <span class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><i class="fas fa-handshake text-indigo-500 mr-1"></i>Partner assignment</span>
+            <form method="POST" class="flex flex-wrap items-center gap-2">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="set_partner">
+                <select name="partner_dealer_id" id="pk-dealer" class="px-2 py-1.5 border border-gray-300 rounded-lg text-sm" onchange="pkFilter()" data-testid="select-lead-dealer">
+                    <option value="">— no partner —</option>
+                    <?php foreach ($partner_dealers as $pd): ?>
+                    <option value="<?= (int)$pd['id'] ?>" <?= (int)($lead['dealer_id'] ?? 0) === (int)$pd['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string)$pd['nm']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select name="partner_user_id" id="pk-user" class="px-2 py-1.5 border border-gray-300 rounded-lg text-sm" data-testid="select-lead-rep">
+                    <option value="">— unassigned rep —</option>
+                    <?php foreach ($partner_members as $pm): ?>
+                    <option value="<?= (int)$pm['user_id'] ?>" data-dealer="<?= (int)$pm['dealer_id'] ?>"
+                            <?= (int)($lead['assigned_user_id'] ?? 0) === (int)$pm['user_id'] ? 'selected' : '' ?>>
+                        <?= htmlspecialchars((string)$pm['name']) ?> (<?= htmlspecialchars((string)$pm['role']) ?>)
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+                <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium" data-testid="button-lead-partner">Save</button>
+            </form>
+            <span class="text-[11px] text-gray-500">
+                <?php if (!empty($lead['dealer_id'])): ?>Held by a partner — visible in that dealer's Leads page.<?php else: ?>Assigning hands this lead to the dealer's own portal.<?php endif; ?>
+            </span>
+        </div>
+        <script>
+        /* Only show reps that belong to the selected dealer. */
+        function pkFilter() {
+            var d = document.getElementById('pk-dealer').value;
+            var u = document.getElementById('pk-user');
+            var cur = u.value, kept = false;
+            for (var i = 0; i < u.options.length; i++) {
+                var o = u.options[i];
+                var od = o.getAttribute('data-dealer');
+                var show = (!od) || (d && od === d);
+                o.style.display = show ? '' : 'none';
+                if (!show && o.selected) { o.selected = false; }
+                if (show && o.value === cur) kept = true;
+            }
+            if (!kept) u.value = '';
+        }
+        pkFilter();
+        </script>
     </div>
 
     <!-- Tabs -->

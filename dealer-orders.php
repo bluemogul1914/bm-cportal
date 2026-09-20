@@ -17,6 +17,17 @@ try {
     $tq->execute([$dealer['id']]); $team = $tq->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) { $team = []; }
 
+// Open leads owned by THIS dealer — the New Order form's picker fills from these.
+$lead_pick = [];
+try {
+    $lq = $pdo->prepare("SELECT id, COALESCE(name, full_name) AS lead_name, email, phone, street, city, zip_code,
+                                COALESCE(company, company_name) AS lead_company
+                           FROM leads
+                          WHERE dealer_id = ? AND COALESCE(status,'new') NOT IN ('won','lost')
+                          ORDER BY created_at DESC LIMIT 200");
+    $lq->execute([$dealer['id']]); $lead_pick = $lq->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) { $lead_pick = []; }
+
 $product_labels = [
     'frontier_fiber'  => 'Frontier Fiber',
     'xfinity_prepaid' => 'Xfinity Prepaid Internet',
@@ -65,6 +76,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($sales_name === null) $sales_user_id = null; // id not on this dealer's team — ignore it
         }
         if ($sales_name === null && $sales_name_in !== '') $sales_name = mb_substr($sales_name_in, 0, 120);
+
+        // Optional: the order came from one of this dealer's leads. Validate against the
+        // dealer's own open leads, then close the loop on conversion below.
+        $lead_id_in = (int)($_POST['lead_id'] ?? 0);
+        $lead_id = null;
+        if ($lead_id_in) {
+            foreach ($lead_pick as $lp) { if ((int)$lp['id'] === $lead_id_in) { $lead_id = $lead_id_in; break; } }
+        }
         $product_label    = $product_labels[$product_line] ?? $product_line;
 
         // ── 1. Insert dealer order (RETURNING id) ─────────────
@@ -72,8 +91,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             "INSERT INTO dealer_orders
                (dealer_id, order_ref, client_name, client_email, client_phone,
                 service_address, product_line, plan_name, plan_price_cents,
-                spiff_cents, tier_at_order, dealer_notes, sales_user_id, sales_name)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                spiff_cents, tier_at_order, dealer_notes, sales_user_id, sales_name, lead_id)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
              RETURNING id"
         );
         $ins->execute([
@@ -83,9 +102,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $plan_name ?: null,
             $plan_price_cents,
             $spiff_cents, $tier, $dealer_notes ?: null,
-            $sales_user_id, $sales_name,
+            $sales_user_id, $sales_name, $lead_id,
         ]);
         $order_id = (int)$ins->fetchColumn();
+
+        // Lead -> won, linked to the order that came out of it. Scoped by dealer_id.
+        if ($lead_id) {
+            try {
+                $pdo->prepare("UPDATE leads SET status = 'won', pipeline_status = 'activation_won',
+                                                 converted_order_id = ?, last_contacted = NOW(), updated_at = NOW()
+                                WHERE id = ? AND dealer_id = ?")->execute([$order_id, $lead_id, $dealer['id']]);
+                $pdo->prepare("INSERT INTO lead_activities (lead_id, action, actor) VALUES (?,?,?)")
+                    ->execute([$lead_id, 'Converted to dealer order ' . $order_ref, $dealer['full_name']]);
+            } catch (Throwable $e) { /* conversion bookkeeping must never break the order */ }
+        }
 
         $ticket_id  = null;
         $invoice_id = null;
@@ -248,6 +278,47 @@ $all_orders = $history->fetchAll();
 
         <form method="POST">
         <?= csrf_field() ?>
+          <?php
+          $pre_lead = (int)($_POST['lead_id'] ?? ($_GET['lead_id'] ?? 0));
+          ?>
+          <?php if ($lead_pick): ?>
+          <div class="form-group" style="background:var(--blue-bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px;">
+            <label class="form-label" style="margin-bottom:6px;">Start from a lead <span style="color:var(--text-lt);font-weight:400;">(fills the client fields below)</span></label>
+            <select name="lead_id" id="lead-picker" class="form-control" onchange="bmFillFromLead(this)" data-testid="select-lead-picker">
+              <option value="">— no lead / new customer —</option>
+              <?php foreach ($lead_pick as $lp): ?>
+              <option value="<?= (int)$lp['id'] ?>"
+                      data-name="<?= htmlspecialchars((string)($lp['lead_name'] ?? '')) ?>"
+                      data-email="<?= htmlspecialchars((string)($lp['email'] ?? '')) ?>"
+                      data-phone="<?= htmlspecialchars((string)($lp['phone'] ?? '')) ?>"
+                      data-address="<?= htmlspecialchars(trim(($lp['street'] ?? '') . ' ' . ($lp['city'] ?? '') . ' ' . ($lp['zip_code'] ?? ''))) ?>"
+                      <?= $pre_lead === (int)$lp['id'] ? 'selected' : '' ?>>
+                <?= htmlspecialchars(trim(($lp['lead_name'] ?? 'Lead') . (($lp['lead_company'] ?? '') ? ' · ' . $lp['lead_company'] : '') . (($lp['email'] ?? '') ? ' · ' . $lp['email'] : ''))) ?>
+              </option>
+              <?php endforeach; ?>
+            </select>
+            <div style="font-size:11px;color:var(--text-lt);margin-top:6px;">Picking a lead fills name, email, phone and service address — and marks that lead won when the order is submitted.</div>
+          </div>
+          <script>
+          /* Auto-fill the client fields from the selected lead (only empties — never
+             clobbers something the dealer already typed). */
+          function bmFillFromLead(sel) {
+            var o = sel.options[sel.selectedIndex];
+            if (!o || !o.value) return;
+            var map = { client_name: 'name', client_email: 'email', client_phone: 'phone', service_address: 'address' };
+            for (var field in map) {
+              var el = document.querySelector('[name="' + field + '"]');
+              var v = o.getAttribute('data-' + map[field]) || '';
+              if (el && v && !el.value.trim()) el.value = v;
+            }
+          }
+          document.addEventListener('DOMContentLoaded', function () {
+            var s = document.getElementById('lead-picker');
+            if (s && s.value) bmFillFromLead(s);   /* prefill when arriving from a lead row */
+          });
+          </script>
+          <?php endif; ?>
+
           <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-lt);margin-bottom:10px;">Client information</div>
 
           <div class="form-group">

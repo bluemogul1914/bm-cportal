@@ -862,4 +862,16 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Dealer tenancy migration error:", err.message);
               }
+
+              // ── Dealer leads (P2): tenant-owned leads + lead→order conversion ──
+              try {
+                await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS dealer_id INTEGER`);
+                await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS assigned_user_id INTEGER`);
+                await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS converted_order_id INTEGER`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS leads_dealer_idx ON leads (dealer_id)`);
+                await db.execute(sql`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS lead_id INTEGER`);
+                console.log("[migrations] Dealer lead migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Dealer lead migration error:", err.message);
+              }
             }

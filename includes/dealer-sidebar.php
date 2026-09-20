@@ -19,6 +19,11 @@
                 <span>Dashboard</span>
             </a>
 
+            <a href="dealer-leads.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?= $current_page==='dealer-leads.php' ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition' ?>" data-testid="link-dealer-leads">
+                <i class="fas fa-user-plus w-5 text-sky-400"></i>
+                <span>Leads</span>
+            </a>
+
             <a href="dealer-orders.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?= $current_page==='dealer-orders.php' ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition' ?>" data-testid="link-dealer-orders">
                 <i class="fas fa-clipboard-list w-5 text-green-400"></i>
                 <span>Submit Order</span>
