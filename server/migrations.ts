@@ -874,4 +874,19 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Dealer lead migration error:", err.message);
               }
+
+              // ── Dealer customers become real portal clients (P3) ────────────
+              // clients.dealer_id attributes an originated client to its dealer, so the
+              // relationship survives the dealer leaving the program (owner's reason for
+              // wanting real client records rather than dealer-private ones).
+              try {
+                await db.execute(sql`ALTER TABLE dealer_customers ADD COLUMN IF NOT EXISTS client_id INTEGER`);
+                await db.execute(sql`ALTER TABLE dealer_customers ADD COLUMN IF NOT EXISTS assigned_user_id INTEGER`);
+                await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS dealer_id INTEGER`);
+                await db.execute(sql`ALTER TABLE dealer_orders ADD COLUMN IF NOT EXISTS client_id INTEGER`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS clients_dealer_idx ON clients (dealer_id)`);
+                console.log("[migrations] Dealer customer-to-client migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Dealer lead migration error:", err.message);
+              }
             }

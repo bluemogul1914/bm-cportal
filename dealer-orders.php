@@ -7,6 +7,37 @@ $pdo    = get_db();
 
 $success = $error = '';
 
+/**
+ * Find or create the PORTAL CLIENT for a dealer's customer and attribute it to the
+ * dealer. A dealer customer must exist as a real client (Clients/CRM) so the
+ * relationship survives the dealer leaving the program.
+ */
+function bm_ensure_dealer_client(PDO $pdo, array $dealer, array $c): ?int {
+    $email = strtolower(trim((string)($c['email'] ?? '')));
+    try {
+        if ($email !== '') {
+            $q = $pdo->prepare("SELECT id FROM clients WHERE LOWER(email) = ? LIMIT 1");
+            $q->execute([$email]);
+            $id = (int)$q->fetchColumn();
+            if ($id) {
+                // Attribute only if unattributed (never steal another dealer's client),
+                // and top up contact details we now know.
+                $pdo->prepare("UPDATE clients SET dealer_id = COALESCE(dealer_id, ?),
+                                  phone = COALESCE(NULLIF(?, ''), phone),
+                                  address = COALESCE(NULLIF(?, ''), address),
+                                  updated_at = NOW() WHERE id = ?")
+                    ->execute([(int)$dealer['id'], (string)($c['phone'] ?? ''), (string)($c['address'] ?? ''), $id]);
+                return $id;
+            }
+        }
+        $ins = $pdo->prepare("INSERT INTO clients (name, email, phone, address, status, dealer_id, created_at, updated_at)
+                              VALUES (?,?,?,?, 'active', ?, NOW(), NOW()) RETURNING id");
+        $ins->execute([($c['name'] ?: 'Client'), ($email ?: null), ($c['phone'] ?: null), ($c['address'] ?: null), (int)$dealer['id']]);
+        return (int)$ins->fetchColumn();
+    } catch (Throwable $e) { return null; }
+}
+
+
 // Active logins on this dealer's team (tenant members) — used for sales attribution.
 $team = [];
 try {
@@ -105,6 +136,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sales_user_id, $sales_name, $lead_id,
         ]);
         $order_id = (int)$ins->fetchColumn();
+
+        // ── Promote the dealer's customer to a real portal client ──────────
+        // Attributed to this dealer via clients.dealer_id, and linked back on the
+        // order and on the dealer's own customer record.
+        $client_id = bm_ensure_dealer_client($pdo, $dealer, [
+            'name'    => $client_name,
+            'email'   => $client_email,
+            'phone'   => $client_phone,
+            'address' => $service_addr,
+        ]);
+        if ($client_id) {
+            try {
+                $pdo->prepare("UPDATE dealer_orders SET client_id = ? WHERE id = ?")->execute([$client_id, $order_id]);
+                // Keep/refresh the dealer's own customer row and link it to the client.
+                $dup = $pdo->prepare("SELECT id FROM dealer_customers WHERE dealer_id = ? AND LOWER(email) = LOWER(?) LIMIT 1");
+                $dup->execute([$dealer['id'], (string)$client_email]);
+                $cust_id = (int)$dup->fetchColumn();
+                if ($cust_id) {
+                    $pdo->prepare("UPDATE dealer_customers SET client_id = ?, name = COALESCE(NULLIF(?, ''), name),
+                                      phone = COALESCE(NULLIF(?, ''), phone), address = COALESCE(NULLIF(?, ''), address),
+                                      updated_at = NOW() WHERE id = ?")
+                        ->execute([$client_id, $client_name, $client_phone, $service_addr, $cust_id]);
+                } else {
+                    $pdo->prepare("INSERT INTO dealer_customers (dealer_id, type, name, email, phone, address, client_id, created_at, updated_at)
+                                   VALUES (?, 'client', ?, ?, ?, ?, ?, NOW(), NOW())")
+                        ->execute([$dealer['id'], $client_name, ($client_email ?: null), ($client_phone ?: null), ($service_addr ?: null), $client_id]);
+                }
+            } catch (Throwable $e) { /* linking must never break the order */ }
+        }
 
         // Lead -> won, linked to the order that came out of it. Scoped by dealer_id.
         if ($lead_id) {

@@ -8,7 +8,19 @@ $user_email = $_SESSION['user_email'] ?? '';
 $user_id    = $_SESSION['user_id'];
 $pdo = getDB();
 
-$dealer = $pdo->prepare("SELECT * FROM dealers WHERE user_id=?"); $dealer->execute([$user_id]); $dealer = $dealer->fetch(PDO::FETCH_ASSOC);
+// Tenant resolution: prefer the session's dealer (works for team members added via
+// dealer_users), and fall back to the legacy single-login link on dealers.user_id.
+$dealer = null;
+if (!empty($_SESSION['dealer_id'])) {
+    $__d = $pdo->prepare("SELECT * FROM dealers WHERE id = ? LIMIT 1");
+    $__d->execute([(int)$_SESSION['dealer_id']]);
+    $dealer = $__d->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+if (!$dealer) {
+    $__d = $pdo->prepare("SELECT * FROM dealers WHERE user_id = ? LIMIT 1");
+    $__d->execute([$user_id]);
+    $dealer = $__d->fetch(PDO::FETCH_ASSOC) ?: null;
+}
 if (!$dealer) portal_redirect('/portal/dealer-dashboard.php');
 $dealer_id = $dealer['id'];
 
@@ -43,6 +55,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['convert_id'])) {
 // Delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     $pdo->prepare("DELETE FROM dealer_customers WHERE id=? AND dealer_id=?")->execute([(int)($_POST['delete_id'] ?? 0),$dealer_id]);
+}
+
+// Promote a dealer customer to a REAL portal client, attributed to this dealer.
+// (Owner's reason: the relationship must survive the dealer leaving the program.)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_to_portal'])) {
+    $cid = (int)($_POST['customer_id'] ?? 0);
+    try {
+        $q = $pdo->prepare("SELECT * FROM dealer_customers WHERE id = ? AND dealer_id = ? LIMIT 1");
+        $q->execute([$cid, $dealer_id]); $c = $q->fetch(PDO::FETCH_ASSOC);
+        if (!$c) { $error = 'Customer not found.'; }
+        elseif (!empty($c['client_id'])) { $success = 'Already linked to portal client #' . (int)$c['client_id'] . '.'; }
+        else {
+            $email = strtolower(trim((string)$c['email']));
+            $client_id = 0;
+            if ($email !== '') {
+                $f = $pdo->prepare("SELECT id FROM clients WHERE LOWER(email) = ? LIMIT 1");
+                $f->execute([$email]); $client_id = (int)$f->fetchColumn();
+            }
+            if ($client_id) {
+                // Attribute only when unattributed — never steal another dealer's client.
+                $pdo->prepare("UPDATE clients SET dealer_id = COALESCE(dealer_id, ?), updated_at = NOW() WHERE id = ?")
+                    ->execute([$dealer_id, $client_id]);
+            } else {
+                $ins = $pdo->prepare("INSERT INTO clients (name, email, phone, company, address, status, dealer_id, created_at, updated_at)
+                                      VALUES (?,?,?,?,?, 'active', ?, NOW(), NOW()) RETURNING id");
+                $ins->execute([$c['name'], ($email ?: null), ($c['phone'] ?: null), ($c['company'] ?: null), ($c['address'] ?: null), $dealer_id]);
+                $client_id = (int)$ins->fetchColumn();
+            }
+            $pdo->prepare("UPDATE dealer_customers SET client_id = ?, type = 'client', updated_at = NOW() WHERE id = ? AND dealer_id = ?")
+                ->execute([$client_id, $cid, $dealer_id]);
+            $success = 'Linked to portal client #' . $client_id . ' — attributed to your dealership.';
+        }
+    } catch (Throwable $e) { $error = 'Could not link: ' . $e->getMessage(); }
+}
+
+// Give the customer their own portal login (standard set-password invite).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['portal_invite'])) {
+    require_once 'includes/email.php';
+    $cid = (int)($_POST['customer_id'] ?? 0);
+    try {
+        $q = $pdo->prepare("SELECT * FROM dealer_customers WHERE id = ? AND dealer_id = ? LIMIT 1");
+        $q->execute([$cid, $dealer_id]); $c = $q->fetch(PDO::FETCH_ASSOC);
+        $email = $c ? strtolower(trim((string)$c['email'])) : '';
+        if (!$c || !filter_var($email, FILTER_VALIDATE_EMAIL)) { $error = 'This customer needs a valid email address first.'; }
+        else {
+            $u = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1");
+            $u->execute([$email]); $uid = (int)$u->fetchColumn();
+            if (!$uid) {
+                $seed = bin2hex(random_bytes(16));
+                $ins = $pdo->prepare("INSERT INTO users (email, password, name, role, status, created_at)
+                                      VALUES (?, ?, ?, 'user', 'active', NOW()) RETURNING id");
+                $ins->execute([$email, password_hash($seed, PASSWORD_DEFAULT), $c['name']]);
+                $uid = (int)$ins->fetchColumn();
+            }
+            $token = bin2hex(random_bytes(32));
+            $pdo->prepare("UPDATE users SET remember_token = ?, remember_token_expires = ? WHERE id = ?")
+                ->execute([hash('sha256', $token), date('Y-m-d H:i:s', time() + 7 * 86400), $uid]);
+            $link = portal_base_url() . '/portal/reset-password.php?token=' . $token;
+            $html = '<p>Hi ' . htmlspecialchars((string)$c['name']) . ',</p>'
+                  . '<p>Your Blue Mogul client portal login is ready. You can follow your service, invoices and support tickets there.</p>'
+                  . '<p><a href="' . htmlspecialchars($link) . '">Set my password</a></p>'
+                  . '<p>This link expires in 7 days.</p>';
+            $sent = send_email($email, 'Your Blue Mogul client portal login', $html, "Set your password: $link");
+            $success = $sent ? 'Portal invite emailed to ' . htmlspecialchars($email) . '.'
+                             : 'Email could not be sent — send this link: ' . htmlspecialchars($link);
+        }
+    } catch (Throwable $e) { $error = 'Invite failed: ' . $e->getMessage(); }
+}
+
+if (false) {
     $success = 'Customer removed.';
 }
 
@@ -188,6 +270,24 @@ $show_form = isset($_GET['new']);
             </div>
             <div class="flex items-center gap-3 flex-shrink-0">
                 <span class="text-xs px-2.5 py-1 rounded-full font-semibold <?= $c['type']==='client' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800' ?>"><?= ucfirst($c['type']) ?></span>
+                <?php if (!empty($c['client_id'])): ?>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold" title="Linked portal client" data-testid="chip-client-<?= $c['id'] ?>">
+                    <i class="fas fa-link mr-1"></i>client #<?= (int)$c['client_id'] ?>
+                </span>
+                <form method="post" class="inline">
+        <?= csrf_field() ?>
+                    <input type="hidden" name="portal_invite" value="1">
+                    <input type="hidden" name="customer_id" value="<?= $c['id'] ?>">
+                    <button type="submit" class="text-blue-600 hover:text-blue-700 text-sm" title="Email this customer a portal login" data-testid="button-portal-invite-<?= $c['id'] ?>"><i class="fas fa-paper-plane"></i></button>
+                </form>
+                <?php else: ?>
+                <form method="post" class="inline">
+        <?= csrf_field() ?>
+                    <input type="hidden" name="sync_to_portal" value="1">
+                    <input type="hidden" name="customer_id" value="<?= $c['id'] ?>">
+                    <button type="submit" class="text-xs border border-gray-300 rounded px-2 py-0.5 hover:bg-gray-50" title="Create the portal client record" data-testid="button-sync-client-<?= $c['id'] ?>">Sync to portal</button>
+                </form>
+                <?php endif; ?>
                 <a href="dealer-customer-detail.php?id=<?= $c['id'] ?>" class="text-gray-400 hover:text-blue-600 text-sm" title="View"><i class="fas fa-eye"></i></a>
                 <form method="post" class="inline" onsubmit="return confirm('Remove this customer?')">
         <?= csrf_field() ?>

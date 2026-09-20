@@ -8,7 +8,19 @@ $user_name  = $_SESSION['user_name'] ?? 'Dealer';
 $user_email = $_SESSION['user_email'] ?? '';
 $user_id    = $_SESSION['user_id'];
 $pdo = getDB();
-$dealer = $pdo->prepare("SELECT * FROM dealers WHERE user_id=?"); $dealer->execute([$user_id]); $dealer = $dealer->fetch(PDO::FETCH_ASSOC);
+// Tenant resolution: prefer the session's dealer (works for team members added via
+// dealer_users), and fall back to the legacy single-login link on dealers.user_id.
+$dealer = null;
+if (!empty($_SESSION['dealer_id'])) {
+    $__d = $pdo->prepare("SELECT * FROM dealers WHERE id = ? LIMIT 1");
+    $__d->execute([(int)$_SESSION['dealer_id']]);
+    $dealer = $__d->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+if (!$dealer) {
+    $__d = $pdo->prepare("SELECT * FROM dealers WHERE user_id = ? LIMIT 1");
+    $__d->execute([$user_id]);
+    $dealer = $__d->fetch(PDO::FETCH_ASSOC) ?: null;
+}
 if (!$dealer) portal_redirect('/portal/dealer-dashboard.php');
 $dealer_id = $dealer['id'];
 $cid = (int)($_GET['id'] ?? 0);
