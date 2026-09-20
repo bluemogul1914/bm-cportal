@@ -1,18 +1,25 @@
-# Blue Mogul Portal — Standalone Deployment
+# Blue Mogul Suite — standalone deployment (bundled PostgreSQL, no external DB)
 #
-# One-command bring-up: app + its own PostgreSQL, no external DB needed.
-# The app auto-migrates (runPortalMigrations) and seeds on first boot.
+# One-command bring-up: app + its own PostgreSQL. No Neon, no Coolify, no
+# managed database required.
 #
-#   cp .env.example .env      # edit secrets
+#   cp .env.example .env      # set POSTGRES_PASSWORD, SESSION_SECRET, PORTAL_SECRET
 #   docker compose up -d --build
 #   open http://localhost:3000
 #
-# Production target on the BM fleet: hills-01 (manual compose since Coolify
-# backend is down) or any Docker host. Edge TLS via Cloudflare tunnel.
+# The app auto-migrates (runPortalMigrations) and seeds on first boot.
+#
+# Decision 2026-09-20 (Tracey): this bundled stack is the portability target for
+# the portal — the product must stand up on any Docker host we control, without
+# Neon's account or Coolify's control plane. Coolify + Neon are retired for the
+# portal once the cutover is verified.
 
 services:
   db:
-    image: postgres:16-alpine
+    # Major version tracks the production source of truth. Neon runs 18.6, and
+    # pg_restore requires a server at least as new as the dump, so a 16 server
+    # here could not accept a dump taken from production.
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: bluemogul_portal
@@ -37,17 +44,64 @@ services:
       NODE_ENV: production
       PORT: 3000
       # Point the app at the bundled Postgres (no Neon/external DB).
-      DATABASE_URL: postgres://portal:${POSTGRES_PASSWORD}@db:5432/bluemogul_portal
+      # The password MUST be interpolated: a literal value here cannot match
+      # POSTGRES_PASSWORD above, and the app fails to authenticate on boot.
+      DATABASE_URL: postgres://portal:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/bluemogul_portal
       # Public URL for links, redirects, and payments. Change to your domain.
       APP_URL: ${APP_URL:-http://localhost:3000}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
-      # Optional: override AI/knowledge defaults. AnythingLLM is optional;
-      # without it the assistant uses the configured Ollama endpoint.
+      # Key material for the credential vault (AES-256-GCM, key derived via
+      # HKDF). REQUIRED when credentials are used: without it the vault cannot
+      # encrypt or decrypt, so stored secrets are unrecoverable. Do not rotate
+      # it casually.
+      PORTAL_SECRET: ${PORTAL_SECRET:?set PORTAL_SECRET in .env}
+      # true = read-only deployment: mutating endpoints are blocked and the sync
+      # cron is disabled, so a preview sharing production data cannot alter it.
+      PORTAL_SAFE_MODE: ${PORTAL_SAFE_MODE:-false}
+      # Seeds the first admin account on a fresh install.
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # ── Optional: AI ────────────────────────────────────────────────────
+      # AnythingLLM is preferred over Ollama when set. Without either, the
+      # portal's AI assistant has no engine to call.
       ANYTHINGLLM_URL: ${ANYTHINGLLM_URL:-}
-      # Optional provider keys (most are stored in system_settings instead).
+      OLLAMA_URL: ${OLLAMA_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-}
+      # ── Optional: payments ──────────────────────────────────────────────
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_PUBLIC_KEY: ${STRIPE_PUBLIC_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_ENV: ${PAYPAL_ENV:-sandbox}
+      # ── Optional: accounting (Xero = ledger of record, Wave = secondary) ─
+      WAVE_TOKEN: ${WAVE_TOKEN:-}
+      WAVE_API_URL: ${WAVE_API_URL:-}
+      XERO_CLIENT_ID: ${XERO_CLIENT_ID:-}
+      XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
+      XERO_TENANT_ID: ${XERO_TENANT_ID:-}
+      XERO_OAUTH_CLIENT_ID: ${XERO_OAUTH_CLIENT_ID:-}
+      XERO_OAUTH_CLIENT_SECRET: ${XERO_OAUTH_CLIENT_SECRET:-}
+      XERO_OAUTH_REDIRECT_URI: ${XERO_OAUTH_REDIRECT_URI:-}
+      # ── Optional: outbound mail ─────────────────────────────────────────
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-}
+      MAIL_USER: ${MAIL_USER:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      # ── Optional: infrastructure reporting ──────────────────────────────
+      GRAFANA_URL: ${GRAFANA_URL:-}
+      UPTIME_KUMA_URL: ${UPTIME_KUMA_URL:-}
+      HOSTWINDS_API_URL: ${HOSTWINDS_API_URL:-}
+      HOSTWINDS_API_EMAIL: ${HOSTWINDS_API_EMAIL:-}
+      HOSTWINDS_API_KEY: ${HOSTWINDS_API_KEY:-}
+      # ── Optional: CRM bridge ────────────────────────────────────────────
+      # Most provider credentials live in the system_settings table (set them in
+      # the admin UI); these env vars override them for this deployment.
       TWENTY_CRM_API_KEY: ${TWENTY_CRM_API_KEY:-}
       TWENTY_API_URL: ${TWENTY_API_URL:-}
     ports:
@@ -61,8 +115,27 @@ services:
       start_period: 20s
     networks: [portal]
 
+  # Nightly logical backup of the bundled database. Keeps the last
+  # ${BACKUP_RETENTION_DAYS} days in the portal_backups volume and never leaves
+  # the host by itself — copy them off-host (see DEPLOY.md, "Backups").
+  backup:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    entrypoint: ["/bin/sh", "/backup/run-backup.sh"]
+    volumes:
+      - ./scripts/backup:/backup:ro
+      - portal_backups:/backups
+    networks: [portal]
+
 volumes:
   portal_pgdata:
+  portal_backups:
 
 networks:
   portal:
