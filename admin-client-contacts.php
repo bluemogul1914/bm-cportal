@@ -20,7 +20,7 @@ $success_msg = '';
 // Load client
 $client = null;
 try {
-    $client = $pdo->prepare("SELECT * FROM clients WHERE id = ?");
+    $client = $pdo->prepare("SELECT id, user_id, name, email, phone, company, address, city, state, zip, status, credit_balance, notes, parent_id, latitude, longitude, created_at, updated_at, linkedin_url, linkedin_data, first_name, last_name, title, job_title, crm_company_id, phones, emails, social_links, tags, contact_person, client_code, website, low_balance_warned, low_balance_threshold, last_charged_at, dealer_id FROM clients WHERE id = ?");
     $client->execute([$client_id]);
     $client = $client->fetch(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {}

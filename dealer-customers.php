@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_to_portal'])) {
     $cid = (int)($_POST['customer_id'] ?? 0);
     try {
-        $q = $pdo->prepare("SELECT * FROM dealer_customers WHERE id = ? AND dealer_id = ? LIMIT 1");
+        $q = $pdo->prepare("SELECT id, dealer_id, type, name, email, phone, company, address, notes, created_at, updated_at, client_id, assigned_user_id FROM dealer_customers WHERE id = ? AND dealer_id = ? LIMIT 1");
         $q->execute([$cid, $dealer_id]); $c = $q->fetch(PDO::FETCH_ASSOC);
         if (!$c) { $error = 'Customer not found.'; }
         elseif (!empty($c['client_id'])) { $success = 'Already linked to portal client #' . (int)$c['client_id'] . '.'; }
@@ -96,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['portal_invite'])) {
     require_once 'includes/email.php';
     $cid = (int)($_POST['customer_id'] ?? 0);
     try {
-        $q = $pdo->prepare("SELECT * FROM dealer_customers WHERE id = ? AND dealer_id = ? LIMIT 1");
+        $q = $pdo->prepare("SELECT id, dealer_id, type, name, email, phone, company, address, notes, created_at, updated_at, client_id, assigned_user_id FROM dealer_customers WHERE id = ? AND dealer_id = ? LIMIT 1");
         $q->execute([$cid, $dealer_id]); $c = $q->fetch(PDO::FETCH_ASSOC);
         $email = $c ? strtolower(trim((string)$c['email'])) : '';
         if (!$c || !filter_var($email, FILTER_VALIDATE_EMAIL)) { $error = 'This customer needs a valid email address first.'; }
@@ -134,7 +134,7 @@ if ($search)      { $where[]="(name ILIKE ? OR email ILIKE ? OR company ILIKE ?)
 $wsql=implode(' AND ',$where);
 $t=$pdo->prepare("SELECT COUNT(*) FROM dealer_customers WHERE $wsql"); $t->execute($params); $total=(int)$t->fetchColumn();
 $total_pages=max(1,ceil($total/$per)); $offset=($page-1)*$per;
-$q=$pdo->prepare("SELECT * FROM dealer_customers WHERE $wsql ORDER BY updated_at DESC LIMIT $per OFFSET $offset"); $q->execute($params);
+$q=$pdo->prepare("SELECT id, dealer_id, type, name, email, phone, company, address, notes, created_at, updated_at, client_id, assigned_user_id FROM dealer_customers WHERE $wsql ORDER BY updated_at DESC LIMIT $per OFFSET $offset"); $q->execute($params);
 $customers=$q->fetchAll(PDO::FETCH_ASSOC);
 
 $s=$pdo->prepare("SELECT COUNT(*) FROM dealer_customers WHERE dealer_id=? AND type='lead'"); $s->execute([$dealer_id]); $total_leads=(int)$s->fetchColumn();

@@ -128,7 +128,7 @@ try {
     $query_params = $params;
     $query_params[] = $limit;
     $query_params[] = $offset;
-    $stmt = $pdo->prepare("SELECT * FROM clients $where_sql ORDER BY created_at DESC LIMIT ? OFFSET ?");
+    $stmt = $pdo->prepare("SELECT id, user_id, name, email, phone, company, address, city, state, zip, status, credit_balance, notes, parent_id, latitude, longitude, created_at, updated_at, linkedin_url, linkedin_data, first_name, last_name, title, job_title, crm_company_id, phones, emails, social_links, tags, contact_person, client_code, website, low_balance_warned, low_balance_threshold, last_charged_at, dealer_id FROM clients $where_sql ORDER BY created_at DESC LIMIT ? OFFSET ?");
     $stmt->execute($query_params);
     $clients = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

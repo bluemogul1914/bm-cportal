@@ -36,7 +36,7 @@ if ($pipeline) { $where[] = "pipeline_status=?"; $params[] = $pipeline; }
 
 $where_sql = $where ? 'WHERE '.implode(' AND ',$where) : '';
 $total_rows = $pdo->prepare("SELECT COUNT(*) FROM leads $where_sql"); $total_rows->execute($params); $total_rows = (int)$total_rows->fetchColumn();
-$leads_st = $pdo->prepare("SELECT * FROM leads $where_sql ORDER BY created_at DESC LIMIT $per_page OFFSET $offset");
+$leads_st = $pdo->prepare("SELECT id, name, email, phone, company, source, status, notes, linkedin_url, linkedin_data, created_at, updated_at, company_id, company_name, lead_number, full_name, pipeline_status, owner, partner, location, city, street, zip_code, geo_data, custom_status, deal_value, last_contacted, last_comments, dealer_id, assigned_user_id, converted_order_id FROM leads $where_sql ORDER BY created_at DESC LIMIT $per_page OFFSET $offset");
 $leads_st->execute($params);
 $leads = $leads_st->fetchAll(PDO::FETCH_ASSOC);
 

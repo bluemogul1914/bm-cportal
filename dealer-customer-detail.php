@@ -24,7 +24,7 @@ if (!$dealer) {
 if (!$dealer) portal_redirect('/portal/dealer-dashboard.php');
 $dealer_id = $dealer['id'];
 $cid = (int)($_GET['id'] ?? 0);
-$cust = $pdo->prepare("SELECT * FROM dealer_customers WHERE id=? AND dealer_id=?"); $cust->execute([$cid,$dealer_id]); $cust = $cust->fetch(PDO::FETCH_ASSOC);
+$cust = $pdo->prepare("SELECT id, dealer_id, type, name, email, phone, company, address, notes, created_at, updated_at, client_id, assigned_user_id FROM dealer_customers WHERE id=? AND dealer_id=?"); $cust->execute([$cid,$dealer_id]); $cust = $cust->fetch(PDO::FETCH_ASSOC);
 if (!$cust) { portal_redirect('/portal/dealer-customers.php'); }
 
 $success = ''; $error = '';
@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') require_csrf();
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
     $pdo->prepare("UPDATE dealer_customers SET type=?,name=?,email=?,phone=?,company=?,address=?,notes=?,updated_at=NOW() WHERE id=? AND dealer_id=?")
         ->execute([$_POST['type']??$cust['type'],trim($_POST['name']??''),trim($_POST['email']??''),trim($_POST['phone']??''),trim($_POST['company']??''),trim($_POST['address']??''),trim($_POST['notes']??''),$cid,$dealer_id]);
-    $cust = $pdo->prepare("SELECT * FROM dealer_customers WHERE id=?"); $cust->execute([$cid]); $cust = $cust->fetch(PDO::FETCH_ASSOC);
+    $cust = $pdo->prepare("SELECT id, dealer_id, type, name, email, phone, company, address, notes, created_at, updated_at, client_id, assigned_user_id FROM dealer_customers WHERE id=?"); $cust->execute([$cid]); $cust = $cust->fetch(PDO::FETCH_ASSOC);
     $success = 'Customer updated.';
 }
 ?>

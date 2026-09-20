@@ -8,7 +8,7 @@ try { leads_bootstrap($pdo); } catch (Exception $e) {}
 $lead_id = (int)($_GET['id'] ?? 0);
 if (!$lead_id) { portal_redirect("admin-leads-list.php"); }
 
-$lead = $pdo->prepare("SELECT * FROM leads WHERE id=?");
+$lead = $pdo->prepare("SELECT id, name, email, phone, company, source, status, notes, linkedin_url, linkedin_data, created_at, updated_at, company_id, company_name, lead_number, full_name, pipeline_status, owner, partner, location, city, street, zip_code, geo_data, custom_status, deal_value, last_contacted, last_comments, dealer_id, assigned_user_id, converted_order_id FROM leads WHERE id=?");
 $lead->execute([$lead_id]);
 // Partner assignment options: every dealer plus each dealer's active team members.
 $partner_dealers = []; $partner_members = [];
@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $vals[] = $lead_id;
             $pdo->prepare("UPDATE leads SET ".implode(',',$set).", updated_at=NOW() WHERE id=?")->execute($vals);
             $pdo->prepare("INSERT INTO lead_activities (lead_id,action,actor) VALUES (?,?,?)")->execute([$lead_id,'Update lead information',$_SESSION['user_name']??'Admin']);
-            $lead = $pdo->prepare("SELECT * FROM leads WHERE id=?"); $lead->execute([$lead_id]); $lead = $lead->fetch(PDO::FETCH_ASSOC);
+            $lead = $pdo->prepare("SELECT id, name, email, phone, company, source, status, notes, linkedin_url, linkedin_data, created_at, updated_at, company_id, company_name, lead_number, full_name, pipeline_status, owner, partner, location, city, street, zip_code, geo_data, custom_status, deal_value, last_contacted, last_comments, dealer_id, assigned_user_id, converted_order_id FROM leads WHERE id=?"); $lead->execute([$lead_id]); $lead = $lead->fetch(PDO::FETCH_ASSOC);
             $success_msg = 'Lead updated successfully.';
             $active_tab = 'information';
 
