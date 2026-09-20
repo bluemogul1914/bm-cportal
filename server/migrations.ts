@@ -927,4 +927,85 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Dealer lead migration error:", err.message);
               }
+
+              // ── Phase 1c: domains, certificates and their history ────────────
+              // Registry/TLS expiry is the failure mode clients actually get
+              // burned by, so both entities keep an append-only history: when a
+              // date moves (a registrar transfer, a renew, a new cert) the old
+              // and new values are both retained.
+              try {
+                await db.execute(sql`CREATE TABLE IF NOT EXISTS domains (
+                  id SERIAL PRIMARY KEY,
+                  client_id INTEGER,
+                  name VARCHAR(255) NOT NULL,
+                  registrar VARCHAR(255),
+                  registered_at TIMESTAMP,
+                  expires_at TIMESTAMP,
+                  auto_renew BOOLEAN DEFAULT true,
+                  status VARCHAR(40) DEFAULT 'unknown',
+                  registry_status TEXT,
+                  notes TEXT,
+                  last_checked_at TIMESTAMP,
+                  last_check_error TEXT,
+                  created_at TIMESTAMP DEFAULT NOW(),
+                  updated_at TIMESTAMP DEFAULT NOW()
+                )`);
+                await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS domains_name_uniq ON domains (lower(name))`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS domains_client_idx ON domains (client_id)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS domains_expires_idx ON domains (expires_at)`);
+
+                await db.execute(sql`CREATE TABLE IF NOT EXISTS domain_history (
+                  id SERIAL PRIMARY KEY,
+                  domain_id INTEGER NOT NULL,
+                  field VARCHAR(60) NOT NULL,
+                  old_value TEXT,
+                  new_value TEXT,
+                  at TIMESTAMP DEFAULT NOW()
+                )`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS domain_history_domain_idx ON domain_history (domain_id)`);
+
+                await db.execute(sql`CREATE TABLE IF NOT EXISTS certificates (
+                  id SERIAL PRIMARY KEY,
+                  client_id INTEGER,
+                  hostname VARCHAR(255) NOT NULL,
+                  port INTEGER DEFAULT 443,
+                  issuer VARCHAR(255),
+                  subject VARCHAR(255),
+                  serial VARCHAR(200),
+                  not_before TIMESTAMP,
+                  expires_at TIMESTAMP,
+                  sans TEXT,
+                  status VARCHAR(40) DEFAULT 'unknown',
+                  notes TEXT,
+                  last_checked_at TIMESTAMP,
+                  last_check_error TEXT,
+                  created_at TIMESTAMP DEFAULT NOW(),
+                  updated_at TIMESTAMP DEFAULT NOW()
+                )`);
+                await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS certificates_host_port_uniq ON certificates (lower(hostname), port)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS certificates_client_idx ON certificates (client_id)`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS certificates_expires_idx ON certificates (expires_at)`);
+
+                await db.execute(sql`CREATE TABLE IF NOT EXISTS certificate_history (
+                  id SERIAL PRIMARY KEY,
+                  certificate_id INTEGER NOT NULL,
+                  field VARCHAR(60) NOT NULL,
+                  old_value TEXT,
+                  new_value TEXT,
+                  at TIMESTAMP DEFAULT NOW()
+                )`);
+                await db.execute(sql`CREATE INDEX IF NOT EXISTS certificate_history_cert_idx ON certificate_history (certificate_id)`);
+
+                await db.execute(sql`CREATE TABLE IF NOT EXISTS domain_sync_runs (
+                  id SERIAL PRIMARY KEY,
+                  ok_count INTEGER DEFAULT 0,
+                  changed_count INTEGER DEFAULT 0,
+                  error_count INTEGER DEFAULT 0,
+                  errors TEXT,
+                  created_at TIMESTAMP DEFAULT NOW()
+                )`);
+                console.log("[migrations] Domain/certificate monitor migrations applied");
+              } catch (err: any) {
+                console.error("[migrations] Domain/certificate monitor migration error:", err.message);
+              }
             }

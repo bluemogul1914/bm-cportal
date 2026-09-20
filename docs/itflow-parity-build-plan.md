@@ -6,10 +6,19 @@ Source of truth for "what ITFlow has that the portal does not" · Companion to
 
 ## Objective
 
-Bring every capability ITFlow exposes (read from its live schema, 102 tables, 6 modules:
+Bring every capability ITFlow exposes (read from its live schema, 138 tables, 6 modules:
 `module_client`, `module_support`, `module_credential`, `module_sales`, `module_financial`,
 `module_reporting`) into Blue Mogul Suite, **without** regressing the things the portal does
 better (prepaid wallet, carrier ASR pre-qual, D&H ordering, dealer program, ISP network stack).
+
+> **Decision (Tracey, 2026-09-20): option A — the portal becomes the single suite.**
+> Build ITFlow parity into Blue Mogul Suite, keep ITFlow as the reference spec, and retire it
+> once parity lands. We are **not** consolidating onto ITFlow (that would cost the prepaid
+> wallet, ASR pre-qual, D&H ordering, the dealer program and the ISP stack, and would mean
+> back-porting them into PHP upstream we do not control).
+>
+> Live usage at decision time: portal 8 clients / 12 invoices / 6 tickets / 0 assets;
+> ITFlow 2 clients / 104 tickets / 1 project / 0 assets / 0 invoices. Programme ticket: ITFlow #64.
 
 Accounting source of record: **Wave Accounting** (GraphQL `gql.waveapps.com/graphql/public`,
 bearer token in `system_settings.wave_token`, OAuth client id/secret also stored).
@@ -34,7 +43,7 @@ bearer token in `system_settings.wave_token`, OAuth client id/secret also stored
 |---|---|---|---|
 | **1a Credential vault** | `credentials` (client_id, asset_id, service_id, label, username, secret_cipher, otp_secret_cipher, url, notes, category, key_version, rotation_days, last_rotated_at, created_by), `credential_tags` | `GET /api/admin/credentials[/status]`, `POST /api/admin/credentials`, `POST /api/admin/credentials/:id/{reveal,rotate,update}`, `GET /api/admin/clients/:id/credentials`, `admin-credentials.php` (sidebar: Credentials) | **BUILT + VERIFIED 2026-09-20** (commit `5dc8359`). AES-256-GCM, key = HKDF(PORTAL_SECRET) and never stored; list is metadata-only (proved: plaintext and ciphertext both absent from the API response); reveal/rotate each write `activity_log`; unauth 403; rotate makes the old value unrecoverable |
 | **1b Software licences** | `software` (name, vendor, licence_type), `software_keys` (software_id, client_id, asset_id, key_cipher, seats, expires_at, cost) | `admin-software.php` + API | Per-client licence list with seats/expiry; expiring-in-30-days alert |
-| **1c Domain & certificate expiry** | `domains` (client_id, name, registrar, expires_at, auto_renew), `domain_history`, `certificates` (hostname, issuer, expires_at, last_checked_at), `certificate_history` | Node prober (RDAP + TLS handshake) on the daily cron, `admin-domains.php` | Daily check; expiry buckets 30/14/7 days surface on the dashboard; history rows appended on change |
+| **1c Domain & certificate expiry** | `domains` (client_id, name, registrar, registered_at, expires_at, auto_renew, status, registry_status, notes, last_checked_at, last_check_error), `domain_history` (append-on-change), `certificates` (hostname, port, issuer, subject, serial, not_before, expires_at, sans, status, last_check_at/error), `certificate_history`, `domain_sync_runs` | Node prober `server/domain-monitor.ts` (RDAP + real TLS handshake) on the daily cron + `POST /portal/api/admin/domains/check`; `GET /portal/api/admin/domains[/status]`, `POST /portal/api/admin/domains`,`/domains/:id/update`, `GET /portal/api/admin/certificates`, `POST /portal/api/admin/certificates`; `admin-domains.php` (sidebar: Domains & Certs) | **BUILT + VERIFIED 2026-09-20.** Registry + TLS facts read from live endpoints; expiry buckets 30/14/7/expired; every date change appended to history; a failed probe is recorded per row and never aborts the run. Acceptance harness `scripts/acceptance-1c-domain-monitor.ts` (runs the real migration DDL against a scratch Postgres + live RDAP/TLS) — 25/25 assertions pass |
 
 ## Phase 2 — Financials (Wave) — **SLICE 1 SHIPPED 2026-09-18**
 
@@ -138,9 +147,43 @@ better candidate; Wave then serves as a secondary revenue view.
 ## Decisions needed from Tracey
 
 1. **Expenses path** (2b) — portal manual entry + receipts (recommended, ships now) vs Wave CSV import vs Wave partner API request.
-2. **Credential vault key** — derive from `PORTAL_SECRET` (no new secret to manage, recommended) or a dedicated `VAULT_KEY`.
+2. ~~**Credential vault key** — derive from `PORTAL_SECRET` or a dedicated `VAULT_KEY`.~~ **Resolved (shipped in 1a): derived via HKDF from `PORTAL_SECRET`, never stored.**
 3. **Phase order** — Phase 1 (security) first as planned, or jump to 2d/3 for client-visible wins.
 4. **Wave business scope** — mirror only *Blue Mogul Enterprise, LLC* (default) or all four businesses (Blue Mogul, GEMCOM, Personal, Sigma Phoenix)?
+
+## Durable config notes
+
+### RDAP coverage — the IANA bootstrap does not include `.us`
+
+`https://rdap.org/domain/<name>` resolves through the IANA RDAP bootstrap, which
+publishes **gTLDs only** (plus a handful of ccTLDs). `.us` is absent, so rdap.org
+answers `404 {"title":"No RDAP service is available for this resource"}` for every
+.us name — including `bluemogul.us`. The registry's own endpoint works:
+`https://rdap.nic.us/domain/<name>`.
+
+`server/domain-monitor.ts` therefore consults an explicit per-TLD table
+(`TLD_RDAP`) **before** the bootstrap. Any TLD Blue Mogul holds that is missing
+from the bootstrap needs an entry there. Three distinct failure shapes are kept
+distinct on purpose, because they need different human responses:
+
+| Probe result | Meaning | What the row shows |
+|---|---|---|
+| Registry answers 404 | The name has no registration record (unregistered, or it's a subdomain of a registered name) | `no registration record for <host>` — track the parent domain instead |
+| Every candidate is "no RDAP service" | Config gap: this TLD has no entry in `TLD_RDAP` | `no RDAP service published for .<tld>` — add the registry URL, or set the expiry by hand |
+| Timeout / 500 / TLS error | Transient network or provider fault | the raw error; the previous expiry is left untouched |
+
+The registry is authoritative: a **successful** probe overwrites a hand-entered
+expiry, and the displaced value stays in `domain_history`. A **failed** probe
+never clears an existing expiry.
+
+## Remaining work (24 slices)
+
+Phase 1: ~~1a~~ ✅, 1b, ~~1c~~ ✅ · Phase 2: ~~2a~~ ✅, 2b (needs a Wave decision), 2c, 2d,
+~~2e~~ ✅ · Phase 3: 3a–3f · Phase 4: 4a–4d · Phase 5: 5a–5d · Phase 6: 6a–6f.
+Plus the ITFlow concepts not yet sliced: recurring invoices/payments/tickets, expenses &
+revenues ledger, client credits/transfers, saved payment methods, custom fields/values,
+tags & categories, locations, per-client RBAC, first-class API keys, email queue with retry,
+document templates/versions/folders/shared links, quotes → invoice.
 
 ## Risk register
 

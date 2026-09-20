@@ -92,6 +92,10 @@
                 <i class="fas fa-key w-5 text-amber-400"></i>
                 <span>Credentials</span>
             </a>
+            <a href="admin-domains.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-domains.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-domains">
+                <i class="fas fa-globe w-5 text-amber-400"></i>
+                <span>Domains &amp; Certs</span>
+            </a>
 
             <a href="admin-billing-reminders.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-billing-reminders.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>">
                 <i class="fas fa-bell w-5"></i>

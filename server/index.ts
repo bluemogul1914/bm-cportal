@@ -47,6 +47,17 @@ import {
   XERO_SCOPES,
 } from "./xero-oauth";
 import { checkAllBalances, processPendingTopUps, processPendingServiceInvoices, activatePaidPendingSubscriptions, chargeMonthlySubscriptions } from "./balance-scheduler";
+import {
+  runDomainCertCheck,
+  expiryBuckets,
+  listDomains,
+  listCertificates,
+  createDomain,
+  updateDomain,
+  createCertificate,
+  domainHistory,
+  lastRunSummary as domainLastRun,
+} from "./domain-monitor";
 import { generateReceiptPdfBuffer } from "./receipt-pdf";
 import { generateQuotePdfBuffer } from "./quote-pdf";
 import { normalizeLineItems } from "./line-items";
@@ -208,7 +219,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "admin-work-orders.php", "admin-inventory.php", "admin-time-tracking.php", "admin-contracts.php", "admin-purchase-orders.php", "admin-ip-pools.php", "admin-network-map.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-hetzner.php", "admin-dh.php", "admin-dandh.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-xero.php",
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "admin-work-orders.php", "admin-inventory.php", "admin-time-tracking.php", "admin-contracts.php", "admin-purchase-orders.php", "admin-ip-pools.php", "admin-network-map.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-hetzner.php", "admin-dh.php", "admin-dandh.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-xero.php", "admin-domains.php",
   "dealer-register.php", "dealer-dashboard.php", "dealer-orders.php", "dealer-commissions.php",
   "dealer-leads.php", "dealer-customers.php", "dealer-customer-detail.php", "dealer-smtp.php", "dealer-payouts.php",
   "dealer-training.php", "dealer-profile.php", "dealer-spiffs.php",
@@ -1017,6 +1028,117 @@ app.get("/portal/api/admin/clients/:id/credentials", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
     res.json({ credentials: await listClientCredentials(webhookPool, id) });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Phase 1c: domains & certificate expiry (ITFlow parity) ────────────────────
+// Registry/TLS expiry tracking. Reads are metadata-only; the only writes are the
+// admin's own domain/cert records and the probe's observation columns.
+app.get("/portal/api/admin/domains/status", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const [buckets, last_run] = await Promise.all([expiryBuckets(webhookPool), domainLastRun(webhookPool)]);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ buckets, last_run });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/portal/api/admin/domains", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const clientId = req.query.client_id ? parseInt(String(req.query.client_id), 10) : undefined;
+    const domains = await listDomains(webhookPool, {
+      clientId: Number.isFinite(clientId as number) ? (clientId as number) : undefined,
+      q: req.query.q ? String(req.query.q) : undefined,
+      bucket: req.query.bucket ? String(req.query.bucket) : undefined,
+    });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ domains, count: domains.length });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/admin/domains", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const b = req.body || {};
+  try {
+    const id = await createDomain(webhookPool, {
+      name: String(b.name || ""),
+      clientId: b.client_id ? parseInt(String(b.client_id), 10) : null,
+      registrar: b.registrar ? String(b.registrar) : null,
+      // An empty date input posts "" — that must become NULL, not ''::timestamptz.
+      expiresAt: b.expires_at ? String(b.expires_at) : null,
+      autoRenew: b.auto_renew !== undefined ? !!b.auto_renew : true,
+      notes: b.notes ?? null,
+    });
+    res.json({ success: true, id });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/portal/api/admin/domains/:id/update", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  const b = req.body || {};
+  try {
+    await updateDomain(webhookPool, id, {
+      clientId: b.client_id !== undefined && b.client_id !== "" ? parseInt(String(b.client_id), 10) : null,
+      registrar: b.registrar ?? null,
+      expiresAt: b.expires_at || null,
+      autoRenew: b.auto_renew !== undefined ? !!b.auto_renew : null,
+      notes: b.notes ?? null,
+      status: b.status ?? null,
+    });
+    res.json({ success: true });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.get("/portal/api/admin/domains/:id/history", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ history: await domainHistory(webhookPool, id) });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/portal/api/admin/certificates", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const clientId = req.query.client_id ? parseInt(String(req.query.client_id), 10) : undefined;
+    const certificates = await listCertificates(webhookPool, {
+      clientId: Number.isFinite(clientId as number) ? (clientId as number) : undefined,
+      q: req.query.q ? String(req.query.q) : undefined,
+    });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ certificates, count: certificates.length });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/admin/certificates", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const b = req.body || {};
+  try {
+    const id = await createCertificate(webhookPool, {
+      hostname: String(b.hostname || ""),
+      clientId: b.client_id ? parseInt(String(b.client_id), 10) : null,
+      port: b.port ? parseInt(String(b.port), 10) : null,
+      notes: b.notes ?? null,
+    });
+    res.json({ success: true, id });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// Probe now — one record (domain_id / certificate_id) or everything due.
+app.post("/portal/api/admin/domains/check", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  const b = req.body || {};
+  try {
+    const result = await runDomainCertCheck(webhookPool, {
+      domainId: b.domain_id ? parseInt(String(b.domain_id), 10) : undefined,
+      certificateId: b.certificate_id ? parseInt(String(b.certificate_id), 10) : undefined,
+    });
+    res.json({ success: true, ...result });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
@@ -5045,6 +5167,15 @@ const PORTAL_SAFE_MODE =
             }
           } catch (e: any) {
             console.error("[xero] Daily Xero sync error:", e.message);
+          }
+        // Domain & certificate expiry probe (ITFlow parity — Phase 1c).
+          // RDAP + a real TLS handshake; per-item failures are recorded on the
+          // row, never thrown, so one dead registrar cannot abort the run.
+          try {
+            const dc = await runDomainCertCheck(webhookPool);
+            log(`[domain-monitor] checked ${dc.ok} domain/certificate record(s), ${dc.changed} changed, ${dc.errors.length} error(s)`);
+          } catch (e: any) {
+            console.error("[domain-monitor] Daily domain/certificate check error:", e.message);
           }
         } catch (e: any) {
           console.error("[network-sync] Daily sync error:", e.message);
