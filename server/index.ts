@@ -936,6 +936,78 @@ app.post("/portal/api/admin/hostwinds/services/retry", async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Dealer self-serve payout accounts (dealer portal) ───────────────────────
+// A dealer adds their own Stripe / PayPal destination while logged into the
+// dealer portal. SECURITY: the dealer id is ALWAYS taken from the session —
+// never from the request body — so a dealer can only ever touch their own
+// payout details and their own connected account.
+function requireDealer(req: any, res: any): { dealerId: number; name: string | null } | null {
+  const sess = (req as any).session?.portalUser;
+  const dealerId = Number(sess?.dealer_id || 0);
+  if (!Number.isFinite(dealerId) || dealerId <= 0) {
+    res.status(403).json({ error: "Dealer login required" });
+    return null;
+  }
+  return { dealerId, name: sess?.user_name ?? null };
+}
+
+app.get("/portal/api/dealer/payout-profile", async (req, res) => {
+  const who = requireDealer(req, res);
+  if (!who) return;
+  try {
+    const [profile, connect, caps] = await Promise.all([
+      getPayoutProfile(webhookPool, who.dealerId),
+      connectAccountStatus(webhookPool, who.dealerId),
+      payoutCapabilities(webhookPool),
+    ]);
+    if (!profile) return res.status(404).json({ error: "dealer not found" });
+    res.json({
+      dealer: {
+        id: profile.id, name: profile.full_name || profile.company_name,
+        method: profile.method, destination: profile.destination, ready: profile.ready,
+        paypal_email: profile.paypal_email ?? null,
+        has_bank: Boolean(profile.ach_account),
+        bank_last4: profile.ach_account ? String(profile.ach_account).slice(-4) : null,
+      },
+      stripe_connect: connect,
+      rails: {
+        stripe_available: Boolean(caps.stripe_configured),
+        paypal_available: true, // PayPal payout needs only an email address
+      },
+    });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/dealer/payout-method", async (req, res) => {
+  const who = requireDealer(req, res);
+  if (!who) return;
+  const method = String(req.body?.method ?? "");
+  if (!["paypal", "stripe_connect", "ach", "manual"].includes(method)) {
+    return res.status(400).json({ error: "method must be paypal, stripe_connect, ach or manual" });
+  }
+  try {
+    // Never accept a dealer_id from the body: the session is the only authority.
+    await savePayoutDestination(webhookPool, {
+      dealerId: who.dealerId,
+      method: method as any,
+      paypalEmail: req.body?.paypal_email ? String(req.body.paypal_email) : null,
+      stripeAccountId: null,
+    });
+    res.json({ ok: true, dealer: await getPayoutProfile(webhookPool, who.dealerId) });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// Stripe Connect onboarding for the logged-in dealer's OWN account.
+app.post("/portal/api/dealer/connect-link", async (req, res) => {
+  const who = requireDealer(req, res);
+  if (!who) return;
+  const returnUrl = String(req.body?.return_url || "https://portal.bluemogul.us/portal/dealer-payouts.php");
+  try {
+    const r = await createConnectOnboardingLink(webhookPool, who.dealerId, returnUrl);
+    res.json({ ok: true, ...r });
+  } catch (e: any) { res.status(400).json({ ok: false, error: e.message }); }
+});
+
 // ── Dealer payouts: PayPal / Stripe Connect ─────────────────────────────────
 // Paying dealers for sales. Creating the payout record and MOVING the money are
 // separate calls on purpose: a missing provider credential or an outage must

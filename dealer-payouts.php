@@ -5,6 +5,42 @@ dealer_auth();
 $dealer = dealer_me();
 $pdo    = get_db();
 
+// ── Self-serve payout destination (Stripe / PayPal / bank) ───────────────────
+// The dealer picks how they get paid. Money movement stays server-side; this
+// page only talks to the dealer-scoped endpoints, which derive the dealer from
+// the session — so a dealer can never touch another dealer's payout details.
+$internalOrigin = 'http://127.0.0.1:' . (getenv('PORT') ?: '3000');
+
+function dpd_api(string $origin, string $path, ?array $body = null): array {
+    $ch = curl_init($origin . $path);
+    $opts = [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 60,
+        CURLOPT_HTTPHEADER     => ['Accept: application/json', 'Content-Type: application/json'],
+        CURLOPT_COOKIE         => 'connect.sid=' . ($_COOKIE['connect.sid'] ?? ''),
+    ];
+    if ($body !== null) { $opts[CURLOPT_POST] = true; $opts[CURLOPT_POSTFIELDS] = json_encode($body); }
+    curl_setopt_array($ch, $opts);
+    $resp = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+    if ($err) return ['error' => $err, 'http_code' => 0];
+    $j = json_decode((string)$resp, true);
+    return is_array($j) ? ($j + ['http_code' => $code])
+                        : ['error' => 'Invalid JSON (HTTP ' . $code . ')', 'http_code' => $code];
+}
+
+/** Redirect even though this page's shell has already been printed. */
+function dpd_redirect(string $url): void {
+    if (!headers_sent()) { header('Location: ' . $url); exit; }
+    echo '<script>window.location.href=' . json_encode($url) . ';</script>';
+    echo '<div class="alert alert-warning" style="margin:16px;">If you are not redirected automatically, '
+       . '<a href="' . htmlspecialchars($url) . '">continue to Stripe</a>.</div>';
+    echo '</div></div></body></html>';
+    exit;
+}
+
 $success = $error = '';
 
 // CSRF guard for all POST actions on this page
@@ -96,6 +132,38 @@ $lifetime = $pdo->prepare(
 $lifetime->execute([$dealer['id']]);
 $lifetime_total = $lifetime->fetchColumn();
 
+// Save the chosen payout destination (session-scoped dealer).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_payout_destination') {
+    $r = dpd_api($internalOrigin, '/portal/api/dealer/payout-method', [
+        'method'       => $_POST['payout_method'] ?? 'manual',
+        'paypal_email' => trim((string)($_POST['paypal_email'] ?? '')),
+    ]);
+    if (!empty($r['ok'])) {
+        $success = 'Payout method saved.';
+        unset($_SESSION['dealer_cache']);
+        $dealer = dealer_me();
+    } else {
+        $error = 'Could not save payout method: ' . ($r['error'] ?? 'unknown error');
+    }
+}
+
+// Start (or continue) Stripe Connect onboarding for this dealer's own account.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'connect_stripe') {
+    $r = dpd_api($internalOrigin, '/portal/api/dealer/connect-link', [
+        'return_url' => 'https://portal.bluemogul.us/portal/dealer-payouts.php',
+    ]);
+    if (!empty($r['url'])) dpd_redirect((string)$r['url']);
+    $error = 'Could not start Stripe setup: ' . ($r['error'] ?? 'unknown error');
+}
+
+// Fresh payout profile + Stripe onboarding status for the panel below.
+$payoutProfile = dpd_api($internalOrigin, '/portal/api/dealer/payout-profile');
+$ppDealer   = (is_array($payoutProfile) && empty($payoutProfile['error'])) ? ($payoutProfile['dealer'] ?? []) : [];
+$ppStripe   = (is_array($payoutProfile) && empty($payoutProfile['error'])) ? ($payoutProfile['stripe_connect'] ?? []) : [];
+$curMethod  = $ppDealer['method'] ?? ($dealer['payout_method'] ?? 'manual');
+$stripeAcct = $ppStripe['account_id'] ?? null;
+$stripeReady = !empty($ppStripe['ready']);
+
 $has_bank = !empty($dealer['ach_routing']);
 ?>
 
@@ -159,8 +227,63 @@ $has_bank = !empty($dealer['ach_routing']);
           <div class="stat-sub"><?= count($payouts) ?> payout<?= count($payouts) != 1 ? 's' : '' ?> total</div>
         </div>
 
+        <div class="card" style="margin-bottom:16px;" data-testid="card-payout-destination">
+          <div class="card-title" style="margin-bottom:6px;">How you get paid</div>
+          <div style="font-size:11px;color:var(--text-lt);margin-bottom:14px;">
+            Choose Stripe (paid straight to your bank) or PayPal (paid to your PayPal email).
+          </div>
+
+          <?php if ($stripeAcct): ?>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;">
+            <span style="background:<?= $stripeReady ? 'var(--green-bg)' : 'var(--amber-bg)' ?>;color:<?= $stripeReady ? 'var(--green-text)' : 'var(--amber-text)' ?>;padding:3px 9px;border-radius:12px;font-weight:600;">
+              <?= $stripeReady ? 'Stripe ready' : 'Stripe setup unfinished' ?>
+            </span>
+            <span style="color:var(--text-lt);font-family:monospace;"><?= htmlspecialchars((string)$stripeAcct) ?></span>
+          </div>
+          <?php endif; ?>
+          <?php if (!empty($ppStripe['message'])): ?>
+          <div style="font-size:11px;color:var(--text-lt);margin-bottom:12px;"><?= htmlspecialchars((string)$ppStripe['message']) ?></div>
+          <?php endif; ?>
+
+          <form method="POST" data-testid="form-payout-destination">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="set_payout_destination">
+
+            <div class="form-group">
+              <label class="form-label">Payout method</label>
+              <select name="payout_method" class="form-control" data-testid="select-payout-method">
+                <option value="stripe_connect" <?= $curMethod === 'stripe_connect' ? 'selected' : '' ?>>Stripe Connect (bank deposit)</option>
+                <option value="paypal"         <?= $curMethod === 'paypal' ? 'selected' : '' ?>>PayPal</option>
+                <option value="ach"            <?= $curMethod === 'ach' ? 'selected' : '' ?>>Bank details on file (ACH)</option>
+                <option value="manual"         <?= $curMethod === 'manual' ? 'selected' : '' ?>>Not sure / arrange with Blue Mogul</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">PayPal email (for PayPal payouts)</label>
+              <input type="email" name="paypal_email" class="form-control" placeholder="you@example.com"
+                     value="<?= htmlspecialchars((string)($ppDealer['paypal_email'] ?? '')) ?>" data-testid="input-paypal-email">
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-sm" data-testid="button-save-payout-method">Save payout method</button>
+          </form>
+
+          <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px;">
+            <div style="font-size:11px;color:var(--text-lt);margin-bottom:8px;">
+              Stripe pays out automatically to your bank once setup is complete.
+            </div>
+            <form method="POST">
+              <?= csrf_field() ?>
+              <input type="hidden" name="action" value="connect_stripe">
+              <button type="submit" class="btn btn-outline btn-sm" data-testid="button-connect-stripe-dealer">
+                <?= $stripeAcct ? ($stripeReady ? 'Update Stripe details' : 'Finish Stripe setup') : 'Connect with Stripe' ?>
+              </button>
+            </form>
+          </div>
+        </div>
+
         <div class="card">
-          <div class="card-title" style="margin-bottom:14px;">Payout method (ACH)</div>
+          <div class="card-title" style="margin-bottom:14px;">Bank details (ACH)</div>
 
           <?php if (isset($success_bank)): ?>
           <div class="alert alert-success" style="margin-bottom:12px;"><?= $success_bank ?></div>
