@@ -108,6 +108,32 @@ services:
       # the admin UI); these env vars override them for this deployment.
       TWENTY_CRM_API_KEY: ${TWENTY_CRM_API_KEY:-}
       TWENTY_API_URL: ${TWENTY_API_URL:-}
+      # ── Optional: integrations that read env, NOT system_settings ────────
+      # The portal's provider pages store most credentials in the database, but
+      # these are read from the environment at runtime. A deployment that omits
+      # them silently loses the feature — during the 2026-09-21 cutover the app
+      # booted with "Failed to initialize Stripe: Stripe not configured" purely
+      # because these were absent from the container's env.
+      ACTION1_API_KEY: ${ACTION1_API_KEY:-}
+      ACTION1_API_URL: ${ACTION1_API_URL:-}
+      ACTION1_CLIENT_ID: ${ACTION1_CLIENT_ID:-}
+      JUMPCLOUD_API_KEY: ${JUMPCLOUD_API_KEY:-}
+      JUMPCLOUD_ORG_ID: ${JUMPCLOUD_ORG_ID:-}
+      HUBSPOT_TOKEN: ${HUBSPOT_TOKEN:-}
+      ITFLOW_API_KEY: ${ITFLOW_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      VOIP_USERNAME: ${VOIP_USERNAME:-}
+      VOIP_PASSWORD: ${VOIP_PASSWORD:-}
+      VOIP_TOKEN: ${VOIP_TOKEN:-}
+      # Frontier runs against a test or production carrier environment; getting
+      # this wrong points live pre-qualifications at the test system.
+      FRONTIER_ENV: ${FRONTIER_ENV:-}
+      DEBUG_MODE: ${DEBUG_MODE:-}
+      # Mission Control bridge (the portal's agent-army view).
+      MC_URL: ${MC_URL:-}
+      MC_AUTH_TOKEN: ${MC_AUTH_TOKEN:-}
+      # Alternative admin password representation used by the seed/login path.
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
     ports:
       # BIND_ADDRESS controls which host interfaces the app is published on.
       # Default 0.0.0.0 suits a fresh deployment behind a reverse proxy. On a host
