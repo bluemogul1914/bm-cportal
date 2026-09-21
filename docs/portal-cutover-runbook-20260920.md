@@ -1,5 +1,18 @@
 # Portal cutover runbook — Neon + Coolify → bundled stack
 
+> **COMPLETED 2026-09-21.** `portal.bluemogul.us` is served by the bundled stack on h00.
+> Owner flipped the ingress at **21:47:06Z** (cloudflared config version 74 →
+> `portal.bluemogul.us` = `http://127.0.0.1:3100`), after a fresh dump (**21:35Z**) was restored and
+> verified against source. The Coolify app on h01 was then stopped; with it stopped the public URL
+> still answers 200, which is the proof of which stack is serving. Neon is frozen and intact as the
+> rollback point (rollback = flip the ingress back to `http://10.0.0.4:80`, start container
+> `bfilnjc276rcurk3mk4ur421-034253614229`). See ITFlow #112 and Mission Control #1154.
+>
+> **Open follow-ups:** first nightly backup verified + copied off-host · Coolify app registration
+> removed · the h02 `portal-mcp-bridge` folded into the compose · **Xero sync is failing with
+> `invalid_grant: Refresh token has been consumed`**, so the chosen ledger of record is not pulling
+> until someone re-consents.
+
 Target: move `portal.bluemogul.us` off Neon (managed Postgres) + Coolify (h01) onto the
 bundled `docker-compose` stack, tonight (owner-confirmed 2026-09-20, exact minute TBC).
 
