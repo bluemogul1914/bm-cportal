@@ -109,7 +109,15 @@ services:
       TWENTY_CRM_API_KEY: ${TWENTY_CRM_API_KEY:-}
       TWENTY_API_URL: ${TWENTY_API_URL:-}
     ports:
-      - "${PORT:-3000}:3000"
+      # BIND_ADDRESS controls which host interfaces the app is published on.
+      # Default 0.0.0.0 suits a fresh deployment behind a reverse proxy. On a host
+      # with a PUBLIC interface, never leave the default: Docker's published ports
+      # bypass UFW entirely (its INPUT rules are not consulted — Docker inserts its
+      # own DOCKER-USER/DOCKER chains first), so 0.0.0.0 puts the app on the
+      # internet with no TLS and no Cloudflare in front. Set it to the address the
+      # proxy/tunnel actually dials (e.g. BIND_ADDRESS=10.0.0.2) to keep the
+      # listener off the public interface.
+      - "${BIND_ADDRESS:-0.0.0.0}:${PORT:-3000}:3000"
     healthcheck:
       # Built-in health route: GET /?health → 200 {"status":"ok"}
       # Use the IPv4 literal: inside the container `localhost` resolves to ::1
