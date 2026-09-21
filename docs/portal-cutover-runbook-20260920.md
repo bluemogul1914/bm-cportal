@@ -79,6 +79,16 @@ so the portal must move to its own origin (`h00:3100`) and the ingress rule must
       Admin only`, not a 500), and identical `SESSION_SECRET` means staff sessions survive the switch.
 - [x] **`APP_URL=https://portal.bluemogul.us`** set and confirmed in the running container, so payment
       return URLs and emailed links are correct after the switch. `PORTAL_SAFE_MODE=false` (writes on).
+- [x] **Env completeness — the whole functional set, not just the secrets.** Do not compare only
+      secrets: diff every env var NAME the production container carries against what the staging
+      container actually receives, because the app silently loses whole features without them. On
+      2026-09-21 staging had 8 vars against production's 38 and booted with *"Failed to initialize
+      Stripe: Stripe not configured"* — payments would have broken the instant traffic moved. 23
+      functional values were copied across (Stripe trio, admin password hash, Mission Control,
+      Action1, JumpCloud, HubSpot, ITFlow, OpenRouter, VoIP, `FRONTIER_ENV`, `DEBUG_MODE`), and the
+      compose gained the passthroughs it had been missing. **Read the app's boot log; "healthy" hides
+      this entirely.** After the fix: 61 env vars in the container, and the log shows
+      `Stripe schema ready` / `StripeSync initialized` / `Stripe data synced`.
 - [x] **Origin access scoped — see "Host hardening" below.** The stack is bound to loopback only: the
       internet reaches `5.78.207.215:3100` → `000`, the LAN → `000`, and the tunnel's own netns → `200`.
       The restored database carries 41 `provider_settings` rows (live provider credentials), so this
@@ -122,12 +132,15 @@ is the real control and this rule is the backstop.
 3. **Restore into the bundled stack** (dropping the previous copy first so counts are trustworthy):
    ```sh
    ssh root@10.0.0.2 'cd /opt/portal-standalone/app && \
-     docker compose exec -T db psql -U portal -d bluemogul_portal -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" && \
+     docker compose exec -T db psql -U portal -d postgres -c "DROP DATABASE IF EXISTS bluemogul_portal WITH (FORCE);" && \
+     docker compose exec -T db psql -U portal -d postgres -c "CREATE DATABASE bluemogul_portal OWNER portal;" && \
      docker compose exec -T db pg_restore -U portal -d bluemogul_portal --no-owner --no-acl --single-transaction' \
      < /tmp/portaldump/portal.dump
    ```
 4. **Verify the restore before switching traffic** — counts must match the source
-   (`tables=128 clients=8 invoices=12 tickets=6 crm_leads=511 wave_invoices=58 activity_log=336`),
+   (`tables=128 clients=9 invoices=12 tickets=6 crm_leads=511 wave_invoices=58 activity_log=338
+   ledger_rows=8 active_subs=7 wallet_sum=42.02` at 2026-09-21T21:35Z — **re-read the source at cutover
+   time rather than trusting these numbers**, they move daily),
    and the wallet balance of the funded client must match to the cent.
 5. **Owner flips the ingress** — dashboard: `portal.bluemogul.us` from `http://10.0.0.4:80` to
    `http://127.0.0.1:3100`. **This must happen AFTER step 3/4, never before:** flipping first sends
