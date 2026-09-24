@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -81,6 +82,29 @@ declare module "http" {
   }
 }
 
+// ── Safe environment for PHP children ────────────────────────────────────
+// PHP scripts need only a subset of environment variables. Passing the full
+// process.env leaks secrets (stripe keys, API tokens, database credentials
+// beyond DATABASE_URL) to every PHP child process. (Security Audit #7)
+const PHP_SAFE_ENV_KEYS = [
+  "DATABASE_URL",      // Database connection (required)
+  "APP_URL",           // Portal URL for redirects
+  "FRONTIER_ENV",      // Frontier ASR environment
+  "NODE_ENV",          // Environment indicator
+  "PORT",              // Server port
+  "HOME",              // User home (for PHP temp)
+  "PATH",              // System PATH (for PHP binary resolution)
+  "TMPDIR", "TMP", "TEMPDIR", // Temp directories
+];
+function phpEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of PHP_SAFE_ENV_KEYS) {
+    const val = process.env[key];
+    if (val !== undefined) env[key] = val;
+  }
+  return env;
+}
+
 async function initStripe() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -158,6 +182,12 @@ app.use(express.urlencoded({ extended: false }));
 
 app.set("trust proxy", 1);
 
+// ── Security headers ────────────────────────────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: false, // CSP is handled by PHP set_security_headers()
+  crossOriginEmbedderPolicy: false,
+}));
+
 app.use(
   session({
     store: new PgSession({
@@ -168,12 +198,13 @@ app.use(
     }),
     secret: process.env.SESSION_SECRET || "bluemogul-portal-secret",
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false,
     proxy: true,
     cookie: {
       maxAge: 24 * 60 * 60 * 1000,
       httpOnly: true,
-      secure: false,
+      // Use secure cookies in production (HTTPS). Allow non-secure in dev.
+      secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
     },
   })
@@ -305,7 +336,20 @@ function handlePhpResponse(stdout: string, req: Request, res: Response) {
   const redirectMatch = stdout.match(/^__REDIRECT__:(.+)$/m);
   if (redirectMatch) {
     let location = redirectMatch[1].trim();
-    if (!location.startsWith("http") && !location.startsWith("/")) {
+    // Security: only allow relative redirects or same-domain absolute URLs
+    // to prevent open redirect attacks (Security Audit finding #3).
+    if (location.startsWith("http")) {
+      try {
+        const url = new URL(location);
+        const portalHost = process.env.APP_URL ? new URL(process.env.APP_URL).host : req.get("host");
+        if (url.host !== portalHost) {
+          console.warn(`[SECURITY] Blocked open redirect attempt to: ${location}`);
+          location = "/portal/";
+        }
+      } catch {
+        location = "/portal/";
+      }
+    } else if (!location.startsWith("/")) {
       location = "/portal/" + location;
     }
     return res.redirect(302, location);
@@ -365,7 +409,7 @@ require '${filePath.replace(/'/g, "\\'")}';
         timeout: 60000,
         maxBuffer: 10 * 1024 * 1024,
         cwd: projectRoot,
-        env: { ...process.env },
+        env: phpEnv(),
       },
       (error, stdout, stderr) => {
         unlink(tmpFile).catch(() => {});
@@ -1495,7 +1539,7 @@ require '${filePath.replace(/'/g, "\\'")}';
       timeout: 60000,
       maxBuffer: 10 * 1024 * 1024,
       cwd: projectRoot,
-      env: { ...process.env },
+      env: phpEnv(),
     }, (error, stdout, stderr) => {
       unlink(tmpFile).catch(() => {});
       if (error) {
@@ -1573,7 +1617,7 @@ async function executeFrontierPost(filePath: string, req: Request, res: Response
       timeout: 60000,
       maxBuffer: 10 * 1024 * 1024,
       cwd: projectRoot,
-      env: { ...process.env },
+      env: phpEnv(),
     }, (error, stdout, stderr) => {
       unlink(outFile).catch(() => {});
       unlink(bodyFile).catch(() => {});
@@ -1736,7 +1780,7 @@ require '${filePath.replace(/'/g, "\\'")}';
         timeout: 60000,
         maxBuffer: 10 * 1024 * 1024,
         cwd: projectRoot,
-        env: { ...process.env },
+        env: phpEnv(),
       },
       (error, stdout, stderr) => {
         unlink(tmpFile).catch(() => {});
@@ -4434,7 +4478,7 @@ async function bootstrapPortalDatabase() {
     const adminPassword = process.env.ADMIN_PASSWORD || randomUUID().replace(/-/g, '');
     const phpHash = execSync(
       `php -r "echo password_hash(getenv('ADMIN_PW'), PASSWORD_BCRYPT);"`,
-      { encoding: "utf-8", env: { ...process.env, ADMIN_PW: adminPassword } }
+      { encoding: "utf-8", env: { ...phpEnv(), ADMIN_PW: adminPassword } }
     ).trim();
     if (adminCheck.rows.length === 0) {
       await webhookPool.query(

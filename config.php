@@ -484,14 +484,15 @@ function require_csrf() {
 
 function check_rate_limit($identifier, $max_attempts = 5, $window_seconds = 900) {
     $db = getDB();
+    $window_seconds = max(1, (int)$window_seconds);
     $stmt = $db->prepare("
         SELECT COUNT(*) as attempts 
         FROM activity_log 
         WHERE action = 'login_failed' 
         AND details LIKE ? 
-        AND created_at > NOW() - INTERVAL '{$window_seconds} seconds'
+        AND created_at > NOW() - (? || ' seconds')::interval
     ");
-    $stmt->execute(['%' . $identifier . '%']);
+    $stmt->execute(['%' . $identifier . '%', (string)$window_seconds]);
     $row = $stmt->fetch();
     return ($row['attempts'] ?? 0) < $max_attempts;
 }

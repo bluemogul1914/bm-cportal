@@ -45,13 +45,36 @@ const rateLimitMap = new Map<string, number[]>();
 const RATE_LIMIT = 20;
 const RATE_WINDOW = 60000;
 
+// Periodic cleanup of stale rate limit entries to prevent memory leak
+function cleanupRateLimitMap(): void {
+  const now = Date.now();
+  for (const [ip, timestamps] of rateLimitMap.entries()) {
+    const recent = timestamps.filter((t) => now - t < RATE_WINDOW);
+    if (recent.length === 0) {
+      rateLimitMap.delete(ip);
+    } else {
+      rateLimitMap.set(ip, recent);
+    }
+  }
+}
+// Run cleanup every 5 minutes
+setInterval(cleanupRateLimitMap, 5 * 60 * 1000).unref();
+
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
-  const timestamps = rateLimitMap.get(ip) || [];
-  const recent = timestamps.filter((t) => now - t < RATE_WINDOW);
-  if (recent.length >= RATE_LIMIT) return false;
-  recent.push(now);
-  rateLimitMap.set(ip, recent);
+  // Opportunistic partial cleanup on access
+  const timestamps = rateLimitMap.get(ip);
+  if (timestamps) {
+    const recent = timestamps.filter((t) => now - t < RATE_WINDOW);
+    if (recent.length >= RATE_LIMIT) {
+      rateLimitMap.set(ip, recent);
+      return false;
+    }
+    recent.push(now);
+    rateLimitMap.set(ip, recent);
+    return true;
+  }
+  rateLimitMap.set(ip, [now]);
   return true;
 }
 
@@ -59,6 +82,17 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // ── Admin auth middleware ─────────────────────────────────────────────────
+  // Every /api/admin/* route in this file MUST carry this guard. Without it the
+  // route is served to anyone: the Express app is reachable at the public root
+  // (portal.bluemogul.us/api/...), so an unguarded admin GET is an anonymous
+  // read of client data. ITFlow TCK-202600122 / task #1167.
+  function requireAdmin(req: any, res: any, next: any) {
+    const sess = (req as any).session?.portalUser;
+    if (!sess?.is_admin) return res.status(403).json({ error: "Admin only" });
+    next();
+  }
+
   app.post("/api/execute", async (req, res) => {
     try {
       const clientIp = req.ip || req.socket.remoteAddress || "unknown";
@@ -277,7 +311,10 @@ export async function registerRoutes(
   // ── Webhook auth middleware ───────────────────────────────────────────────
   function requireWebhookToken(req: any, res: any, next: any) {
     const token = req.headers["x-webhook-token"];
-    const secret = process.env.SESSION_SECRET || "bluemogul-portal-secret";
+    // Use dedicated WEBHOOK_SECRET; fallback to SESSION_SECRET is insecure
+    // because the same secret would sign cookies AND authenticate third-party
+    // webhooks. See Security Audit finding #2.
+    const secret = process.env.WEBHOOK_SECRET || process.env.SESSION_SECRET || "bluemogul-portal-secret";
     if (!token || token !== secret) {
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -317,7 +354,7 @@ export async function registerRoutes(
   });
 
   // ── Admin tickets ─────────────────────────────────────────────────────────
-  app.get("/api/admin/tickets", async (req, res) => {
+  app.get("/api/admin/tickets", requireAdmin, async (req, res) => {
     const rows = await db.execute(
       sql`SELECT t.*, c.name as client_name FROM tickets t LEFT JOIN clients c ON t.client_id = c.id ORDER BY t.created_at DESC`
     );
@@ -330,7 +367,7 @@ export async function registerRoutes(
     res.json(byStatus);
   });
 
-  app.post("/api/admin/tickets", async (req, res) => {
+  app.post("/api/admin/tickets", requireAdmin, async (req, res) => {
     const { clientId, subject, description, priority = "medium", assignedTo, source = "admin" } = req.body;
     if (!subject) return res.status(400).json({ error: "subject is required" });
     const slaDueAt = await computeSlaDueAt(priority, clientId);
@@ -342,7 +379,7 @@ export async function registerRoutes(
     res.status(201).json(createResult.rows?.[0] ?? null);
   });
 
-  app.get("/api/admin/tickets/:id", async (req, res) => {
+  app.get("/api/admin/tickets/:id", requireAdmin, async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
     const result = await db.execute(
@@ -377,14 +414,14 @@ export async function registerRoutes(
   });
 
   // ── Admin contacts ────────────────────────────────────────────────────────
-  app.get("/api/admin/clients/:id/contacts", async (req, res) => {
+  app.get("/api/admin/clients/:id/contacts", requireAdmin, async (req, res) => {
     const clientId = parseInt(req.params.id);
     if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
     const result = await db.select().from(contacts).where(eq(contacts.clientId, clientId));
     res.json(result);
   });
 
-  app.post("/api/admin/clients/:id/contacts", async (req, res) => {
+  app.post("/api/admin/clients/:id/contacts", requireAdmin, async (req, res) => {
     const clientId = parseInt(req.params.id);
     if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
     const parsed = insertContactSchema.safeParse({ ...req.body, clientId });
@@ -394,14 +431,14 @@ export async function registerRoutes(
   });
 
   // ── Admin assets ──────────────────────────────────────────────────────────
-  app.get("/api/admin/clients/:id/assets", async (req, res) => {
+  app.get("/api/admin/clients/:id/assets", requireAdmin, async (req, res) => {
     const clientId = parseInt(req.params.id);
     if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
     const result = await db.select().from(assets).where(eq(assets.clientId, clientId));
     res.json(result);
   });
 
-  app.post("/api/admin/clients/:id/assets", async (req, res) => {
+  app.post("/api/admin/clients/:id/assets", requireAdmin, async (req, res) => {
     const clientId = parseInt(req.params.id);
     if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
     const parsed = insertAssetSchema.safeParse({ ...req.body, clientId });
@@ -411,14 +448,14 @@ export async function registerRoutes(
   });
 
   // ── Admin invoices ────────────────────────────────────────────────────────
-  app.get("/api/admin/invoices", async (_req, res) => {
+  app.get("/api/admin/invoices", requireAdmin, async (_req, res) => {
     const result = await db.execute(
       sql`SELECT i.*, c.name as client_name FROM invoices i LEFT JOIN clients c ON i.client_id = c.id ORDER BY i.created_at DESC`
     );
     res.json(result.rows);
   });
 
-  app.get("/api/admin/invoices/:id", async (req, res) => {
+  app.get("/api/admin/invoices/:id", requireAdmin, async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
     const result = await db.execute(
@@ -436,9 +473,25 @@ export async function registerRoutes(
       sql`SELECT * FROM invoices WHERE client_id = ${clientId} ORDER BY created_at DESC`
     );
     res.json(result.rows);
-  });
+      });
 
-  // ── Phase 5: Email Marketing ──────────────────────────────────────────────
+      // ── Client services (subscriptions) ───────────────────────────────────────
+      app.get("/api/client/services", async (req, res) => {
+        const clientId = await resolveClientId((req as any).session?.portalUser);
+        if (!clientId) return res.status(401).json({ error: "Not authenticated" });
+        const result = await db.execute(
+          sql`SELECT s.id, s.product_id, s.status, s.price, s.mrr, s.billing_period, s.start_date, s.next_billing,
+                     p.name AS product_name, p.category AS product_category
+              FROM subscriptions s LEFT JOIN products p ON s.product_id = p.id
+              WHERE s.client_id = ${clientId} ORDER BY s.created_at DESC`
+        );
+        const total = await db.execute(
+          sql`SELECT COALESCE(SUM(mrr), 0) AS monthly_total FROM subscriptions WHERE client_id = ${clientId} AND status = 'active'`
+        );
+        res.json({ services: result.rows, monthly_total: total.rows[0]?.monthly_total ?? 0 });
+      });
+
+      // ── Phase 5: Email Marketingting ──────────────────────────────────────────────
 
   // POST /api/webhook/log-email-sequence — HERALD logs each sent step
   app.post("/api/webhook/log-email-sequence", requireWebhookToken, async (req, res) => {
@@ -489,13 +542,13 @@ export async function registerRoutes(
   });
 
   // GET /api/admin/email-templates
-  app.get("/api/admin/email-templates", async (_req, res) => {
+  app.get("/api/admin/email-templates", requireAdmin, async (_req, res) => {
     const result = await db.execute(sql`SELECT * FROM email_templates ORDER BY category, name`);
     res.json(result.rows);
   });
 
   // POST /api/admin/email-templates
-  app.post("/api/admin/email-templates", async (req, res) => {
+  app.post("/api/admin/email-templates", requireAdmin, async (req, res) => {
     const { name, subject, body_html, body_text, category } = req.body;
     if (!name || !subject) return res.status(400).json({ error: "name and subject required" });
     const result = await db.execute(sql`
@@ -507,13 +560,13 @@ export async function registerRoutes(
   });
 
   // GET /api/admin/sequences
-  app.get("/api/admin/sequences", async (_req, res) => {
+  app.get("/api/admin/sequences", requireAdmin, async (_req, res) => {
     const result = await db.execute(sql`SELECT * FROM email_sequence_definitions ORDER BY name`);
     res.json(result.rows);
   });
 
   // GET /api/admin/marketing/campaigns — campaign analytics
-  app.get("/api/admin/marketing/campaigns", async (_req, res) => {
+  app.get("/api/admin/marketing/campaigns", requireAdmin, async (_req, res) => {
     const sequences = await db.execute(sql`
       SELECT
         sequence_name,
