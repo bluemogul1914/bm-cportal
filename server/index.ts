@@ -3181,70 +3181,6 @@ app.get("/api/webhook/health", (_req, res) => {
   });
 });
 
-// ── Ollama AI Assistant API ─────────────────────────────────────────────
-app.get("/api/ollama/settings", async (_req, res) => {
-  try {
-    const { rows } = await webhookPool.query(
-      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('ollama_url','ollama_model','ollama_enabled','ollama_system_prompt')`
-    );
-    const settings: Record<string, string> = {};
-    for (const r of rows) settings[r.setting_key] = r.setting_value;
-    res.json({
-      url: settings['ollama_url'] || 'http://localhost:11434',
-      model: settings['ollama_model'] || 'llama3',
-      enabled: settings['ollama_enabled'] !== 'false',
-      system_prompt: settings['ollama_system_prompt'] || 'You are a helpful MSP support assistant for Blue Mogul. Be concise and professional.',
-    });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/api/ollama/settings", express.json(), async (req, res) => {
-  try {
-    const { url, model, enabled, system_prompt } = req.body;
-    const upsert = async (k: string, v: string) => webhookPool.query(
-      `INSERT INTO system_settings (setting_key, setting_value) VALUES ($1,$2)
-       ON CONFLICT (setting_key) DO UPDATE SET setting_value=$2`, [k, v]
-    );
-    if (url !== undefined) await upsert('ollama_url', String(url));
-    if (model !== undefined) await upsert('ollama_model', String(model));
-    if (enabled !== undefined) await upsert('ollama_enabled', String(enabled));
-    if (system_prompt !== undefined) await upsert('ollama_system_prompt', String(system_prompt));
-    res.json({ success: true });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-// AnythingLLM chat-backend settings (OpenAI-compatible via AnythingLLM API).
-app.get("/api/anythingllm/settings", async (_req, res) => {
-  try {
-    const { rows } = await webhookPool.query(
-      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('anythingllm_url','anythingllm_api_key','anythingllm_workspace','anythingllm_enabled')`
-    );
-    const s: Record<string, string> = {};
-    for (const r of rows) s[r.setting_key] = r.setting_value;
-    res.json({
-      url: s['anythingllm_url'] || '',
-      keySet: !!s['anythingllm_api_key'],
-      workspace: s['anythingllm_workspace'] || 'customer-support-kb',
-      enabled: s['anythingllm_enabled'] === 'true',
-    });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/api/anythingllm/settings", express.json(), async (req, res) => {
-  try {
-    const { url, api_key, workspace, enabled } = req.body;
-    const upsert = async (k: string, v: string) => webhookPool.query(
-      `INSERT INTO system_settings (setting_key, setting_value) VALUES ($1,$2)
-       ON CONFLICT (setting_key) DO UPDATE SET setting_value=$2`, [k, v]
-    );
-    if (url !== undefined) await upsert('anythingllm_url', String(url));
-    if (api_key !== undefined) await upsert('anythingllm_api_key', String(api_key));
-    if (workspace !== undefined) await upsert('anythingllm_workspace', String(workspace));
-    if (enabled !== undefined) await upsert('anythingllm_enabled', String(enabled));
-    res.json({ success: true });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
 // BM AI (LibreChat) chat-backend settings. When bmai_enabled=true, the AI
 // Assistant routes through BM AI → OpenRouter (AnythingLLM is available to
 // BM AI as an MCP tool on port 3122 — no direct portal↔AnythingLLM call).
@@ -3478,21 +3414,9 @@ app.get("/admin-dandh.php", (req, res) => {
   res.redirect(302, "/portal/admin-dandh.php" + (req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""));
 });
 
-app.get("/api/ollama/models", async (_req, res) => {
-  try {
-    const { rows } = await webhookPool.query(`SELECT setting_value FROM system_settings WHERE setting_key='ollama_url'`);
-    const ollamaUrl = (rows[0]?.setting_value || 'http://localhost:11434').replace(/\/$/, '');
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 8000);
-    const r = await fetch(`${ollamaUrl}/api/tags`, { signal: ctrl.signal }).finally(() => clearTimeout(t));
-    if (!r.ok) return res.status(502).json({ error: `Ollama returned HTTP ${r.status}` });
-    const data = await r.json() as { models?: { name: string; modified_at?: string }[] };
-    res.json({ models: (data.models || []).map((m) => m.name) });
-  } catch (e: any) {
-    res.status(503).json({ error: e.name === 'AbortError' ? 'Ollama connection timed out (8s)' : e.message });
-  }
-});
-
+// ── AI Assistant — BM AI (LibreChat → OpenRouter) chat endpoint ────────────
+// The AI Assistant exclusively routes through BM AI (LibreChat) → OpenRouter.
+// Ollama and AnythingLLM fallback engines have been removed.
 app.post("/api/ollama/chat", express.json(), async (req, res) => {
   const { messages, conversation_id, title } = req.body as {
     messages: { role: string; content: string }[];
@@ -3510,7 +3434,7 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
   let settingsRows: any;
   try {
     settingsRows = await webhookPool.query(
-      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('ollama_url','ollama_model','ollama_system_prompt','ollama_enabled','anythingllm_url','anythingllm_api_key','anythingllm_workspace','anythingllm_enabled','bmai_url','bmai_email','bmai_password','bmai_enabled','bmai_model')`
+      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('bmai_url','bmai_email','bmai_password','bmai_enabled','bmai_model')`
     );
   } catch (e: any) {
     return res.status(500).json({ error: 'DB error: ' + e.message });
@@ -3518,9 +3442,17 @@ app.post("/api/ollama/chat", express.json(), async (req, res) => {
   const s: Record<string, string> = {};
   for (const r of settingsRows.rows) s[r.setting_key] = r.setting_value;
 
-  // BM AI (LibreChat → OpenRouter) takes precedence when enabled + configured.
+  // AI Assistant routes exclusively through BM AI (LibreChat → OpenRouter).
   const bmaiEnabled = (s['bmai_enabled'] === 'true') &&
     !!s['bmai_url'] && !!s['bmai_email'] && !!s['bmai_password'];
+
+  if (!bmaiEnabled) {
+    return res.status(503).json({
+      error: 'BM AI Assistant is not configured. Enable and configure BM AI settings in the admin console.',
+      engine: 'bmai',
+      configured: false,
+    });
+  }
 
   if (bmaiEnabled) {
     // SSE headers — keep connection alive for streaming
