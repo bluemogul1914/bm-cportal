@@ -729,11 +729,13 @@ app.post("/portal/api/facebook-lookup", async (req, res) => {
   }
   let rawText = "";
   try { rawText = await scrapeWithJina(targetUrl); } catch (e: any) { /* ignore */ }
-  const profile: any = { facebook_url: targetUrl, name: search_name || "", about: "", raw_snippet: rawText.slice(0, 2000) };
+const profile: any = { facebook_url: targetUrl, name: search_name || "", about: "", profile_pic_url: "", raw_snippet: rawText.slice(0, 2000) };
   const titleMatch = rawText.match(/Title:\s*(.+)/i);
   if (titleMatch) profile.name = titleMatch[1].trim();
   const descMatch = rawText.match(/Description:\s*(.+)/i);
   if (descMatch) profile.about = descMatch[1].trim().slice(0, 500);
+  const picMatch = rawText.match(/https?:\/\/scontent[^\s)"<>]+\.jpg[^\s)"<>]*/i);
+  if (picMatch) profile.profile_pic_url = picMatch[0];
   if (entity_type && entity_id) {
     const table = entity_type === "client" ? "clients" : "leads";
     await webhookPool.query(
