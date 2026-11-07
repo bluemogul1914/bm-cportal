@@ -683,7 +683,41 @@ app.post("/portal/api/linkedin-save-url", async (req, res) => {
   }
 });
 
-// ── Xero Accounting (custom connection) ──────────────────────────────────────
+app.post("/portal/api/linkedin-bulk-fetch", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
+  const { entity_type = "client", profile_type = "person" } = req.body;
+  const table = entity_type === "client" ? "clients" : "leads";
+  try {
+    const { rows } = await webhookPool.query(
+      `SELECT id, name, linkedin_url, company FROM ${table} WHERE linkedin_url IS NOT NULL AND linkedin_url != '' ORDER BY id`
+    );
+    const results: any[] = [];
+    let success = 0, failed = 0;
+    for (const row of rows) {
+      try {
+        const result = await performScrapeLookup({
+          url: row.linkedin_url,
+          search_query: "",
+          search_name: row.name || "",
+          entity_type,
+          entity_id: String(row.id),
+          profile_type,
+        });
+        if (result.success) { success++; results.push({ id: row.id, name: row.name, status: "ok" }); }
+        else { failed++; results.push({ id: row.id, name: row.name, status: "fail", error: result.error }); }
+      } catch (e: any) {
+        failed++;
+        results.push({ id: row.id, name: row.name, status: "error", error: e.message });
+      }
+      // Small delay to avoid rate limiting
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    res.json({ success: true, total: rows.length, succeeded: success, failed, results });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
 // This Xero app is a CUSTOM CONNECTION: client-credentials grant, NO browser
 // consent / redirect URI, and a mandatory `Xero-tenant-id` header on every call.
 // GET /connections is unavailable to it. Config lives in provider_settings,
