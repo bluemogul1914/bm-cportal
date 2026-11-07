@@ -146,6 +146,19 @@ try {
     <script>
         tailwind.config = window.bmTailwindConfig;
     </script>
+
+    <style>
+        @keyframes skeleton-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .skeleton {
+            animation: skeleton-pulse 1.5s ease-in-out infinite;
+            background: linear-gradient(90deg, #11151F 25%, #1C2B5B 50%, #11151F 75%);
+            background-size: 200% 100%;
+            border-radius: 0.5rem;
+        }
+    </style>
 </head>
 <body class="bg-blue-mogul-secondary font-sans">
 
