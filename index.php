@@ -68,7 +68,7 @@
         }
     </style>
 </head>
-<body id="login-page" class="min-h-screen flex flex-wrap bg-white font-sans">
+<body id="login-page" class="min-h-screen flex flex-wrap bg-blue-mogul-secondary font-sans">
 
     <!-- Skip to content link for keyboard accessibility -->
     <a href="#login-form" class="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-50 focus-visible:bg-blue-mogul-primary focus-visible:text-white focus-visible:px-4 focus-visible:py-2 focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
@@ -119,7 +119,7 @@
                 </div>
 
                 <!-- Card wrapper (desktop only visual card) -->
-                <div class="bg-white text-gray-900 lg:bg-white rounded-2xl shadow-none lg:shadow-xl p-0 lg:p-8 animate-fadeInUp animate-delay-100">
+                <div class="bg-blue-mogul-surface text-white lg:bg-blue-mogul-surface rounded-2xl shadow-none lg:shadow-xl p-0 lg:p-8 animate-fadeInUp animate-delay-100 border border-blue-mogul-dim/30">
 
                     <!-- Error/Success Messages -->
                     <div id="message-container" class="mb-5 hidden">
@@ -146,7 +146,7 @@
                                 data-testid="input-email"
                                 aria-label="Email or username"
                                 aria-required="true"
-                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus-visible:border-[#2F6BFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/30 transition-all text-gray-900 bg-white placeholder-gray-400"
+                                class="w-full px-4 py-3 border-2 border-blue-mogul-dim/50 rounded-xl focus-visible:border-blue-mogul-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-mogul-primary/30 transition-all text-white bg-blue-mogul-secondary placeholder-blue-mogul-dim"
                                 placeholder="your.email@example.com"
                                 autocomplete="username"
                             >
@@ -166,7 +166,7 @@
                                     data-testid="input-password"
                                     aria-label="Password"
                                     aria-required="true"
-                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus-visible:border-[#2F6BFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/30 transition-all text-gray-900 bg-white placeholder-gray-400 pr-12"
+                                    class="w-full px-4 py-3 border-2 border-blue-mogul-dim/50 rounded-xl focus-visible:border-blue-mogul-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-mogul-primary/30 transition-all text-white bg-blue-mogul-secondary placeholder-blue-mogul-dim pr-12"
                                     placeholder="Enter your password"
                                     autocomplete="current-password"
                                 >
@@ -194,7 +194,7 @@
                                 >
                                 <span class="ml-2 text-sm text-blue-mogul-dim">Remember me</span>
                             </label>
-                            <a href="/portal/forgot-password.php" class="text-sm text-blue-mogul-primary hover:underline transition-colors">
+                            <a href="/portal/forgot-password.php" class="text-sm text-blue-mogul-primary hover:text-blue-mogul-blue-bright transition-colors">
                                 Forgot password?
                             </a>
                         </div>
