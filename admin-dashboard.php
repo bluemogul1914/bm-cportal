@@ -147,7 +147,7 @@ try {
         tailwind.config = window.bmTailwindConfig;
     </script>
 </head>
-<body class="bg-gray-50 font-sans">
+<body class="bg-[#05070D] font-sans">
 
     <div class="flex h-screen overflow-hidden">
 
@@ -155,34 +155,34 @@ try {
 
         <div class="flex-1 overflow-y-auto">
 
-            <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
+            <header class="bg-[#11151F] border-b border-[#5A6474]/30 sticky top-0 z-10">
                 <div class="px-6 py-4">
                     <div class="flex items-center justify-between">
                         <div>
-                            <h1 class="text-2xl font-semibold text-gray-900">Admin Dashboard</h1>
-                            <p class="text-sm text-gray-600 mt-1">Overview of your business metrics</p>
+                            <h1 class="text-2xl font-semibold text-[#E9EDF4]">Admin Dashboard</h1>
+                            <p class="text-sm text-[#5A6474] mt-1">Overview of your business metrics</p>
                         </div>
                         <div class="flex items-center space-x-3">
-                            <button onclick="exportReport()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition">
+                            <button onclick="exportReport()" class="px-4 py-2 bg-[#2F6BFF] hover:bg-[#1C2B5B] text-white rounded-md text-sm font-medium transition">
                                 <i class="fas fa-download mr-2"></i>Export Report
                             </button>
                             <div class="relative">
-                                <button onclick="toggleAdminProfile()" class="flex items-center space-x-2 text-gray-700 hover:bg-gray-100 rounded-md px-3 py-2 transition">
-                                    <div class="bg-blue-600 text-white rounded-full h-8 w-8 flex items-center justify-center font-semibold text-sm">
+                                <button onclick="toggleAdminProfile()" class="flex items-center space-x-2 text-[#5A6474] hover:bg-[#1C2B5B]/20 rounded-md px-3 py-2 transition">
+                                    <div class="bg-[#2F6BFF] text-white rounded-full h-8 w-8 flex items-center justify-center font-semibold text-sm">
                                         <?php echo htmlspecialchars(strtoupper(substr($user_name, 0, 1) ?: 'U')); ?>
                                     </div>
                                     <span class="text-sm font-medium"><?php echo htmlspecialchars($user_name); ?></span>
                                     <i class="fas fa-chevron-down text-xs"></i>
                                 </button>
-                                <div id="admin-profile-dropdown" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
-                                    <a href="dashboard.php" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                                <div id="admin-profile-dropdown" class="hidden absolute right-0 mt-2 w-48 bg-[#11151F] rounded-lg shadow-lg border border-[#5A6474]/30 z-20">
+                                    <a href="dashboard.php" class="block px-4 py-2 text-sm text-[#5A6474] hover:bg-[#05070D]">
                                         <i class="fas fa-arrow-left w-4 mr-2"></i>Client View
                                     </a>
-                                    <a href="admin-settings.php" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                                    <a href="admin-settings.php" class="block px-4 py-2 text-sm text-[#5A6474] hover:bg-[#05070D]">
                                         <i class="fas fa-cog w-4 mr-2"></i>Settings
                                     </a>
-                                    <div class="border-t border-gray-200"></div>
-                                    <a href="logout.php" class="block px-4 py-2 text-sm text-red-600 hover:bg-gray-50">
+                                    <div class="border-t border-[#5A6474]/30"></div>
+                                    <a href="logout.php" class="block px-4 py-2 text-sm text-[#B3261E] hover:bg-[#05070D]">
                                         <i class="fas fa-sign-out-alt w-4 mr-2"></i>Logout
                                     </a>
                                 </div>
@@ -196,104 +196,104 @@ try {
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
 
-                    <div class="bg-white rounded-lg border border-gray-200 p-6">
+                    <div class="bg-[#11151F] rounded-lg border border-[#5A6474]/30 p-6">
                         <div class="flex items-center justify-between mb-4">
-                            <div class="bg-blue-100 rounded-lg p-3">
-                                <i class="fas fa-dollar-sign text-blue-600 text-xl"></i>
+                            <div class="bg-[#2F6BFF]/20 rounded-lg p-3">
+                                <i class="fas fa-dollar-sign text-[#2F6BFF] text-xl"></i>
                             </div>
-                            <span class="text-xs font-semibold px-2 py-1 rounded-full <?php echo $revenue_mom >= 0 ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'; ?>">
+                            <span class="text-xs font-semibold px-2 py-1 rounded-full <?php echo $revenue_mom >= 0 ? 'text-[#1F8A4C] bg-[#1F8A4C]/20' : 'text-[#B3261E] bg-[#B3261E]/20'; ?>">
                                 <i class="fas fa-arrow-<?php echo $revenue_mom >= 0 ? 'up' : 'down'; ?> mr-1"></i><?php echo $revenue_mom; ?>% MoM
                             </span>
                         </div>
-                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Monthly Recurring Revenue</p>
-                        <p class="text-3xl font-bold text-gray-900">$<?php echo number_format($mrr, 2); ?></p>
-                        <p class="text-sm text-gray-600 mt-2">ARR: $<?php echo number_format($arr, 2); ?></p>
+                        <p class="text-xs font-semibold text-[#5A6474] uppercase tracking-wide mb-1">Monthly Recurring Revenue</p>
+                        <p class="text-3xl font-bold text-[#E9EDF4]">$<?php echo number_format($mrr, 2); ?></p>
+                        <p class="text-sm text-[#5A6474] mt-2">ARR: $<?php echo number_format($arr, 2); ?></p>
                     </div>
 
-                    <div class="bg-white rounded-lg border border-gray-200 p-6">
+                    <div class="bg-[#11151F] rounded-lg border border-[#5A6474]/30 p-6">
                         <div class="flex items-center justify-between mb-4">
-                            <div class="bg-purple-100 rounded-lg p-3">
+                            <div class="bg-[#5B8DFF]/20 rounded-lg p-3">
                                 <i class="fas fa-users text-purple-600 text-xl"></i>
                             </div>
-                            <span class="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-1 rounded-full">
+                            <span class="text-xs font-semibold text-[#5A6474] bg-[#1C2B5B]/20 px-2 py-1 rounded-full">
                                 +<?php echo $new_clients_month; ?> this month
                             </span>
                         </div>
-                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Total Clients</p>
-                        <p class="text-3xl font-bold text-gray-900"><?php echo $total_clients; ?></p>
-                        <p class="text-sm text-gray-600 mt-2">Churn: <?php echo $churn_rate; ?>% &middot; Growth: <?php echo $growth_rate; ?>%</p>
+                        <p class="text-xs font-semibold text-[#5A6474] uppercase tracking-wide mb-1">Total Clients</p>
+                        <p class="text-3xl font-bold text-[#E9EDF4]"><?php echo $total_clients; ?></p>
+                        <p class="text-sm text-[#5A6474] mt-2">Churn: <?php echo $churn_rate; ?>% &middot; Growth: <?php echo $growth_rate; ?>%</p>
                     </div>
 
-                    <div class="bg-white rounded-lg border border-gray-200 p-6">
+                    <div class="bg-[#11151F] rounded-lg border border-[#5A6474]/30 p-6">
                         <div class="flex items-center justify-between mb-4">
-                            <div class="bg-yellow-100 rounded-lg p-3">
+                            <div class="bg-[#B7791F]/20 rounded-lg p-3">
                                 <i class="fas fa-ticket-alt text-yellow-600 text-xl"></i>
                             </div>
                         </div>
-                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Open Tickets</p>
-                        <p class="text-3xl font-bold text-gray-900"><?php echo $open_tickets; ?></p>
-                        <a href="admin-tickets.php" class="text-sm text-blue-600 hover:text-blue-700 mt-2 inline-block">View All &rarr;</a>
+                        <p class="text-xs font-semibold text-[#5A6474] uppercase tracking-wide mb-1">Open Tickets</p>
+                        <p class="text-3xl font-bold text-[#E9EDF4]"><?php echo $open_tickets; ?></p>
+                        <a href="admin-tickets.php" class="text-sm text-[#2F6BFF] hover:text-[#5B8DFF] mt-2 inline-block">View All &rarr;</a>
                     </div>
 
-                    <div class="bg-white rounded-lg border border-gray-200 p-6">
+                    <div class="bg-[#11151F] rounded-lg border border-[#5A6474]/30 p-6">
                         <div class="flex items-center justify-between mb-4">
-                            <div class="bg-red-100 rounded-lg p-3">
-                                <i class="fas fa-file-invoice-dollar text-red-600 text-xl"></i>
+                            <div class="bg-[#B3261E]/20 rounded-lg p-3">
+                                <i class="fas fa-file-invoice-dollar text-[#B3261E] text-xl"></i>
                             </div>
                         </div>
-                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Unpaid Invoices</p>
-                        <p class="text-3xl font-bold text-gray-900"><?php echo $unpaid_invoices_count; ?></p>
-                        <p class="text-sm text-gray-900 font-semibold mt-2">$<?php echo number_format($unpaid_invoices_total, 2); ?></p>
+                        <p class="text-xs font-semibold text-[#5A6474] uppercase tracking-wide mb-1">Unpaid Invoices</p>
+                        <p class="text-3xl font-bold text-[#E9EDF4]"><?php echo $unpaid_invoices_count; ?></p>
+                        <p class="text-sm text-[#E9EDF4] font-semibold mt-2">$<?php echo number_format($unpaid_invoices_total, 2); ?></p>
                     </div>
 
                 </div>
 
                 <!-- Marketing Overview (Phase 5 & 6) -->
-                <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+                <div class="bg-[#11151F] rounded-xl border border-[#5A6474]/30 p-6 mb-6">
                     <div class="flex items-center justify-between mb-4">
-                        <h2 class="text-base font-semibold text-gray-900">Marketing Overview</h2>
+                        <h2 class="text-base font-semibold text-[#E9EDF4]">Marketing Overview</h2>
                         <div class="flex gap-2">
-                            <a href="/admin/marketing/campaigns" class="text-xs text-blue-600 hover:underline">Campaigns</a>
+                            <a href="/admin/marketing/campaigns" class="text-xs text-[#2F6BFF] hover:underline">Campaigns</a>
                             <span class="text-gray-300">|</span>
-                            <a href="/admin/marketing/social" class="text-xs text-blue-600 hover:underline">Social</a>
+                            <a href="/admin/marketing/social" class="text-xs text-[#2F6BFF] hover:underline">Social</a>
                             <span class="text-gray-300">|</span>
-                            <a href="/admin/marketing/blog" class="text-xs text-blue-600 hover:underline">Blog</a>
+                            <a href="/admin/marketing/blog" class="text-xs text-[#2F6BFF] hover:underline">Blog</a>
                         </div>
                     </div>
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                        <div class="text-center p-3 bg-blue-50 rounded-lg">
-                            <p class="text-2xl font-bold text-blue-700"><?php echo $mkt_active_sequences; ?></p>
-                            <p class="text-xs text-gray-500 mt-1">Active Sequences</p>
+                        <div class="text-center p-3 bg-[#2F6BFF]/10 rounded-lg">
+                            <p class="text-2xl font-bold text-[#5B8DFF]"><?php echo $mkt_active_sequences; ?></p>
+                            <p class="text-xs text-[#5A6474] mt-1">Active Sequences</p>
                         </div>
-                        <div class="text-center p-3 bg-purple-50 rounded-lg">
+                        <div class="text-center p-3 bg-[#5B8DFF]/10 rounded-lg">
                             <p class="text-2xl font-bold text-purple-700"><?php echo number_format($mkt_sent_month); ?></p>
-                            <p class="text-xs text-gray-500 mt-1">Sent This Month</p>
+                            <p class="text-xs text-[#5A6474] mt-1">Sent This Month</p>
                         </div>
-                        <div class="text-center p-3 bg-green-50 rounded-lg">
+                        <div class="text-center p-3 bg-[#1F8A4C]/10 rounded-lg">
                             <p class="text-2xl font-bold text-green-700"><?php echo $mkt_social_week; ?></p>
-                            <p class="text-xs text-gray-500 mt-1">Social Posts/Week</p>
+                            <p class="text-xs text-[#5A6474] mt-1">Social Posts/Week</p>
                         </div>
-                        <div class="text-center p-3 bg-yellow-50 rounded-lg">
+                        <div class="text-center p-3 bg-[#B7791F]/10 rounded-lg">
                             <p class="text-2xl font-bold text-yellow-700"><?php echo $mkt_leads; ?></p>
-                            <p class="text-xs text-gray-500 mt-1">Leads in Pipeline</p>
+                            <p class="text-xs text-[#5A6474] mt-1">Leads in Pipeline</p>
                         </div>
-                        <div class="text-center p-3 bg-indigo-50 rounded-lg">
+                        <div class="text-center p-3 bg-[#2F6BFF]/10 rounded-lg">
                             <p class="text-2xl font-bold text-indigo-700"><?php echo $mkt_blog_posts; ?></p>
-                            <p class="text-xs text-gray-500 mt-1">Blog Posts</p>
+                            <p class="text-xs text-[#5A6474] mt-1">Blog Posts</p>
                         </div>
-                        <div class="text-center p-3 bg-red-50 rounded-lg">
-                            <p class="text-2xl font-bold text-red-600"><?php echo $mkt_reply_rate; ?>%</p>
-                            <p class="text-xs text-gray-500 mt-1">Reply Rate</p>
+                        <div class="text-center p-3 bg-[#B3261E]/10 rounded-lg">
+                            <p class="text-2xl font-bold text-[#B3261E]"><?php echo $mkt_reply_rate; ?>%</p>
+                            <p class="text-xs text-[#5A6474] mt-1">Reply Rate</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
-                    <div class="bg-white rounded-lg border border-gray-200 p-6">
+                    <div class="bg-[#11151F] rounded-lg border border-[#5A6474]/30 p-6">
                         <div class="flex items-center justify-between mb-6">
-                            <h2 class="text-lg font-semibold text-gray-900">Revenue Trend</h2>
-                            <select id="revenueRange" class="text-sm border border-gray-300 rounded-md px-3 py-1">
+                            <h2 class="text-lg font-semibold text-[#E9EDF4]">Revenue Trend</h2>
+                            <select id="revenueRange" class="text-sm border border-[#5A6474]/50 rounded-md px-3 py-1">
                                 <option value="12">Last 12 Months</option>
                                 <option value="6">Last 6 Months</option>
                                 <option value="3">Last 3 Months</option>
@@ -304,14 +304,14 @@ try {
                         </div>
                     </div>
 
-                    <div class="bg-white rounded-lg border border-gray-200 p-6">
+                    <div class="bg-[#11151F] rounded-lg border border-[#5A6474]/30 p-6">
                         <div class="flex items-center justify-between mb-6">
-                            <h2 class="text-lg font-semibold text-gray-900">Top Products by Revenue</h2>
-                            <a href="admin-products.php" class="text-sm text-blue-600 hover:text-blue-700 font-medium">View All &rarr;</a>
+                            <h2 class="text-lg font-semibold text-[#E9EDF4]">Top Products by Revenue</h2>
+                            <a href="admin-products.php" class="text-sm text-[#2F6BFF] hover:text-[#5B8DFF] font-medium">View All &rarr;</a>
                         </div>
                         <div class="space-y-4">
                             <?php if (empty($top_products)): ?>
-                                <p class="text-sm text-gray-500 py-6 text-center">No products with subscriptions yet. <a href="admin-products.php" class="text-blue-600 hover:underline">Add products</a> to see revenue here.</p>
+                                <p class="text-sm text-[#5A6474] py-6 text-center">No products with subscriptions yet. <a href="admin-products.php" class="text-[#2F6BFF] hover:underline">Add products</a> to see revenue here.</p>
                             <?php else: ?>
                             <?php foreach ($top_products as $index => $product): ?>
                                 <?php if ($index < 5): ?>
@@ -320,14 +320,14 @@ try {
                                             <div class="flex items-center space-x-3">
                                                 <span class="text-lg font-bold text-gray-400">#<?php echo $index + 1; ?></span>
                                                 <div>
-                                                    <p class="font-medium text-gray-900 text-sm"><?php echo htmlspecialchars($product['name']); ?></p>
-                                                    <p class="text-xs text-gray-600"><?php echo (int)$product['subscriber_count']; ?> subscribers</p>
+                                                    <p class="font-medium text-[#E9EDF4] text-sm"><?php echo htmlspecialchars($product['name']); ?></p>
+                                                    <p class="text-xs text-[#5A6474]"><?php echo (int)$product['subscriber_count']; ?> subscribers</p>
                                                 </div>
                                             </div>
                                         </div>
                                         <div class="text-right">
-                                            <p class="font-bold text-gray-900">$<?php echo number_format((float)$product['total_revenue'], 2); ?></p>
-                                            <p class="text-xs text-gray-600">/month</p>
+                                            <p class="font-bold text-[#E9EDF4]">$<?php echo number_format((float)$product['total_revenue'], 2); ?></p>
+                                            <p class="text-xs text-[#5A6474]">/month</p>
                                         </div>
                                     </div>
                                 <?php endif; ?>
@@ -338,58 +338,58 @@ try {
 
                 </div>
 
-                <div class="bg-white rounded-lg border border-gray-200">
-                    <div class="p-6 border-b border-gray-200">
+                <div class="bg-[#11151F] rounded-lg border border-[#5A6474]/30">
+                    <div class="p-6 border-b border-[#5A6474]/30">
                         <div class="flex items-center justify-between">
-                            <h2 class="text-lg font-semibold text-gray-900">Recent Clients</h2>
-                            <a href="admin-clients.php" class="text-sm text-blue-600 hover:text-blue-700 font-medium">View All &rarr;</a>
+                            <h2 class="text-lg font-semibold text-[#E9EDF4]">Recent Clients</h2>
+                            <a href="admin-clients.php" class="text-sm text-[#2F6BFF] hover:text-[#5B8DFF] font-medium">View All &rarr;</a>
                         </div>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full">
-                            <thead class="bg-gray-50 border-b border-gray-200">
+                            <thead class="bg-[#05070D] border-b border-[#5A6474]/30">
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Client</th>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Company</th>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Joined</th>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                                    <th class="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                                    <th class="px-6 py-3 text-left text-xs font-semibold text-[#5A6474] uppercase tracking-wider">Client</th>
+                                    <th class="px-6 py-3 text-left text-xs font-semibold text-[#5A6474] uppercase tracking-wider">Email</th>
+                                    <th class="px-6 py-3 text-left text-xs font-semibold text-[#5A6474] uppercase tracking-wider">Company</th>
+                                    <th class="px-6 py-3 text-left text-xs font-semibold text-[#5A6474] uppercase tracking-wider">Joined</th>
+                                    <th class="px-6 py-3 text-left text-xs font-semibold text-[#5A6474] uppercase tracking-wider">Status</th>
+                                    <th class="px-6 py-3 text-right text-xs font-semibold text-[#5A6474] uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-200">
                                 <?php if (empty($recent_clients)): ?>
                                     <tr>
-                                        <td colspan="6" class="px-6 py-10 text-center text-sm text-gray-500">No clients yet. <a href="admin-client-add.php" class="text-blue-600 hover:underline">Add your first client</a>.</td>
+                                        <td colspan="6" class="px-6 py-10 text-center text-sm text-[#5A6474]">No clients yet. <a href="admin-client-add.php" class="text-[#2F6BFF] hover:underline">Add your first client</a>.</td>
                                     </tr>
                                 <?php else: ?>
                                 <?php foreach ($recent_clients as $client): ?>
-                                    <tr class="hover:bg-gray-50">
+                                    <tr class="hover:bg-[#05070D]">
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="flex items-center">
-                                                <div class="bg-blue-100 rounded-full h-8 w-8 flex items-center justify-center font-semibold text-sm text-blue-600 mr-3">
+                                                <div class="bg-[#2F6BFF]/20 rounded-full h-8 w-8 flex items-center justify-center font-semibold text-sm text-[#2F6BFF] mr-3">
                                                     <?php echo htmlspecialchars(strtoupper(substr($client['name'] ?? '?', 0, 1))); ?>
                                                 </div>
-                                                <span class="font-medium text-gray-900"><?php echo htmlspecialchars($client['name'] ?? ''); ?></span>
+                                                <span class="font-medium text-[#E9EDF4]"><?php echo htmlspecialchars($client['name'] ?? ''); ?></span>
                                             </div>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-[#5A6474]">
                                             <?php echo htmlspecialchars($client['email']); ?>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-[#5A6474]">
                                             <?php echo htmlspecialchars($client['company'] ?? 'N/A'); ?>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-[#5A6474]">
                                             <?php echo $client['created_at'] ? fmt_date($client['created_at'] ?? null, 'M d, Y') : '—'; ?>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">
+                                            <span class="px-2 py-1 text-xs font-medium rounded-full bg-[#1F8A4C]/20 text-green-700">
                                                 Active
                                             </span>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
-                                            <a href="admin-client-detail.php?id=<?php echo $client['id']; ?>" class="text-blue-600 hover:text-blue-700 mr-3">View</a>
-                                            <a href="admin-client-edit.php?id=<?php echo $client['id']; ?>" class="text-gray-600 hover:text-gray-700">Edit</a>
+                                            <a href="admin-client-detail.php?id=<?php echo $client['id']; ?>" class="text-[#2F6BFF] hover:text-[#5B8DFF] mr-3">View</a>
+                                            <a href="admin-client-edit.php?id=<?php echo $client['id']; ?>" class="text-[#5A6474] hover:text-[#5A6474]">Edit</a>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
