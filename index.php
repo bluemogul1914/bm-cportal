@@ -71,12 +71,12 @@
 <body id="login-page" class="min-h-screen flex flex-wrap bg-white font-sans">
 
     <!-- Skip to content link for keyboard accessibility -->
-    <a href="#login-form" class="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-50 focus-visible:bg-[#2F6BFF] focus-visible:text-white focus-visible:px-4 focus-visible:py-2 focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+    <a href="#login-form" class="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-50 focus-visible:bg-blue-mogul-primary focus-visible:text-white focus-visible:px-4 focus-visible:py-2 focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
         Skip to login form
     </a>
 
     <!-- Left panel — login form -->
-    <div id="login-left" class="w-full lg:w-1/2 flex flex-col min-h-screen bg-[#05070D]">
+    <div id="login-left" class="w-full lg:w-1/2 flex flex-col min-h-screen bg-blue-mogul-secondary">
 
         <!-- Mobile: top logo bar -->
         <div id="login-mobiletop" class="lg:hidden flex items-center justify-center pt-10 pb-4 px-8">
@@ -134,7 +134,7 @@
                         <input type="hidden" name="role_hint" id="role-hint" value="staff">
 
                         <div class="mb-5">
-                            <label for="email" class="block text-sm font-semibold text-[#5A6474] mb-2">
+                            <label for="email" class="block text-sm font-semibold text-blue-mogul-dim mb-2">
                                 <i class="fas fa-envelope mr-2 text-[#2F6BFF]"></i>
                                 Email or Username
                             </label>
@@ -153,7 +153,7 @@
                         </div>
 
                         <div class="mb-5">
-                            <label for="password" class="block text-sm font-semibold text-[#5A6474] mb-2">
+                            <label for="password" class="block text-sm font-semibold text-blue-mogul-dim mb-2">
                                 <i class="fas fa-lock mr-2 text-[#2F6BFF]"></i>
                                 Password
                             </label>
@@ -175,7 +175,7 @@
                                     id="toggle-password"
                                     data-testid="button-toggle-password"
                                     aria-label="Toggle password visibility"
-                                    class="absolute right-4 top-1/2 -translate-y-1/2 text-[#5A6474] hover:text-white transition-colors"
+                                    class="absolute right-4 top-1/2 -translate-y-1/2 text-blue-mogul-dim hover:text-white transition-colors"
                                 >
                                     <i class="fas fa-eye"></i>
                                 </button>
@@ -192,7 +192,7 @@
                                     aria-label="Remember me"
                                     class="w-4 h-4 text-[#2F6BFF] border-gray-300 rounded focus-visible:ring-[#2F6BFF]"
                                 >
-                                <span class="ml-2 text-sm text-[#5A6474]">Remember me</span>
+                                <span class="ml-2 text-sm text-blue-mogul-dim">Remember me</span>
                             </label>
                             <a href="/portal/forgot-password.php" class="text-sm text-blue-mogul-primary hover:underline transition-colors">
                                 Forgot password?
@@ -205,7 +205,7 @@
                                 id="submit-btn"
                                 data-testid="button-submit"
                                 aria-label="Sign in"
-                                class="w-full bg-[#2F6BFF] text-white font-semibold py-3 rounded-xl hover:bg-[#5B8DFF] transition-all duration-300 shadow-lg hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/50 focus-visible:ring-offset-2"
+                                class="w-full bg-blue-mogul-primary text-white font-semibold py-3 rounded-xl hover:bg-blue-mogul-primary/80 transition-all duration-300 shadow-lg hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-mogul-primary/50 focus-visible:ring-offset-2"
                             >
                                 <i class="fas fa-sign-in-alt mr-2"></i>
                                 <span id="btn-label">Staff Sign In</span>
@@ -214,7 +214,7 @@
                                 type="button"
                                 id="loading-btn"
                                 aria-label="Signing in, please wait"
-                                class="w-full bg-[#2F6BFF] text-white font-semibold py-3 rounded-xl opacity-0 pointer-events-none absolute inset-0 transition-opacity duration-300"
+                                class="w-full bg-blue-mogul-primary text-white font-semibold py-3 rounded-xl opacity-0 pointer-events-none absolute inset-0 transition-opacity duration-300"
                                 disabled
                             >
                                 <i class="fas fa-spinner fa-spin mr-2"></i>
@@ -250,7 +250,7 @@
             alt="Blue Mogul banner"
             class="absolute inset-0 w-full h-full object-cover"
         />
-        <div class="absolute inset-0 bg-[#1C2B5B]/20"></div>
+        <div class="absolute inset-0 bg-blue-mogul-surface/20"></div>
         <!-- Text overlay removed for cleaner look -->
     </div>
 
@@ -261,7 +261,7 @@
             alt="Blue Mogul banner"
             class="absolute inset-0 w-full h-full object-cover"
         />
-        <div class="absolute inset-0 bg-[#05070D]/30"></div>
+        <div class="absolute inset-0 bg-blue-mogul-secondary/30"></div>
         <!-- Text overlay removed for cleaner look -->
     </div>
 
