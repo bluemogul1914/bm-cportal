@@ -718,6 +718,77 @@ app.post("/portal/api/linkedin-bulk-fetch", async (req, res) => {
     res.status(500).json({ success: false, error: e.message });
   }
 });
+// ── Facebook Profile Lookup ──────────────────────────────────────────────────
+app.post("/portal/api/facebook-lookup", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
+  const { facebook_url, entity_type, entity_id, search_name } = req.body;
+  const targetUrl = facebook_url || "";
+  if (!targetUrl || !/^https?:\/\/(www\.)?facebook\.com/i.test(targetUrl)) {
+    return res.status(400).json({ success: false, error: "Provide a valid Facebook URL (https://www.facebook.com/...)" });
+  }
+  let rawText = "";
+  try { rawText = await scrapeWithJina(targetUrl); } catch (e: any) { /* ignore */ }
+  const profile: any = { facebook_url: targetUrl, name: search_name || "", about: "", raw_snippet: rawText.slice(0, 2000) };
+  const titleMatch = rawText.match(/Title:\s*(.+)/i);
+  if (titleMatch) profile.name = titleMatch[1].trim();
+  const descMatch = rawText.match(/Description:\s*(.+)/i);
+  if (descMatch) profile.about = descMatch[1].trim().slice(0, 500);
+  if (entity_type && entity_id) {
+    const table = entity_type === "client" ? "clients" : "leads";
+    await webhookPool.query(
+      `UPDATE ${table} SET facebook_url = COALESCE($1, facebook_url), facebook_data = $2, updated_at = NOW() WHERE id = $3`,
+      [targetUrl, JSON.stringify(profile), parseInt(entity_id)]
+    ).catch(() => {});
+  }
+  res.json({ success: true, profile });
+});
+
+app.post("/portal/api/facebook-save-url", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
+  const { entity_type, entity_id, facebook_url, clear_data } = req.body;
+  if (!entity_type || !entity_id) return res.status(400).json({ error: "entity_type and entity_id required" });
+  const table = entity_type === "client" ? "clients" : "leads";
+  try {
+    if (clear_data) {
+      await webhookPool.query(`UPDATE ${table} SET facebook_url = $1, facebook_data = NULL, updated_at = NOW() WHERE id = $2`, [facebook_url || null, parseInt(entity_id)]);
+    } else {
+      await webhookPool.query(`UPDATE ${table} SET facebook_url = $1, updated_at = NOW() WHERE id = $2`, [facebook_url || null, parseInt(entity_id)]);
+    }
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/portal/api/facebook-bulk-fetch", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.portalUser?.is_admin) return res.status(403).json({ error: "Unauthorized" });
+  const { entity_type = "client" } = req.body;
+  const table = entity_type === "client" ? "clients" : "leads";
+  try {
+    const { rows } = await webhookPool.query(`SELECT id, name, facebook_url FROM ${table} WHERE facebook_url IS NOT NULL AND facebook_url != '' ORDER BY id`);
+    const results: any[] = [];
+    let success = 0, failed = 0;
+    for (const row of rows) {
+      try {
+        const r = await fetch("http://127.0.0.1:" + (process.env.PORT || 3000) + "/portal/api/facebook-lookup", {
+          method: "POST", headers: { "Content-Type": "application/json", "Cookie": req.headers.cookie || "" },
+          body: JSON.stringify({ facebook_url: row.facebook_url, entity_type, entity_id: String(row.id), search_name: row.name }),
+        });
+        const data = await r.json();
+        if (data.success) { success++; results.push({ id: row.id, name: row.name, status: "ok" }); }
+        else { failed++; results.push({ id: row.id, name: row.name, status: "fail", error: data.error }); }
+      } catch (e: any) { failed++; results.push({ id: row.id, name: row.name, status: "error", error: e.message }); }
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    res.json({ success: true, total: rows.length, succeeded: success, failed, results });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // This Xero app is a CUSTOM CONNECTION: client-credentials grant, NO browser
 // consent / redirect URI, and a mandatory `Xero-tenant-id` header on every call.
 // GET /connections is unavailable to it. Config lives in provider_settings,
