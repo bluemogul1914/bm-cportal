@@ -251,12 +251,7 @@
             class="absolute inset-0 w-full h-full object-cover"
         />
         <div class="absolute inset-0 bg-[#1C2B5B]/20"></div>
-        <!-- Text overlay -->
-        <div class="absolute bottom-0 left-0 right-0 p-8 bg-[#05070D]/85">
-            <p class="text-white text-sm font-semibold tracking-wider uppercase mb-2">Blue Mogul</p>
-            <p class="text-white text-3xl font-extrabold leading-tight mb-3">High Speed Internet</p>
-            <p class="text-white/80 text-sm font-medium tracking-wide italic break-words">Unparalleled coverage and no contractual obligations</p>
-        </div>
+        <!-- Text overlay removed for cleaner look -->
     </div>
 
     <!-- Mobile hero (visible below form, hidden on lg+) -->
@@ -267,10 +262,7 @@
             class="absolute inset-0 w-full h-full object-cover"
         />
         <div class="absolute inset-0 bg-[#05070D]/30"></div>
-        <div class="absolute bottom-0 left-0 right-0 p-6 bg-[#05070D]/85">
-            <p class="text-white text-lg font-extrabold leading-tight">High Speed Internet</p>
-            <p class="text-white/80 text-xs font-medium tracking-wide italic break-words">Unparalleled coverage and no contractual obligations</p>
-        </div>
+        <!-- Text overlay removed for cleaner look -->
     </div>
 
     <script src="/assets/js/login.js"></script>
