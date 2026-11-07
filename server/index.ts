@@ -580,7 +580,7 @@ async function performScrapeLookup(params: {
   let profile: any = { raw_snippet: rawText.slice(0, 500), scraped_url: targetUrl };
   const profileType = params.profile_type || (targetUrl.includes("/company/") ? "company" : "person");
   // Try to extract profile picture URL from raw text regardless of AI
-  const earlyPicMatch = rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]+/i);
+  const earlyPicMatch = rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]*profile-displayphoto[^"'\s)<>]*/i) || rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]+/i);
   if (earlyPicMatch) {
     if (profileType === "company") profile.logo_url = earlyPicMatch[0];
     else profile.profile_pic_url = earlyPicMatch[0];
@@ -593,7 +593,7 @@ async function performScrapeLookup(params: {
       profile.model_used  = OLLAMA_MODEL;
       // Fallback: extract profile picture URL from raw scraped text if AI didn't find one
       if (!profile.profile_pic_url && !profile.logo_url) {
-        const picMatch = rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]+/i);
+        const picMatch = rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]*profile-displayphoto[^"'\s)<>]*/i) || rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]+/i);
         if (picMatch) {
           if (profileType === "company") profile.logo_url = picMatch[0];
           else profile.profile_pic_url = picMatch[0];
@@ -603,7 +603,7 @@ async function performScrapeLookup(params: {
       profile.ai_error    = e.message;
       profile.raw_snippet = rawText.slice(0, 800);
       // Try to extract profile picture even on AI failure
-      const picMatch = rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]+/i);
+      const picMatch = rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]*profile-displayphoto[^"'\s)<>]*/i) || rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]+/i);
       if (picMatch) {
         if (profileType === "company") profile.logo_url = picMatch[0];
         else profile.profile_pic_url = picMatch[0];
