@@ -475,8 +475,8 @@ function extractJsonFromText(text: string): any {
 
 async function extractProfileWithAI(text: string, profileType: string): Promise<any> {
   const systemPrompt = profileType === "company"
-    ? 'Extract company info from the web page text. Respond with ONLY a valid JSON object, no explanation. Schema: {"name":"","industry":"","website":"","phone":"","email":"","address":"","employees":"","description":"","social_links":[{"type":"","url":""}]}'
-    : 'Extract person info from the web page text. Respond with ONLY a valid JSON object, no explanation. Schema: {"full_name":"","first_name":"","last_name":"","headline":"","job_title":"","company":"","location":"","email":"","phone":"","about":"","experience":[{"title":"","company":"","dates":""}],"education":[{"school":"","degree":"","dates":""}],"linkedin_url":""}';
+    ? 'Extract company info from the web page text. Respond with ONLY a valid JSON object, no explanation. Schema: {"name":"","industry":"","website":"","phone":"","email":"","address":"","employees":"","description":"","logo_url":"","social_links":[{"type":"","url":""}]}'
+    : 'Extract person info from the web page text. Respond with ONLY a valid JSON object, no explanation. Schema: {"full_name":"","first_name":"","last_name":"","headline":"","job_title":"","company":"","location":"","email":"","phone":"","about":"","profile_pic_url":"","experience":[{"title":"","company":"","dates":""}],"education":[{"school":"","degree":"","dates":""}],"linkedin_url":""}';
 
   const resp = await fetch(`${OLLAMA_BASE_URL}/v1/chat/completions`, {
     method: "POST",
@@ -578,15 +578,36 @@ async function performScrapeLookup(params: {
 
   // Extract structured data with Ollama
   let profile: any = { raw_snippet: rawText.slice(0, 500), scraped_url: targetUrl };
+  const profileType = params.profile_type || (targetUrl.includes("/company/") ? "company" : "person");
+  // Try to extract profile picture URL from raw text regardless of AI
+  const earlyPicMatch = rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]+/i);
+  if (earlyPicMatch) {
+    if (profileType === "company") profile.logo_url = earlyPicMatch[0];
+    else profile.profile_pic_url = earlyPicMatch[0];
+  }
   if (rawText.length > 50) {
     try {
-      const pType = params.profile_type || (targetUrl.includes("/company/") ? "company" : "person");
+      const pType = profileType;
       profile = await extractProfileWithAI(rawText, pType);
       profile.scraped_url = targetUrl;
       profile.model_used  = OLLAMA_MODEL;
+      // Fallback: extract profile picture URL from raw scraped text if AI didn't find one
+      if (!profile.profile_pic_url && !profile.logo_url) {
+        const picMatch = rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]+/i);
+        if (picMatch) {
+          if (profileType === "company") profile.logo_url = picMatch[0];
+          else profile.profile_pic_url = picMatch[0];
+        }
+      }
     } catch (e: any) {
       profile.ai_error    = e.message;
       profile.raw_snippet = rawText.slice(0, 800);
+      // Try to extract profile picture even on AI failure
+      const picMatch = rawText.match(/https?:\/\/media\.licdn\.com\/dms\/image\/[^"'\s)<>]+/i);
+      if (picMatch) {
+        if (profileType === "company") profile.logo_url = picMatch[0];
+        else profile.profile_pic_url = picMatch[0];
+      }
     }
   }
 
