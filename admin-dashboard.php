@@ -221,6 +221,7 @@ try {
                         <p class="text-xs font-semibold text-blue-mogul-dim uppercase tracking-wide mb-1">Monthly Recurring Revenue</p>
                         <p class="text-3xl font-bold text-white">$<?php echo number_format($mrr, 2); ?></p>
                         <p class="text-sm text-blue-mogul-dim mt-2">ARR: $<?php echo number_format($arr, 2); ?></p>
+                        <canvas id="sparkline-mrr" style="height:40px;margin-top:8px;"></canvas>
                     </div>
 
                     <div class="bg-blue-mogul-surface rounded-lg border border-blue-mogul-dim/30 p-6">
@@ -518,5 +519,36 @@ try {
         });
     </script>
 
+
+    <script>
+    // Sparkline for MRR using revenue_by_month data
+    (function() {
+        var ctx = document.getElementById('sparkline-mrr');
+        if (!ctx) return;
+        var labels = <?php echo json_encode(array_column($revenue_by_month, 'month')); ?>;
+        var data = <?php echo json_encode(array_map(function($r){ return (float)($r['revenue'] ?? 0); }, $revenue_by_month)); ?>;
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    borderColor: '#2F6BFF',
+                    backgroundColor: 'rgba(47, 107, 255, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                scales: { x: { display: false }, y: { display: false } }
+            }
+        });
+    })();
+    </script>
 </body>
 </html>
