@@ -23,16 +23,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $name = trim($_POST['name'] ?? '');
             if (empty($name)) { $error_message = 'Contract name is required.'; }
             else {
-                $pdo->prepare("INSERT INTO service_contracts (client_id, name, start_date, end_date, status, monthly_value, notes) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                    ->execute([
-                        (int)($_POST['client_id'] ?? 0) ?: null,
-                        $name,
-                        trim($_POST['start_date'] ?? '') ?: null,
-                        trim($_POST['end_date'] ?? '') ?: null,
-                        trim($_POST['status'] ?? 'active') ?: 'active',
-                        (float)($_POST['monthly_value'] ?? 0),
-                        trim($_POST['notes'] ?? '') ?: null,
-                    ]);
+                require_once __DIR__ . '/includes/numbering.php';
+                                $contractNum = generate_number('BMC', $pdo);
+                                $pdo->prepare("INSERT INTO service_contracts (client_id, name, start_date, end_date, status, monthly_value, notes, number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                                    ->execute([
+                                        (int)($_POST['client_id'] ?? 0) ?: null,
+                                        $name,
+                                        trim($_POST['start_date'] ?? '') ?: null,
+                                        trim($_POST['end_date'] ?? '') ?: null,
+                                        trim($_POST['status'] ?? 'active') ?: 'active',
+                                        (float)($_POST['monthly_value'] ?? 0),
+                                        trim($_POST['notes'] ?? '') ?: null,
+                                        $contractNum,
+                                    ]);
                 $success_message = 'Contract created.';
             }
         } elseif ($action === 'update_contract') {

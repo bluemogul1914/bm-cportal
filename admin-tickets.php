@@ -30,9 +30,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $error_message = 'Subject and client are required.';
         } else {
             try {
+                require_once __DIR__ . '/includes/numbering.php';
                 $pdo = getDB();
-                $stmt = $pdo->prepare("INSERT INTO tickets (client_id, subject, description, status, priority, ticket_group, assigned_to, source, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, ?, ?, 'admin', NOW(), NOW()) RETURNING id");
-                $stmt->execute([$client_id, $subject, $description, $priority, $ticket_group, $assigned_to ?: null]);
+                $ticketNum = generate_number('BMT', $pdo);
+                $stmt = $pdo->prepare("INSERT INTO tickets (client_id, subject, description, status, priority, ticket_group, assigned_to, source, created_at, updated_at, number) VALUES (?, ?, ?, 'open', ?, ?, ?, 'admin', NOW(), NOW(), ?) RETURNING id");
+                $stmt->execute([$client_id, $subject, $description, $priority, $ticket_group, $assigned_to ?: null, $ticketNum]);
                 $new_id = $stmt->fetchColumn();
                 $pdo->prepare("INSERT INTO activity_log (user_id, action, entity_type, entity_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)")
                     ->execute([$user_id, 'ticket_created', 'ticket', $new_id, 'Created ticket: ' . $subject, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']);

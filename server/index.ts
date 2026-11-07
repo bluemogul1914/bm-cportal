@@ -6,6 +6,7 @@ import { createServer } from "http";
 import { seed } from "./seed";
 import { runMigrations } from "stripe-replit-sync";
 import { runPortalMigrations } from "./migrations";
+import { generateNumber } from "./numbering";
 import { getStripeSync } from "./stripeClient";
 import { WebhookHandlers } from "./webhookHandlers";
 import { execFile } from "child_process";
@@ -2035,10 +2036,11 @@ app.post("/api/documents/upload", upload.single("file"), async (req, res) => {
     );
     const clientId = clientResult.rows[0]?.id || sess.user_id;
 
+    const docNumber = await generateNumber("BMD");
     const result = await webhookPool.query(
-      `INSERT INTO documents (client_id, uploaded_by, name, filename, filepath, filesize, mimetype, category, description, is_public, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, NOW()) RETURNING id`,
-      [clientId, sess.user_id, docName, file.filename, `uploads/${file.filename}`, file.size, file.mimetype, category, description]
+      `INSERT INTO documents (client_id, uploaded_by, name, filename, filepath, filesize, mimetype, category, description, is_public, number, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, $10, NOW()) RETURNING id`,
+      [clientId, sess.user_id, docName, file.filename, `uploads/${file.filename}`, file.size, file.mimetype, category, description, docNumber]
     );
 
     await webhookPool.query(
@@ -3100,10 +3102,11 @@ app.post("/api/webhook/create-meeting", express.json(), async (req, res) => {
   try {
     const { title, client_id, client_name, meeting_type, scheduled_at, duration_minutes, location, notes, status } = req.body;
     if (!title || !scheduled_at) return res.status(400).json({ error: "title and scheduled_at are required" });
+    const meetingNumber = await generateNumber("BMET");
     const r = await webhookPool.query(
-      `INSERT INTO crm_meetings (title, client_id, client_name, meeting_type, scheduled_at, duration_minutes, location, notes, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()) RETURNING id`,
-      [title, client_id||null, client_name||null, meeting_type||'meeting', scheduled_at, duration_minutes||60, location||null, notes||null, status||'scheduled']
+      `INSERT INTO crm_meetings (number, title, client_id, client_name, meeting_type, scheduled_at, duration_minutes, location, notes, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW()) RETURNING id`,
+      [meetingNumber, title, client_id||null, client_name||null, meeting_type||'meeting', scheduled_at, duration_minutes||60, location||null, notes||null, status||'scheduled']
     );
     res.json({ success: true, meeting_id: r.rows[0].id });
   } catch (err: any) {
@@ -3138,11 +3141,12 @@ app.post("/api/webhook/add-client-service", express.json(), async (req, res) => 
     const { client_id, service_name, service_type, price, billing_period, notes, status } = req.body;
     if (!client_id || !service_name) return res.status(400).json({ error: "client_id and service_name are required" });
     // Store as a subscription record
+    const subNumber = await generateNumber("BMS");
     const r = await webhookPool.query(
-      `INSERT INTO subscriptions (client_id, plan_name, price, billing_period, status, notes, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW()) RETURNING id
+      `INSERT INTO subscriptions (client_id, plan_name, price, billing_period, status, notes, number, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW()) RETURNING id
        ON CONFLICT DO NOTHING`,
-      [client_id, service_name, parseFloat(price)||0, billing_period||'monthly', status||'active', notes||null]
+      [client_id, service_name, parseFloat(price)||0, billing_period||'monthly', status||'active', notes||null, subNumber]
     ).catch(async () => {
       // fallback: subscriptions table may not exist — try client_services
       return webhookPool.query(
@@ -4471,9 +4475,10 @@ async function bootstrapPortalDatabase() {
         ["Cloud Workspace Bundle", "Bundle", "Tier 2", 349.00, "monthly", "Microsoft 365 Business + Cloud Backup Premium + Hosted Server Medium — complete cloud workspace", '[\"Microsoft 365 Business (per user)\", \"Cloud Backup Premium\", \"Hosted Server - Medium\", \"Managed OS\", \"Priority Support\"]'],
       ];
     for (const p of products) {
+      const prodNum = await generateNumber("BMPr");
       await webhookPool.query(
-        "INSERT INTO products (name, category, tier, price, billing_period, description, features) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (name) DO NOTHING",
-        p
+        "INSERT INTO products (name, category, tier, price, billing_period, description, features, number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (name) DO NOTHING",
+        [...p, prodNum]
       );
     }
     console.log(`Ensured ${products.length} default products in database`);

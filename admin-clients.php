@@ -57,25 +57,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') ==
         $modal_error = 'First name is required.';
     } else {
         try {
-            $stmt = $pdo_early->prepare("
-                INSERT INTO clients
-                  (name, first_name, last_name, title, job_title,
-                   email, phone, company, crm_company_id,
-                   address, city, state, zip,
-                   notes, credit_balance, parent_id,
-                   linkedin_url, phones, emails, social_links, tags,
-                   created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?,NOW(),NOW())
-                RETURNING id
-            ");
-            $stmt->execute([
-                $name, $first_name, $last_name, $title_val, $job_title,
-                $email, $phone, $company, $crm_company_id,
-                $address, $city, $state_val, $zip,
-                $notes, $credit_balance, $parent_id,
-                $linkedin_url ?: null,
-                $phones_json, $emails_json, $socials_json, $tags_pg,
-            ]);
+            require_once __DIR__ . '/includes/numbering.php';
+                        $clientNum = generate_number('BMA', $pdo_early);
+                        $stmt = $pdo_early->prepare("
+                            INSERT INTO clients
+                              (name, first_name, last_name, title, job_title,
+                               email, phone, company, crm_company_id,
+                               address, city, state, zip,
+                               notes, credit_balance, parent_id,
+                               linkedin_url, phones, emails, social_links, tags,
+                               number, created_at, updated_at)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?,NOW(),NOW())
+                            RETURNING id
+                        ");
+                        $stmt->execute([
+                            $name, $first_name, $last_name, $title_val, $job_title,
+                            $email, $phone, $company, $crm_company_id,
+                            $address, $city, $state_val, $zip,
+                            $notes, $credit_balance, $parent_id,
+                            $linkedin_url ?: null,
+                            $phones_json, $emails_json, $socials_json, $tags_pg,
+                            $clientNum,
+                        ]);
             $new_id = $stmt->fetchColumn();
             $pdo_early->prepare("INSERT INTO activity_log (user_id,action,entity_type,entity_id,details,ip_address) VALUES (?,?,?,?,?,?)")
                 ->execute([$user_id,'client_created','client',$new_id,"Created client: $name",$_SERVER['REMOTE_ADDR']??'0.0.0.0']);

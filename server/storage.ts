@@ -9,6 +9,7 @@ import {
   type AgentLog, type InsertAgentLog, agentLogs,
 } from "@shared/schema";
 import { db } from "./db";
+import { generateNumber } from "./numbering";
 import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
@@ -102,7 +103,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createClient(client: InsertClient): Promise<Client> {
-    const [created] = await db.insert(clients).values(client).returning();
+    const number = await generateNumber("BMA");
+    const [created] = await db.insert(clients).values({ ...client, number }).returning();
     return created;
   }
 
@@ -167,7 +169,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createInvoice(invoice: InsertInvoice): Promise<Invoice> {
-    const [created] = await db.insert(invoices).values(invoice).returning();
+    const number = await generateNumber("BMI");
+    const [created] = await db.insert(invoices).values({ ...invoice, number, invoiceNumber: invoice.invoiceNumber || number }).returning();
     return created;
   }
 
@@ -186,7 +189,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTicket(ticket: InsertTicket): Promise<Ticket> {
-    const [created] = await db.insert(tickets).values(ticket).returning();
+    const number = await generateNumber("BMT");
+    const [created] = await db.insert(tickets).values({ ...ticket, number }).returning();
     return created;
   }
 

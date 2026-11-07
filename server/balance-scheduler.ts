@@ -1,6 +1,7 @@
 import pg from "pg";
 import { sendEmail } from "./email";
 import { maybeProvisionHwService } from "./hostwinds-api";
+import { generateNumber } from "./numbering";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -108,9 +109,10 @@ export async function recordTransaction(
     );
 
     // Insert ledger entry
+    const ledgerNum = await generateNumber("BMB");
     await conn.query(
-      `INSERT INTO transaction_ledger (client_id, type, amount, balance_before, balance_after, description, invoice_id, stripe_payment_id, stripe_session_id, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      `INSERT INTO transaction_ledger (client_id, type, amount, balance_before, balance_after, description, invoice_id, stripe_payment_id, stripe_session_id, metadata, number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         params.clientId,
         params.type,
@@ -122,6 +124,7 @@ export async function recordTransaction(
         params.stripePaymentId ?? null,
         params.stripeSessionId ?? null,
         params.metadata ? JSON.stringify(params.metadata) : "{}",
+        ledgerNum,
       ]
     );
 

@@ -1,0 +1,181 @@
+{
+  "version": "1.0",
+  "generated": "2026-10-27",
+  "source": "wholesale_rate_card_2026-09-27.csv (CONTRACT) + product_catalog.md (Portal live)",
+  "markup_policy": "Business fibre 40-60%, VoIP numbers 400-500%, bundles 55% floor",
+
+  "offers": [
+    {
+      "code": "BM-FIBER-001",
+      "name": "Business Fiber Internet — 1 Gbps Symmetrical",
+      "category": "fiber",
+      "tier": "F2",
+      "description": "Symmetrical 1000/1000 Mbps business fiber with managed router, 13 static IPs, DDoS protection, 24/7 monitoring.",
+      "wholesale_cost": 74.99,
+      "retail_price": 299.00,
+      "gross_margin_pct": 75.1,
+      "markup_basis": "broadband 40-60% (includes managed router, monitoring, DDoS)",
+      "terms": {
+        "contract": "12-month minimum (24-month recommended)",
+        "billing": "monthly in advance",
+        "setup_fee": 39.99,
+        "sla": "99.9% availability target (business-class priority restoration)"
+      },
+      "line_items": [
+        {"description": "Fiber 1000/1000 Mbps circuit (wholesale: $74.99)", "quantity": 1, "unitPrice": "74.99"},
+        {"description": "Managed business router (included)", "quantity": 1, "unitPrice": "0.00"},
+        {"description": "Static IP block — 13 addresses", "quantity": 1, "unitPrice": "0.00"},
+        {"description": "24/7 network monitoring & DDoS protection", "quantity": 1, "unitPrice": "0.00"},
+        {"description": "Professional installation", "quantity": 1, "unitPrice": "39.99"}
+      ],
+      "retail_line_items": [
+        {"description": "Business Fiber Internet — 1000/1000 Mbps", "quantity": 1, "unitPrice": "299.00"}
+      ]
+    },
+
+    {
+      "code": "BM-FIBER-002",
+      "name": "Fiber + Business VoIP Bundle",
+      "category": "bundle",
+      "tier": "F2+V2",
+      "description": "Business Fiber 1000/1000 + VoIP with 15 extensions, unlimited domestic calling, advanced IVR and call recording.",
+      "wholesale_cost": 86.71,
+      "retail_price": 388.00,
+      "gross_margin_pct": 77.8,
+      "markup_basis": "bundle 55% floor / 60-70% target (achieved 77.8%)",
+      "terms": {
+        "contract": "24-month for fiber rate lock; VoIP month-to-month",
+        "billing": "monthly in advance",
+        "setup_fee": 39.99,
+        "sla": "99.9% availability (network), 99.9% VoIP uptime"
+      },
+      "retail_line_items": [
+        {"description": "Business Fiber Internet — 1000/1000 Mbps (BM-FIBER-001)", "quantity": 1, "unitPrice": "299.00"},
+        {"description": "Business VoIP — 15 extensions (BM-VOIP-001)", "quantity": 1, "unitPrice": "89.00"}
+      ],
+      "wholesale_breakdown": {
+        "fiber_circuit": 74.99,
+        "voip_ms_did": 0.85,
+        "voip_usage_400min": 3.40,
+        "voip_features": 7.47
+      }
+    },
+
+    {
+      "code": "BM-FIBER-003",
+      "name": "Fiber + Managed IT Foundation Bundle",
+      "category": "bundle",
+      "tier": "F2+IT2(10)",
+      "description": "Business Fiber 1000/1000 + Managed IT Support for 10 seats with 24/7 monitoring, EDR, and cloud backup.",
+      "wholesale_cost": 141.49,
+      "retail_price": 1995.00,
+      "gross_margin_pct": 92.9,
+      "markup_basis": "bundle 55% floor / 60-70% target (achieved 92.9%)",
+      "terms": {
+        "contract": "24-month term",
+        "billing": "monthly in advance",
+        "setup_fee": 0.00,
+        "sla": "99.95% network, 4-hour critical response"
+      },
+      "retail_line_items": [
+        {"description": "Business Fiber Internet — 1000/1000 Mbps (BM-FIBER-001)", "quantity": 1, "unitPrice": "299.00"},
+        {"description": "Managed IT Support — IT2 tier, 10 seats", "quantity": 10, "unitPrice": "179.00"}
+      ],
+      "wholesale_breakdown": {
+        "fiber_circuit": 74.99,
+        "it_per_seat": 6.65,
+        "it_total_10_seats": 66.50
+      }
+    },
+
+    {
+      "code": "BM-VOIP-001",
+      "name": "Business VoIP — 15 Extensions",
+      "category": "voip",
+      "tier": "V2",
+      "description": "15-user VoIP with local DID, unlimited domestic calling, advanced IVR, call recording, conference bridge, and call analytics.",
+      "wholesale_cost": 12.75,
+      "retail_price": 89.00,
+      "gross_margin_pct": 85.4,
+      "markup_basis": "VoIP 400-500% policy (achieved 85.4% net of bundled features)",
+      "terms": {
+        "contract": "month-to-month (12-month for 5% discount)",
+        "billing": "monthly in advance",
+        "setup_fee": 0.00,
+        "sla": "99.9% network uptime (Voip.ms carrier SLA)"
+      },
+      "retail_line_items": [
+        {"description": "Business VoIP — 15 extensions (retail)", "quantity": 1, "unitPrice": "89.00"}
+      ],
+      "wholesale_breakdown": {
+        "voip_ms_did": 0.85,
+        "voip_usage_400min_per_seat": 11.90,
+        "voip_addon_features": 0.00
+      }
+    },
+
+    {
+      "code": "BM-MSP-001",
+      "name": "Managed IT Support — Business Tier (25 seats)",
+      "category": "managed_it",
+      "tier": "IT2",
+      "description": "24/7 managed IT with full monitoring, EDR, cloud backup (100GB/seat), patch management, and phone/email support for up to 25 devices.",
+      "wholesale_cost": 81.80,
+      "retail_price": 249.00,
+      "gross_margin_pct": 67.1,
+      "markup_basis": "IT 40-60% policy (achieved 67.1%)",
+      "cost_note": "RMM/EDR/backup are BENCHMARK costs, not yet contracted — see open items",
+      "terms": {
+        "contract": "month-to-month (12-month for 5% discount)",
+        "billing": "monthly in advance",
+        "setup_fee": 0.00,
+        "sla": "99.9% platform uptime, 4-hour critical response"
+      },
+      "retail_line_items": [
+        {"description": "Managed IT Support — Business tier (IT2), 25 seats", "quantity": 25, "unitPrice": "165.00"}
+      ],
+      "wholesale_breakdown": {
+        "rmm_monitoring": 3.50,
+        "managed_edr": 3.50,
+        "cloud_backup": 8.00,
+        "helpdesk_labour_allocated": 14.30
+      },
+      "note": "Retail line item uses 3-tier catalog price ($165/seat). Portal catalog shows $249/seat (Business tier). The $249 price is the authoritative portal retail. GM calculation: (249-81.80)/249 = 67.1%."
+    }
+  ],
+
+  "bundles": {
+    "Foundation Starter": {
+      "components": ["BM-FIBER-001(F1)", "BM-VOIP-001(V1)", "IT1(5 seats)"],
+      "retail": 507.00,
+      "wholesale": 50.99,
+      "gm_pct": 89.9
+    },
+    "Foundation Pro": {
+      "components": ["BM-FIBER-001", "BM-VOIP-001", "IT2(10 seats)"],
+      "retail": 587.00,
+      "wholesale": 108.99,
+      "gm_pct": 81.4
+    },
+    "Foundation Unlimited": {
+      "components": ["BM-FIBER-001", "BM-VOIP-002", "IT2(25 seats)"],
+      "retail": 687.00,
+      "wholesale": 152.30,
+      "gm_pct": 77.8
+    }
+  },
+
+  "markup_policy_references": {
+    "fibre": "40-60% markup on broadband circuits",
+    "voip": "400-500% markup on per-minute/DID rates",
+    "it": "50% target on per-seat managed services",
+    "bundles": "55% floor, 60-70% target on blended retail"
+  },
+
+  "open_items": [
+    "RMM/EDR/backup supplier contracts needed to replace BENCHMARK costs",
+    "Voip.ms unlimited plan wholesale cost unpriced — model uses per-minute",
+    "E-Path Tier 1 pricing varies per building — per-site qualification needed",
+    "3-tier catalog is PROPOSED — not for client use until open items closed"
+  ]
+}

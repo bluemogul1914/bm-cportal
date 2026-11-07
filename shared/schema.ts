@@ -40,6 +40,7 @@ export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id),
   parentClientId: integer("parent_client_id"),
+  number: varchar("number", { length: 30 }).unique(),
   name: varchar("name", { length: 255 }).notNull(),
   email: varchar("email", { length: 255 }).notNull().unique(),
   phone: varchar("phone", { length: 50 }),
@@ -117,6 +118,7 @@ export const invoices = pgTable("invoices", {
   clientId: integer("client_id").references(() => clients.id),
   subscriptionId: integer("subscription_id").references(() => subscriptions.id),
   invoiceNumber: varchar("invoice_number", { length: 50 }).notNull().unique(),
+  number: varchar("number", { length: 30 }).unique(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   tax: decimal("tax", { precision: 10, scale: 2 }).default("0"),
   total: decimal("total", { precision: 10, scale: 2 }).default("0"),
@@ -144,6 +146,7 @@ export type Invoice = typeof invoices.$inferSelect;
 export const tickets = pgTable("tickets", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id),
+  number: varchar("number", { length: 30 }).unique(),
   subject: varchar("subject", { length: 255 }).notNull(),
   description: text("description"),
   status: varchar("status", { length: 50 }).default("open"),

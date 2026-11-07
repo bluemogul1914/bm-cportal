@@ -26,22 +26,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $hostname = trim($_POST['hostname'] ?? '');
         $device_type = trim($_POST['device_type'] ?? '');
         if ($cid && $hostname && $device_type) {
-            $stmt = $pdo->prepare("INSERT INTO network_devices (client_id, hostname, device_type, manufacturer, model, serial_number, ip_address, mac_address, os_name, os_version, cpu, ram_gb, disk_gb, status, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-            $stmt->execute([
-                $cid, $hostname, $device_type,
-                trim($_POST['manufacturer'] ?? '') ?: null,
-                trim($_POST['model'] ?? '') ?: null,
-                trim($_POST['serial_number'] ?? '') ?: null,
-                trim($_POST['ip_address'] ?? '') ?: null,
-                trim($_POST['mac_address'] ?? '') ?: null,
-                trim($_POST['os_name'] ?? '') ?: null,
-                trim($_POST['os_version'] ?? '') ?: null,
-                trim($_POST['cpu'] ?? '') ?: null,
-                intval($_POST['ram_gb'] ?? 0) ?: null,
-                intval($_POST['disk_gb'] ?? 0) ?: null,
-                $_POST['status'] ?? 'online',
-                trim($_POST['notes'] ?? '') ?: null,
-            ]);
+            require_once __DIR__ . '/includes/numbering.php';
+                        $netNum = generate_number('BMN', $pdo);
+                        $stmt = $pdo->prepare("INSERT INTO network_devices (client_id, hostname, device_type, manufacturer, model, serial_number, ip_address, mac_address, os_name, os_version, cpu, ram_gb, disk_gb, status, notes, number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                        $stmt->execute([
+                            $cid, $hostname, $device_type,
+                            trim($_POST['manufacturer'] ?? '') ?: null,
+                            trim($_POST['model'] ?? '') ?: null,
+                            trim($_POST['serial_number'] ?? '') ?: null,
+                            trim($_POST['ip_address'] ?? '') ?: null,
+                            trim($_POST['mac_address'] ?? '') ?: null,
+                            trim($_POST['os_name'] ?? '') ?: null,
+                            trim($_POST['os_version'] ?? '') ?: null,
+                            trim($_POST['cpu'] ?? '') ?: null,
+                            intval($_POST['ram_gb'] ?? 0) ?: null,
+                            intval($_POST['disk_gb'] ?? 0) ?: null,
+                            trim($_POST['status'] ?? 'active') ?: 'active',
+                            trim($_POST['notes'] ?? '') ?: null,
+                            $netNum,
+                        ]);
             $success_msg = 'Device added successfully.';
             if ($cid) $client_id = $cid;
         } else {

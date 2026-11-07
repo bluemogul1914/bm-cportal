@@ -23,7 +23,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $supplier = trim($_POST['supplier'] ?? '');
             if (empty($supplier)) { $error_message = 'Supplier is required.'; }
             else {
-                $pdo->prepare("INSERT INTO purchase_orders (client_id, supplier, po_number, total, status, requested_by, notes) VALUES (?, ?, ?, ?, 'pending', ?, ?)")
+                require_once __DIR__ . '/includes/numbering.php';
+                $poNum = generate_number('BMPO', $pdo);
+                $pdo->prepare("INSERT INTO purchase_orders (client_id, supplier, po_number, total, status, requested_by, notes, number) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)")
                     ->execute([
                         (int)($_POST['client_id'] ?? 0) ?: null,
                         $supplier,
@@ -31,6 +33,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                         (float)($_POST['total'] ?? 0),
                         $user_name,
                         trim($_POST['notes'] ?? '') ?: null,
+                        $poNum,
                     ]);
                 $po_id = (int)$pdo->lastInsertId();
                 // line items

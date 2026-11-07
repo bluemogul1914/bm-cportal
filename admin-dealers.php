@@ -53,10 +53,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_dealer'])) {
                 $error = 'A dealer with that email already exists.';
             } else {
                 $dealer_code = 'DLR-' . str_pad(random_int(10000,99999),5,'0',STR_PAD_LEFT);
+                require_once __DIR__ . '/includes/numbering.php';
+                $dealerNum = generate_number('BMDL', $pdo);
                 $pdo->prepare(
-                    "INSERT INTO dealers (dealer_code, referral_code, full_name, email, phone, company, status, tier, created_at)
-                     VALUES (?,?,?,?,?,?,'active',?,NOW())"
-                )->execute([$dealer_code, $dealer_code, $full_name, $email, $phone ?: null, $company ?: null, $tier]);
+                    "INSERT INTO dealers (dealer_code, referral_code, full_name, email, phone, company, status, tier, created_at, number)
+                     VALUES (?,?,?,?,?,?,'active',?,NOW(),?)"
+                )->execute([$dealer_code, $dealer_code, $full_name, $email, $phone ?: null, $company ?: null, $tier, $dealerNum]);
                 $success = "Dealer added ($dealer_code).";
             }
         } catch (PDOException $e) {

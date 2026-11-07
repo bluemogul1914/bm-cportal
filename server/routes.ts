@@ -9,6 +9,7 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { db, pool } from "./db";
+import { generateNumber } from "./numbering";
 import { sql, eq, and } from "drizzle-orm";
 import { syncSource, syncAllSources, getClientAssets, VALID_SOURCES } from "./network-sync";
 import { syncWave, waveStatus, fetchWaveBusinesses, getWaveToken } from "./wave-api";
@@ -588,9 +589,10 @@ export async function registerRoutes(
   app.post("/api/webhook/log-social-post", requireWebhookToken, async (req, res) => {
     const { platform, content_preview, post_url, likes, comments, shares } = req.body;
     if (!platform) return res.status(400).json({ error: "platform required" });
+    const socialNumber = await generateNumber("BMM");
     const result = await db.execute(sql`
-      INSERT INTO social_posts (platform, content_preview, post_url, likes, comments, shares, posted_at, created_at)
-      VALUES (${platform}, ${content_preview ?? null}, ${post_url ?? null}, ${likes ?? 0}, ${comments ?? 0}, ${shares ?? 0}, NOW(), NOW())
+      INSERT INTO social_posts (number, platform, content_preview, post_url, likes, comments, shares, posted_at, created_at)
+      VALUES (${socialNumber}, ${platform}, ${content_preview ?? null}, ${post_url ?? null}, ${likes ?? 0}, ${comments ?? 0}, ${shares ?? 0}, NOW(), NOW())
       RETURNING *
     `);
     res.status(201).json(result.rows[0]);
@@ -600,9 +602,10 @@ export async function registerRoutes(
   app.post("/api/webhook/log-blog-post", requireWebhookToken, async (req, res) => {
     const { title, platform, post_url, views, engagement_score } = req.body;
     if (!title) return res.status(400).json({ error: "title required" });
+    const blogNumber = await generateNumber("BMM");
     const result = await db.execute(sql`
-      INSERT INTO blog_posts (title, platform, post_url, views, engagement_score, published_at, created_at)
-      VALUES (${title}, ${platform ?? "website"}, ${post_url ?? null}, ${views ?? 0}, ${engagement_score ?? 0}, NOW(), NOW())
+      INSERT INTO blog_posts (number, title, platform, post_url, views, engagement_score, published_at, created_at)
+      VALUES (${blogNumber}, ${title}, ${platform ?? "website"}, ${post_url ?? null}, ${views ?? 0}, ${engagement_score ?? 0}, NOW(), NOW())
       RETURNING *
     `);
     res.status(201).json(result.rows[0]);

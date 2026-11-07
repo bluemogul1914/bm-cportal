@@ -1008,4 +1008,23 @@ export async function runPortalMigrations() {
               } catch (err: any) {
                 console.error("[migrations] Domain/certificate monitor migration error:", err.message);
               }
-            }
+            
+  // ── Unified numbering system (#1809) ─────────────────────────────────────
+  try {
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS number_sequences (
+      prefix VARCHAR(10) NOT NULL,
+      date DATE NOT NULL,
+      last_seq INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (prefix, date)
+    )`);
+
+    const tables = ['clients','leads','projects','purchase_orders','invoices','tickets','transaction_ledger','products','subscriptions','service_contracts','network_sites','documents','dealers','social_posts','blog_posts','crm_meetings'];
+    for (const t of tables) {
+      await db.execute(sql.raw(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS number VARCHAR(30)`));
+      await db.execute(sql.raw(`CREATE UNIQUE INDEX IF NOT EXISTS ${t}_number_uq ON ${t} (number)`));
+    }
+    console.log("[migrations] Unified numbering migrations applied");
+  } catch (err: any) {
+    console.error("[migrations] Unified numbering migration error:", err.message);
+  }
+}
