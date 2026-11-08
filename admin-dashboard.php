@@ -10,7 +10,7 @@ $user_name = $_SESSION['user_name'] ?? 'Admin';
 try {
     $pdo = getDB();
 
-    $stmt = $pdo->query("SELECT COUNT(*) as count FROM clients WHERE status = 'active'");
+    $stmt = $pdo->query("SELECT COUNT(*) as count FROM clients");
     $total_clients = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
 
     $stmt = $pdo->query("
