@@ -13,16 +13,19 @@ interface ContaboCreds {
 async function getContaboCreds(pool: pg.Pool): Promise<ContaboCreds | null> {
   try {
     const { rows } = await pool.query(
-      "SELECT username, secret_cipher FROM credentials WHERE label = 'Contabo API' LIMIT 1"
+      "SELECT username, secret_cipher, otp_secret_cipher, notes FROM credentials WHERE label = 'Contabo API' LIMIT 1"
     );
     if (!rows.length) return null;
     const { decryptSecret } = await import("./credential-vault.js");
     const secret = decryptSecret(rows[0].secret_cipher);
+    const password = rows[0].otp_secret_cipher ? decryptSecret(rows[0].otp_secret_cipher) : "";
+    const clientIdMatch = rows[0].notes?.match(/Client ID: (\S+)/);
+    const clientId = clientIdMatch ? clientIdMatch[1] : "INT-15467787";
     return {
-      clientId: rows[0].username, // stored as client ID (INT-15467787)
+      clientId,
       clientSecret: secret,
-      username: "it@bluemogul.biz",
-      password: secret, // try client secret as password
+      username: rows[0].username, // Contabo account email
+      password,
     };
   } catch {
     return null;
@@ -88,4 +91,54 @@ export async function contaboGetInstance(pool: pg.Pool, instanceId: string): Pro
   if (!resp.ok) throw new Error(`Contabo API error: ${resp.status}`);
   const data = await resp.json();
   return data.data || null;
+}
+export async function contaboListProducts(pool: pg.Pool): Promise<any[]> {
+  const token = await getToken(pool);
+  if (!token) throw new Error("Not authenticated with Contabo");
+
+  const resp = await fetch(`${CONTABO_API_BASE}/compute/products`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "x-request-id": crypto.randomUUID(),
+    },
+  });
+  if (!resp.ok) throw new Error(`Contabo API error: ${resp.status}`);
+  const data = await resp.json();
+  return data.data || [];
+}
+
+export async function contaboCreateInstance(pool: pg.Pool, spec: {
+  region: string;
+  imageId: string;
+  productId: string;
+  displayName?: string;
+  sshKeys?: string[];
+}): Promise<any> {
+  const token = await getToken(pool);
+  if (!token) throw new Error("Not authenticated with Contabo");
+
+  const body: any = {
+    region: spec.region,
+    imageId: spec.imageId,
+    productId: spec.productId,
+    period: 1,
+  };
+  if (spec.displayName) body.displayName = spec.displayName;
+  if (spec.sshKeys?.length) body.sshKeys = spec.sshKeys;
+
+  const resp = await fetch(`${CONTABO_API_BASE}/compute/instances`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "x-request-id": crypto.randomUUID(),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`Contabo API error: ${resp.status} - ${err}`);
+  }
+  const data = await resp.json();
+  return data.data || data;
 }
