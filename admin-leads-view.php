@@ -416,7 +416,6 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
                         <textarea name="notes" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"><?= htmlspecialchars($lead['notes']??'') ?></textarea>
                     </div>
                 </div>
-                <input type="hidden" name="pipeline_status" value="<?= htmlspecialchars($lead['pipeline_status']??'new_enquiry') ?>">
                 <input type="hidden" name="owner" value="<?= htmlspecialchars($lead['owner']??'Me') ?>">
                 <input type="hidden" name="custom_status" value="<?= htmlspecialchars($lead['custom_status']??'customer') ?>">
             </div>
