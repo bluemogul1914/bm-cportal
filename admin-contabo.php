@@ -297,7 +297,7 @@ async function loadProducts() {
         const res = await fetch('/portal/api/admin/contabo/products');
         const data = await res.json();
         if (data.error || !data.products || data.products.length === 0) {
-            select.innerHTML = '<option value="">Error loading products</option>';
+            select.innerHTML = '<option value="">Error: ' + (data.error || 'no products') + '</option>';
             return;
         }
         let html = '<option value="">Select a VPS plan...</option>';
