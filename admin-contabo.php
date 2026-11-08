@@ -65,8 +65,10 @@ include 'includes/admin-header.php';
                         </div>
                     </div>
                     <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Image ID</label>
-                        <input type="text" id="instance-image" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="ubuntu-22.04">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Image / 1-Click App</label>
+                        <select id="instance-image" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                            <option value="">Loading images...</option>
+                        </select>
                     </div>
                     <div class="mt-4">
                         <button onclick="createInstance()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition">Create Instance</button>
@@ -166,7 +168,33 @@ async function createInstance() {
     }
 }
 
+async function loadImages() {
+    const select = document.getElementById('instance-image');
+    try {
+        const res = await fetch('/portal/api/admin/contabo/images');
+        const data = await res.json();
+        if (data.error) {
+            select.innerHTML = '<option value="">Error loading images</option>';
+            return;
+        }
+        if (!data.images || data.images.length === 0) {
+            select.innerHTML = '<option value="">No images available</option>';
+            return;
+        }
+        let html = '<option value="">Select an image or 1-Click App...</option>';
+        for (const img of data.images) {
+            const name = img.name || img.description || img.imageId || 'Unknown';
+            const id = img.imageId || img.id || '';
+            html += '<option value="' + id + '">' + name + '</option>';
+        }
+        select.innerHTML = html;
+    } catch (e) {
+        select.innerHTML = '<option value="">Error: ' + e.message + '</option>';
+    }
+}
+
 checkStatus();
 loadInstances();
+loadImages();
 </script>
 <?php include 'includes/admin-footer.php'; ?>
