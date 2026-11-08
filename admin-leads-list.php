@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && validate_csrf_token($_POST['_csrf_t
     if ($_POST['action'] === 'delete_lead') {
         $id = (int)($_POST['lead_id'] ?? 0);
         if ($id > 0) {
-            $pdo->prepare("DELETE FROM leads WHERE id=?")->execute([$id]);
+            $pdo->prepare("DELETE FROM crm_leads WHERE id=?")->execute([$id]);
             $success_msg = 'Lead deleted.';
         }
     }
@@ -146,7 +146,7 @@ $status_badge_colors = [
             </thead>
             <tbody class="divide-y divide-gray-100">
                 <?php if (empty($leads)): ?>
-                <tr><td colspan="10" class="px-4 py-10 text-center text-gray-400">
+                <tr><td colspan="11" class="px-4 py-10 text-center text-gray-400">
                     <i class="fas fa-users text-3xl mb-2"></i><br>No leads found. <a href="admin-leads-add.php" class="text-blue-500 hover:underline">Add your first lead</a>
                 </td></tr>
                 <?php else: ?>
@@ -166,6 +166,14 @@ $status_badge_colors = [
                     <td class="px-4 py-3 text-gray-500 text-xs max-w-xs truncate"><?= htmlspecialchars($l['last_comments'] ?? '') ?></td>
                     <td class="px-4 py-3 text-gray-400 text-xs"><?= fmt_date($l['created_at'] ?? null, 'Y-m-d') ?></td>
                     <td class="px-4 py-3"><span class="text-xs text-gray-500"><?= htmlspecialchars($l['custom_status'] ?? 'customer') ?></span></td>
+                    <td class="px-4 py-3">
+                        <form method="POST" class="inline" onsubmit="return confirm('Delete this lead?')">
+                            <input type="hidden" name="_csrf_token" value="<?= $_SESSION['csrf_token'] ?? '' ?>">
+                            <input type="hidden" name="action" value="delete_lead">
+                            <input type="hidden" name="lead_id" value="<?= (int)$l['id'] ?>">
+                            <button type="submit" class="text-red-600 hover:text-red-800 text-xs"><i class="fas fa-trash"></i></button>
+                        </form>
+                    </td>
                 </tr>
                 <?php endforeach; ?>
                 <?php endif; ?>
