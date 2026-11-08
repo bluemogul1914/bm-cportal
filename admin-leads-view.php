@@ -342,7 +342,7 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
 <?php if ($error_msg): ?><div class="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg"><?= htmlspecialchars($error_msg) ?></div><?php endif; ?>
 
 <!-- ═══════ INFORMATION TAB ═══════ -->
-<form method="POST" id="lead-form" <?= $active_tab !== 'information' ? 'class="hidden"' : '' ?>>
+<form method="POST" id="lead-form">
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="update_lead">
     <input type="hidden" name="pipeline_status" value="<?= htmlspecialchars($lead['pipeline_status'] ?? 'new_enquiry') ?>">
