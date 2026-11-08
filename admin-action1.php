@@ -356,6 +356,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
     }
 
+    if ($action === 'assign_client' && $action1_connected) {
+        $endpoint_id = (int)($_POST['endpoint_id'] ?? 0);
+        $client_id = (int)($_POST['client_id'] ?? 0);
+        if ($endpoint_id > 0) {
+            $pdo->prepare("UPDATE action1_endpoints SET client_id = ? WHERE id = ?")->execute([$client_id ?: null, $endpoint_id]);
+            $success_msg = 'Endpoint assigned to client.';
+        }
+    }
+
     if ($action === 'sync_alerts' && $action1_connected) {
         $org = action1_get_org_id();
         if (isset($org['error'])) {
@@ -663,6 +672,7 @@ uasort($client_patch_summary, fn($a, $b) => $b['vulns_critical'] <=> $a['vulns_c
                                         <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Endpoint Groups</th>
                                         <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">OS</th>
                                         <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Vulnerabilities</th>
+                                        <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</th>
                                         <th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Missing Updates</th>
                                     </tr>
                                 </thead>
@@ -737,6 +747,21 @@ uasort($client_patch_summary, fn($a, $b) => $b['vulns_critical'] <=> $a['vulns_c
                                             </td>
                                             <td class="px-3 py-3 text-gray-600"><?php echo $os_str ? htmlspecialchars($os_str) : '<span class="text-gray-300">—</span>'; ?></td>
                                             <td class="px-3 py-3"><?php echo $vulns_html; ?></td>
+                                            <td class="px-3 py-3">
+                                                <form method="POST" class="inline">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="action" value="assign_client">
+                                                    <input type="hidden" name="endpoint_id" value="<?php echo $ep['id']; ?>">
+                                                    <select name="client_id" onchange="this.form.submit()" class="text-xs border border-gray-300 rounded px-1 py-0.5">
+                                                        <option value="">Unassigned</option>
+                                                        <?php foreach ($clients_list as $cl): ?>
+                                                            <option value="<?php echo $cl['id']; ?>" <?php echo ($ep['client_id'] ?? 0) == $cl['id'] ? 'selected' : ''; ?>>
+                                                                <?php echo htmlspecialchars($cl['company'] ?: $cl['name']); ?>
+                                                            </option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                </form>
+                                            </td>
                                             <td class="px-3 py-3"><?php echo $mu_html; ?></td>
                                         </tr>
                                     <?php endforeach; ?>
