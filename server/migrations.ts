@@ -232,7 +232,28 @@ export async function runPortalMigrations() {
   try {
     // Add prepaid columns to clients table (idempotent via IF NOT EXISTS)
     await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'`);
-    await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS low_balance_warned BOOLEAN DEFAULT false`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS contabo_instances (
+        id SERIAL PRIMARY KEY,
+        contabo_instance_id VARCHAR(100),
+        name VARCHAR(200) NOT NULL,
+        region VARCHAR(50),
+        product_id VARCHAR(100),
+        image_id VARCHAR(200),
+        image_name VARCHAR(200),
+        app_type VARCHAR(50),
+        status VARCHAR(50) DEFAULT 'provisioning',
+        ip_address VARCHAR(50),
+        ssh_user VARCHAR(50) DEFAULT 'root',
+        ssh_password VARCHAR(200),
+        client_id INTEGER REFERENCES clients(id),
+        monthly_cost DECIMAL(10,2),
+        invoice_id INTEGER REFERENCES invoices(id),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS low_balance_threshold DECIMAL(10,2) DEFAULT 10.00`);
     await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_charged_at TIMESTAMPTZ`);
 

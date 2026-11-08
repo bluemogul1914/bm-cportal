@@ -828,6 +828,89 @@ app.get("/portal/api/admin/contabo/instance/:id", async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+app.post("/portal/api/admin/contabo/instances/save", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const b = req.body || {};
+    const { rows } = await webhookPool.query(
+      `INSERT INTO contabo_instances (contabo_instance_id, name, region, product_id, image_id, image_name, app_type, status, ip_address, ssh_user, ssh_password, client_id, monthly_cost, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      [b.contaboInstanceId || null, b.name, b.region || null, b.productId || null, b.imageId || null, b.imageName || null, b.appType || null, b.status || 'provisioning', b.ipAddress || null, b.sshUser || 'root', b.sshPassword || null, b.clientId || null, b.monthlyCost || null, b.notes || null]
+    );
+    res.json({ success: true, instance: rows[0] });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/portal/api/admin/contabo/instances/db", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const { rows } = await webhookPool.query(
+      `SELECT ci.*, c.name as client_name, c.email as client_email FROM contabo_instances ci LEFT JOIN clients c ON ci.client_id = c.id ORDER BY ci.created_at DESC`
+    );
+    res.json({ instances: rows, count: rows.length });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.put("/portal/api/admin/contabo/instances/:id/assign", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const b = req.body || {};
+    await webhookPool.query(
+      `UPDATE contabo_instances SET client_id = $1, updated_at = NOW() WHERE id = $2`,
+      [b.clientId || null, req.params.id]
+    );
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/admin/contabo/instances/:id/install", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const { rows } = await webhookPool.query("SELECT * FROM contabo_instances WHERE id = $1", [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: "Instance not found" });
+    const inst = rows[0];
+    const b = req.body || {};
+    const appType = b.appType || inst.app_type || 'nextcloud';
+    
+    // SSH install commands per app
+    const installCommands: Record<string, string> = {
+      nextcloud: "apt update && apt install -y snapd && snap install nextcloud",
+      n8n: "apt update && apt install -y docker.io && docker run -d --name n8n -p 5678:5678 n8nio/n8n",
+      hermes: "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash",
+      deepseek: "apt update && apt install -y docker.io && docker run -d --name deepseek -p 11434:11434 ollama/ollama && docker exec deepseek ollama pull deepseek-r1",
+    };
+    
+    const cmd = installCommands[appType] || installCommands.nextcloud;
+    
+    // Use sshpass or node ssh2 to execute
+    const { exec } = await import("child_process");
+    const { promisify } = await import("util");
+    const execAsync = promisify(exec);
+    
+    const sshCmd = `sshpass -p '${inst.ssh_password}' ssh -o StrictHostKeyChecking=no ${inst.ssh_user}@${inst.ip_address} '${cmd}'`;
+    
+    try {
+      const { stdout, stderr } = await execAsync(sshCmd, { timeout: 300000 });
+      await webhookPool.query("UPDATE contabo_instances SET status = 'active', app_type = $1, updated_at = NOW() WHERE id = $2", [appType, req.params.id]);
+      res.json({ success: true, output: stdout, stderr });
+    } catch (sshErr: any) {
+      res.status(500).json({ error: "SSH install failed: " + (sshErr.stderr || sshErr.message), output: sshErr.stdout });
+    }
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/portal/api/admin/contabo/instances/manual", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const b = req.body || {};
+    const { rows } = await webhookPool.query(
+      `INSERT INTO contabo_instances (name, contabo_instance_id, ip_address, app_type, status, client_id, monthly_cost, notes, ssh_user, ssh_password)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [b.name, b.contaboInstanceId || null, b.ipAddress || null, b.appType || null, b.status || 'active', b.clientId || null, b.monthlyCost || null, b.notes || null, b.sshUser || 'root', b.sshPassword || null]
+    );
+    res.json({ success: true, instance: rows[0] });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
 app.post("/portal/api/admin/contabo/instances/create", async (req, res) => {
   if (!requireXeroAdmin(req, res)) return;
   try {
@@ -840,6 +923,15 @@ app.post("/portal/api/admin/contabo/instances/create", async (req, res) => {
       displayName: b.displayName ? String(b.displayName) : undefined,
     });
     res.json({ success: true, instance });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/portal/api/admin/contabo/images", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const { contaboListImages } = await import("./contabo-api.js");
+    const images = await contaboListImages(webhookPool);
+    res.json({ images, count: images.length });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
