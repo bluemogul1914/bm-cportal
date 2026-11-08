@@ -123,7 +123,7 @@ function action1_get_org_id() {
 
 $clients_list = [];
 try {
-    $clients_list = $pdo->query("SELECT id, name, company FROM clients WHERE status = 'active' ORDER BY company, name")->fetchAll(PDO::FETCH_ASSOC);
+    $clients_list = $pdo->query("SELECT id, name, company FROM clients ORDER BY company, name")->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
 
 try {
