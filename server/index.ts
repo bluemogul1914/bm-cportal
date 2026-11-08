@@ -792,6 +792,42 @@ app.post("/portal/api/facebook-bulk-fetch", async (req, res) => {
 // (?resource=Reports/ProfitAndLoss|BalanceSheet|AgedReceivablesByContact|BankSummary).
 
 
+function requireXeroAdmin(req: any, res: any): boolean {
+  const sess = (req as any).session?.portalUser;
+  if (!sess || sess.is_admin !== true) {
+    res.status(403).json({ error: "Admin only" });
+    return false;
+  }
+  return true;
+}
+
+// ── Contabo Cloud: VPS instances ────────────────────────────────────────────
+app.get("/portal/api/admin/contabo/test", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const { contaboTestConnection } = await import("./contabo-api.js");
+    res.json(await contaboTestConnection(webhookPool));
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/portal/api/admin/contabo/instances", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const { contaboListInstances } = await import("./contabo-api.js");
+    const instances = await contaboListInstances(webhookPool);
+    res.json({ instances, count: instances.length });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/portal/api/admin/contabo/instance/:id", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const { contaboGetInstance } = await import("./contabo-api.js");
+    const instance = await contaboGetInstance(webhookPool, req.params.id);
+    res.json({ instance });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Hostwinds white-label reseller: catalogue + provisioning ────────────────
 // Selling Hostwinds services from the portal. CreateAccount is a WRITE action
 // that creates a billable service, so the provision endpoint requires an
