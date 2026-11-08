@@ -202,11 +202,6 @@
         <div class="mt-8">
             <p class="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Integrations</p>
             <div class="space-y-1">
-                <a href="admin-xero.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-xero.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-xero">
-                    <i class="fas fa-book w-5 text-sky-400"></i>
-                    <span>Xero Accounting</span>
-                    <span class="ml-auto bg-sky-500 text-white text-xs px-2 py-0.5 rounded-full">LEDGER</span>
-                </a>
 
                 <a href="admin-financials.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-financials.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-financials">
                     <i class="fas fa-water w-5 text-emerald-400"></i>

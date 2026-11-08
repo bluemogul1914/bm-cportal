@@ -22,7 +22,6 @@ import { getDhCredentials, getDhToken, dhRequest, dhPriceAvailability, dhItemInq
 import { getBmaiSettings, bmaiConfigured, getBmaiToken, bmaiTest, bmaiStreamChat } from "./bmai";
 import { syncAllSources } from "./network-sync";
 import { syncWave, getWaveToken } from "./wave-api";
-import { syncXero, xeroStatus, xeroToken, getXeroConfig, saveXeroConfig, xeroRequest, xeroAuthMode } from "./xero-api";
 import {
   payoutCapabilities, savePayoutDestination, getPayoutProfile, listPayableCommissions,
   createDealerPayout, sendDealerPayout, listDealerPayouts, stripeAccountCheck,
@@ -36,17 +35,6 @@ import {
   vaultStatus, listCredentials, createCredential, revealCredential, rotateCredential,
   updateCredentialMeta, listClientCredentials, hasVaultKey,
 } from "./credential-vault";
-import {
-  getOAuthConfig,
-  saveOAuthConfig,
-  buildAuthorizeUrl,
-  exchangeCode,
-  listConnections,
-  saveConnection,
-  backfillCustomConnectionTenant,
-  oauthStatus,
-  XERO_SCOPES,
-} from "./xero-oauth";
 import { checkAllBalances, processPendingTopUps, processPendingServiceInvoices, activatePaidPendingSubscriptions, chargeMonthlySubscriptions } from "./balance-scheduler";
 import {
   runDomainCertCheck,
@@ -246,7 +234,7 @@ app.use((req, res, next) => {
 const projectRoot = resolve(process.cwd());
 app.use("/assets", express.static(join(projectRoot, "assets")));
 
-const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "admin-work-orders.php", "admin-inventory.php", "admin-time-tracking.php", "admin-contracts.php", "admin-purchase-orders.php", "admin-ip-pools.php", "admin-network-map.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-hetzner.php", "admin-dh.php", "admin-dandh.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-xero.php", "admin-domains.php",
+const ALLOWED_PHP_FILES = ["index.php", "login-handler.php", "setup.php", "dashboard.php", "logout.php", "admin-dashboard.php", "admin-clients.php", "admin-ai-agents.php", "admin-automation.php", "admin-tickets.php", "admin-products.php", "admin-services.php", "admin-settings.php", "admin-client-detail.php", "admin-client-edit.php", "admin-client-add.php", "admin-invoices.php", "admin-invoice-add.php", "admin-invoice-detail.php", "admin-reports.php", "admin-network.php", "admin-knowledge.php", "tickets.php", "ticket-detail.php", "billing.php", "pay-invoice.php", "payment-success.php", "services.php", "products.php", "profile.php", "documents.php", "admin-ticket-detail.php", "help.php", "admin-itflow.php", "admin-uisp.php", "admin-voip.php", "admin-nextcloud.php", "admin-stripe.php", "settings.php", "admin-audit.php", "admin-roles.php", "admin-projects.php", "admin-project-detail.php", "admin-work-orders.php", "admin-inventory.php", "admin-time-tracking.php", "admin-contracts.php", "admin-purchase-orders.php", "admin-ip-pools.php", "admin-network-map.php", "projects.php", "client-voip.php", "admin-messages.php", "admin-message-compose.php", "admin-message-templates.php", "forgot-password.php", "reset-password.php", "admin-vultr.php", "admin-itarian.php", "admin-action1.php", "admin-monitoring.php", "admin-chat.php", "client-chat.php", "admin-crm.php", "service-detail.php", "admin-email-log.php", "admin-frontier.php", "frontier-receive.php", "admin-providers.php", "admin-hostwinds.php", "admin-hetzner.php", "admin-dh.php", "admin-dandh.php", "admin-enom.php", "admin-resellerclub.php", "admin-travelsim.php", "admin-coolify.php", "admin-varphonex.php", "admin-leads-dashboard.php", "admin-leads-add.php", "admin-leads-list.php", "admin-leads-view.php", "admin-leads-quotes.php", "admin-leads-maps.php", "admin-smtp-settings.php", "admin-jumpcloud.php", "admin-client-emails.php", "admin-ai-assistant.php", "admin-mail.php", "mail-webhook.php", "admin-mail-profile.php", "admin-companies.php", "admin-domains.php",
   "dealer-register.php", "dealer-dashboard.php", "dealer-orders.php", "dealer-commissions.php",
   "dealer-leads.php", "dealer-customers.php", "dealer-customer-detail.php", "dealer-smtp.php", "dealer-payouts.php",
   "dealer-training.php", "dealer-profile.php", "dealer-spiffs.php",
@@ -793,189 +781,16 @@ app.post("/portal/api/facebook-bulk-fetch", async (req, res) => {
 // implementation here read/wrote `provider_name`/`settings` columns that do not
 // exist, which is why Xero could never store a token. See server/xero-api.ts.
 
-function requireXeroAdmin(req: any, res: any): boolean {
-  const sess = (req as any).session?.portalUser;
-  if (!sess?.is_admin) { res.status(403).json({ error: "Admin only" }); return false; }
-  return true;
-}
 
-app.get("/portal/api/xero/status", async (req, res) => {
-  if (!requireXeroAdmin(req, res)) return;
-  try { res.json(await xeroStatus(webhookPool)); } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
 
 // Mint a token from the stored credentials — proves the client id/secret work.
-app.post("/portal/api/xero/test", async (req, res) => {
-  if (!requireXeroAdmin(req, res)) return;
-  try {
-    const cfg = await getXeroConfig(webhookPool);
-    if ((await xeroAuthMode(webhookPool)) === "none") {
-      return res.status(400).json({ error: "No Xero credentials saved (neither the OAuth Web app nor a custom connection)" });
-    }
-    const token = await xeroToken(webhookPool, true);
-    const grant = await xeroAuthMode(webhookPool);
-    let scopes = 0, expiresIn: number | null = null;
-    try {
-      const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString("utf8"));
-      scopes = Array.isArray(payload.scope) ? payload.scope.length : 0;
-      expiresIn = payload.exp ? payload.exp - Math.floor(Date.now() / 1000) : null;
-    } catch { /* token is opaque — still valid */ }
-    res.json({
-      ok: true,
-      grant,
-      scopes,
-      expires_in: expiresIn,
-      tenant_configured: !!cfg.tenantId,
-      note: cfg.tenantId
-        ? `Credentials valid (${grant === "authorization_code" ? "OAuth Web app" : "custom connection"}) — ready to sync.`
-        : "Credentials valid — save the Tenant ID to start pulling data.",
-    });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
 
-app.post("/portal/api/xero/sync", async (req, res) => {
-  if (!requireXeroAdmin(req, res)) return;
-  try { res.json(await syncXero(webhookPool)); } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
 
-app.post("/portal/api/xero/settings", async (req, res) => {
-  if (!requireXeroAdmin(req, res)) return;
-  try {
-    const patch: Record<string, string> = {};
-    for (const k of ["client_id", "client_secret", "tenant_id"]) {
-      const v = req.body?.[k];
-      if (typeof v === "string" && v.trim() !== "") patch[k] = v.trim();
-    }
-    if (!Object.keys(patch).length) return res.status(400).json({ error: "Nothing to save" });
-    await saveXeroConfig(webhookPool, patch);
-    res.json({ ok: true, saved: Object.keys(patch) });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
 
-app.post("/portal/api/xero/disconnect", async (req, res) => {
-  if (!requireXeroAdmin(req, res)) return;
-  try {
-    await webhookPool.query("DELETE FROM provider_settings WHERE provider = 'xero'");
-    res.json({ ok: true });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
 
 // Live passthrough for anything not mirrored — reports in particular
 // (?resource=Reports/ProfitAndLoss|BalanceSheet|AgedReceivablesByContact|BankSummary).
-app.get("/portal/api/xero/data", async (req, res) => {
-  if (!requireXeroAdmin(req, res)) return;
-  try {
-    const resource = String(req.query.resource || "Invoices").replace(/^\/+/, "");
-    const extra: Record<string, string> = {};
-    for (const [k, v] of Object.entries(req.query)) {
-      if (k !== "resource" && typeof v === "string") extra[k] = v;
-    }
-    res.json(await xeroRequest(webhookPool, resource, extra));
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
 
-// GET /portal/api/accounting/overview — aggregated live accounting snapshot.
-// Feeds the Accounting tab (the bookkeeper's workspace). Every section is
-// isolated: a scope-denied report degrades to null + an entry in `errors`
-// instead of blanking the whole response.
-app.get("/portal/api/accounting/overview", async (req, res) => {
-  if (!requireXeroAdmin(req, res)) return;
-  const money = (v: any): number => {
-    if (v === null || v === undefined || v === "") return 0;
-    const n = typeof v === "number" ? v : parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
-    return Number.isFinite(n) ? n : 0;
-  };
-  const flattenRows = (rows: any[], depth = 0, out: any[] = []): any[] => {
-    for (const r of rows || []) {
-      if (Array.isArray(r.Cells) && r.Cells.length) {
-        out.push({ depth, type: r.RowType, title: r.Title ?? null, cells: r.Cells.map((c: any) => c.Value ?? "") });
-      }
-      if (Array.isArray(r.Rows) && r.Rows.length) flattenRows(r.Rows, depth + 1, out);
-    }
-    return out;
-  };
-
-  const result: any = { generated_at: new Date().toISOString(), sections: {}, errors: [] };
-  const section = async (name: string, fn: () => Promise<any>) => {
-    try { result.sections[name] = await fn(); }
-    catch (e: any) { result.errors.push(`${name}: ${e.message}`); result.sections[name] = null; }
-  };
-
-  await section("auth", async () => ({ mode: await xeroAuthMode(webhookPool), status: await xeroStatus(webhookPool) }));
-
-  await section("bank_accounts", async () => {
-    const d = await xeroRequest(webhookPool, "Accounts");
-    const all: any[] = d?.Accounts ?? [];
-    const banks = all.filter((a) => a.Type === "BANK");
-    return {
-      total_accounts: all.length,
-      bank_account_count: banks.length,
-      accounts: banks.map((a: any) => ({
-        name: a.Name ?? null, code: a.Code ?? null, status: a.Status ?? null,
-        number: a.BankAccountNumber ?? null, currency: a.CurrencyCode ?? null, system: !!a.SystemAccount,
-      })),
-    };
-  });
-
-  await section("bank_transactions", async () => {
-    const d = await xeroRequest(webhookPool, "BankTransactions", { page: 1 });
-    const list: any[] = d?.BankTransactions ?? [];
-    const unreconciled = list.filter((t) => !t.IsReconciled);
-    return {
-      sample_size: list.length,
-      unreconciled: unreconciled.length,
-      reconciled: list.length - unreconciled.length,
-      oldest_unreconciled: unreconciled.length
-        ? unreconciled.map((t) => String(t.Date ?? "").slice(0, 10)).sort()[0] : null,
-      recent: list.slice(0, 25).map((t) => ({
-        date: String(t.Date ?? "").slice(0, 10), type: t.Type ?? null,
-        contact: t.Contact?.Name ?? null, reference: t.Reference ?? null,
-        account: t.BankAccount?.Name ?? null, total: money(t.Total),
-        status: t.Status ?? null, reconciled: !!t.IsReconciled,
-      })),
-    };
-  });
-
-  await section("ledger", async () => {
-    const [inv, con, pay] = await Promise.all([
-      xeroRequest(webhookPool, "Invoices", { page: 1 }),
-      xeroRequest(webhookPool, "Contacts", { page: 1 }),
-      xeroRequest(webhookPool, "Payments", { page: 1 }),
-    ]);
-    const list: any[] = inv?.Invoices ?? [];
-    const byStatus = (s: string) => list.filter((i) => i.Status === s).length;
-    return {
-      invoices: { total: list.length, draft: byStatus("DRAFT"), awaiting_payment: byStatus("AUTHORISED"), paid: byStatus("PAID") },
-      receivable: list.reduce((n, i) => n + money(i.AmountDue), 0),
-      contacts: (con?.Contacts ?? []).length,
-      payments: (pay?.Payments ?? []).length,
-    };
-  });
-
-  await section("balance_sheet", async () => {
-    const d = await xeroRequest(webhookPool, "Reports/BalanceSheet");
-    const rpt = (d?.Reports ?? [])[0];
-    if (!rpt) return { available: false, rows: [] };
-    return { available: true, name: rpt.ReportName ?? "Balance Sheet", rows: flattenRows(rpt.Rows ?? []).slice(0, 40) };
-  });
-
-  try {
-    const c = await webhookPool.query(
-      `SELECT (SELECT COUNT(*)::int FROM xero_invoices) AS invoices,
-              (SELECT COUNT(*)::int FROM xero_contacts) AS contacts,
-              (SELECT COUNT(*)::int FROM xero_payments) AS payments,
-              (SELECT COUNT(*)::int FROM xero_accounts) AS accounts,
-              (SELECT COUNT(*)::int FROM wave_invoices) AS wave_invoices,
-              (SELECT COUNT(*)::int FROM wave_accounts) AS wave_accounts`
-    );
-    const run = await webhookPool.query(`SELECT * FROM xero_sync_runs ORDER BY id DESC LIMIT 1`);
-    result.sections.mirror = { counts: c.rows[0], last_sync_run: run.rows[0] ?? null };
-  } catch (e: any) {
-    result.errors.push(`mirror: ${e.message}`);
-  }
-
-  res.json(result);
-});
 
 // ── Hostwinds white-label reseller: catalogue + provisioning ────────────────
 // Selling Hostwinds services from the portal. CreateAccount is a WRITE action
@@ -1508,109 +1323,6 @@ app.post("/portal/api/admin/dealer-payouts/send", async (req, res) => {
   }
 });
 
-// ── Xero OAuth 2.0 consent flow (the Web app) ────────────────────────────────
-// The Custom Connection needs no consent step, but the *Web app* does. This is
-// the flow that returns a Tenant ID: GET /connections is only available to an
-// authorization-code token.
-const XERO_OAUTH_DEFAULT_REDIRECT = "https://portal.bluemogul.us/portal/api/xero/callback";
-const xeroOauthNotice = (res: any, msg: string) =>
-  res.redirect("/portal/admin-xero.php?notice=" + encodeURIComponent(msg));
-
-// Path aliases matter: the URI REGISTERED on the Xero app is
-// /portal/api/xero/callback (no /oauth/), so both spellings must answer.
-const XERO_OAUTH_CONNECT_PATHS = [
-  "/portal/api/xero/oauth/connect",
-  "/api/xero/oauth/connect",
-  "/portal/api/xero/connect",
-  "/api/xero/connect",
-];
-const XERO_OAUTH_CALLBACK_PATHS = [
-  "/portal/api/xero/oauth/callback",
-  "/api/xero/oauth/callback",
-  "/portal/api/xero/callback",
-  "/api/xero/callback",
-];
-
-app.get(XERO_OAUTH_CONNECT_PATHS, async (req, res) => {
-  if (!requireXeroAdmin(req, res)) return;
-  try {
-    const cfg = await getOAuthConfig(webhookPool);
-    if (!cfg.clientId || !cfg.clientSecret) {
-      return xeroOauthNotice(res, "Save the Web app client_id and client_secret first, then press Connect with Xero.");
-    }
-    if (!cfg.redirectUri) {
-      await saveOAuthConfig(webhookPool, { redirect_uri: XERO_OAUTH_DEFAULT_REDIRECT });
-    }
-    const fresh = await getOAuthConfig(webhookPool);
-    const state = randomUUID();
-    (req.session as any).xeroOauthState = state;
-    res.redirect(buildAuthorizeUrl(fresh, state));
-  } catch (e: any) {
-    xeroOauthNotice(res, "Could not start the Xero consent flow: " + e.message);
-  }
-});
-
-app.get(XERO_OAUTH_CALLBACK_PATHS, async (req, res) => {
-  try {
-    const errCode = String(req.query.error || "");
-    if (errCode) {
-      return xeroOauthNotice(res, `Xero refused the authorisation (${errCode}) — ${String(req.query.error_description || "")}`);
-    }
-    const code = String(req.query.code || "");
-    const state = String(req.query.state || "");
-    const expected = (req.session as any)?.xeroOauthState;
-    if (!code) return xeroOauthNotice(res, "Xero returned no authorisation code.");
-    if (!expected || state !== expected) {
-      return xeroOauthNotice(res, "OAuth state mismatch — start the connection again from the Xero page.");
-    }
-    (req.session as any).xeroOauthState = undefined;
-
-    await exchangeCode(webhookPool, code);
-    const conns = await listConnections(webhookPool);
-    if (!conns.length) {
-      return xeroOauthNotice(res, "Authorised, but Xero reports no connected organisation. Press Connect with Xero again and pick an organisation on the consent screen.");
-    }
-    const c = conns[0];
-    await saveConnection(webhookPool, c.tenantId, c.tenantName || "");
-    const bridged = await backfillCustomConnectionTenant(webhookPool, c.tenantId);
-    xeroOauthNotice(
-      res,
-      `Connected to ${c.tenantName || "organisation"} — Tenant ID ${c.tenantId} saved.` +
-        (conns.length > 1 ? ` (${conns.length} organisations were authorised; the first is in use.)` : "") +
-        (bridged ? " The Custom Connection tenant_id was empty, so it was back-filled — press “Sync from Xero”." : "")
-    );
-  } catch (e: any) {
-    xeroOauthNotice(res, "Xero OAuth failed: " + e.message);
-  }
-});
-
-app.get("/portal/api/xero/oauth/status", async (req, res) => {
-  if (!requireXeroAdmin(req, res)) return;
-  try { res.json(await oauthStatus(webhookPool)); } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/portal/api/xero/oauth/settings", async (req, res) => {
-  if (!requireXeroAdmin(req, res)) return;
-  try {
-    const patch: Record<string, string> = {};
-    for (const k of ["client_id", "client_secret", "redirect_uri", "tenant_id"]) {
-      const v = req.body?.[k];
-      if (typeof v === "string" && v.trim() !== "") patch[k] = v.trim();
-    }
-    if (!patch["redirect_uri"]) patch["redirect_uri"] = XERO_OAUTH_DEFAULT_REDIRECT;
-    await saveOAuthConfig(webhookPool, patch);
-    res.json({ ok: true, saved: Object.keys(patch), scopes: XERO_SCOPES.split(" ") });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/portal/api/xero/oauth/disconnect", async (req, res) => {
-  if (!requireXeroAdmin(req, res)) return;
-  try {
-    await webhookPool.query("DELETE FROM provider_settings WHERE provider = 'xero_oauth'");
-    res.json({ ok: true });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-// ── End Xero OAuth 2.0 ───────────────────────────────────────────────────────
 // ── End Xero Accounting ───────────────────────────────────────────────────────
 
 const ADMIN_DEALER_PHP_FILES = ["admin-dealers.php", "admin-dealer-detail.php"];
