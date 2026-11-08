@@ -13,15 +13,41 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     
     if (($_POST['action'] ?? '') === 'create_quote') {
         $lead_id       = (int)($_POST['lead_id'] ?? 0);
-        $total         = (float)($_POST['total'] ?? 0);
         $doc_date      = $_POST['document_date'] ?? date('Y-m-d');
         $valid_until   = trim($_POST['valid_until'] ?? '');
         $note          = trim($_POST['note'] ?? '');
+        // Parse line items
+        $raw_items = $_POST['items'] ?? [];
+        $items = [];
+        $subtotal = 0; $tax_total = 0;
+        if (is_array($raw_items)) {
+            foreach ($raw_items as $ri) {
+                $name = trim($ri['item'] ?? '');
+                if ($name === '') continue;
+                $qty = (float)($ri['qty'] ?? 1);
+                $unit = (float)($ri['unit_price'] ?? 0);
+                $tax_rate = (float)($ri['tax_rate'] ?? 0);
+                $amount = $qty * $unit;
+                $tax = $amount * ($tax_rate / 100);
+                $line_total = $amount + $tax;
+                $items[] = [
+                    'item' => $name,
+                    'description' => trim($ri['description'] ?? ''),
+                    'qty' => $qty,
+                    'unit_price' => $unit,
+                    'tax_rate' => $tax_rate,
+                    'amount' => round($line_total, 2),
+                ];
+                $subtotal += $amount;
+                $tax_total += $tax;
+            }
+        }
+        $grand_total = $subtotal + $tax_total;
         if ($lead_id > 0) {
             $qnum = 'Q-' . date('Ymd') . '-' . strtoupper(substr(md5(uniqid()), 0, 4));
             try {
-                $stmt = $pdo->prepare("INSERT INTO lead_quotes (lead_id, quote_number, status, document_date, valid_until, deal_value, note, items, total_without_tax, tax_amount, total, created_at) VALUES (?,?, 'new', ?, ?, ?, ?, '[]', ?, 0, ?, NOW())");
-                $stmt->execute([$lead_id, $qnum, $doc_date, $valid_until !== '' ? $valid_until : null, $total, $note, $total, $total]);
+                $stmt = $pdo->prepare("INSERT INTO lead_quotes (lead_id, quote_number, status, document_date, valid_until, deal_value, note, items, total_without_tax, tax_amount, total, created_at) VALUES (?,?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+                $stmt->execute([$lead_id, $qnum, $doc_date, $valid_until !== '' ? $valid_until : null, $grand_total, $note, json_encode($items), $subtotal, $tax_total, $grand_total]);
                 portal_redirect('admin-leads-quotes.php?created=1');
             } catch (Exception $e) {
                 $create_msg = 'Error: ' . $e->getMessage();
@@ -169,10 +195,6 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
             </select>
         </div>
         <div>
-            <label class="text-xs text-gray-500 mb-1 block">Total ($)</label>
-            <input type="number" step="0.01" min="0" name="total" required placeholder="0.00" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
-        </div>
-        <div>
             <label class="text-xs text-gray-500 mb-1 block">Document Date</label>
             <input type="date" name="document_date" value="<?= date('Y-m-d') ?>" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
         </div>
@@ -180,8 +202,55 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
             <label class="text-xs text-gray-500 mb-1 block">Valid Until</label>
             <input type="date" name="valid_until" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
         </div>
+        <div class="md:col-span-5">
+            <label class="text-xs text-gray-500 mb-1 block">Line Items</label>
+            <table class="w-full text-sm border" id="quoteItemsTable">
+                <thead><tr class="bg-gray-50"><th class="px-2 py-1">Item</th><th class="px-2 py-1">Description</th><th class="px-2 py-1">Qty</th><th class="px-2 py-1">Unit Price</th><th class="px-2 py-1">Tax %</th><th class="px-2 py-1">Amount</th><th></th></tr></thead>
+                <tbody id="quoteItemsBody"></tbody>
+            </table>
+            <button type="button" onclick="addQuoteItem()" class="mt-2 px-3 py-1.5 bg-blue-600 text-white rounded text-sm">+ Add Line Item</button>
+            <div class="mt-2 text-right text-sm">
+                <div>Subtotal: <span id="qSubtotal">$0.00</span></div>
+                <div>Tax: <span id="qTax">$0.00</span></div>
+                <div class="font-bold">Total: <span id="qTotal">$0.00</span></div>
+            </div>
+        </div>
         <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Create Quote</button>
     </form>
+<script>
+let qi=0;
+function addQuoteItem(){
+  const tbody=document.getElementById('quoteItemsBody');
+  const idx=qi++;
+  const tr=document.createElement('tr');
+  tr.innerHTML=`
+    <td><input name="items[${idx}][item]" class="w-full border px-1 py-0.5 text-sm" required></td>
+    <td><input name="items[${idx}][description]" class="w-full border px-1 py-0.5 text-sm"></td>
+    <td><input name="items[${idx}][qty]" type="number" step="0.01" value="1" class="w-16 border px-1 py-0.5 text-sm" onchange="recalcQuote()" oninput="recalcQuote()"></td>
+    <td><input name="items[${idx}][unit_price]" type="number" step="0.01" value="0" class="w-24 border px-1 py-0.5 text-sm" onchange="recalcQuote()" oninput="recalcQuote()"></td>
+    <td><input name="items[${idx}][tax_rate]" type="number" step="0.01" value="0" class="w-16 border px-1 py-0.5 text-sm" onchange="recalcQuote()" oninput="recalcQuote()"></td>
+    <td class="qAmount">$0.00</td>
+    <td><button type="button" onclick="this.closest('tr').remove();recalcQuote();" class="text-red-500">&times;</button></td>`;
+  tbody.appendChild(tr);
+  recalcQuote();
+}
+function recalcQuote(){
+  let sub=0,tax=0;
+  document.querySelectorAll('#quoteItemsBody tr').forEach(tr=>{
+    const qty=parseFloat(tr.querySelector('input[name*="[qty]"]').value)||0;
+    const unit=parseFloat(tr.querySelector('input[name*="[unit_price]"]').value)||0;
+    const trate=parseFloat(tr.querySelector('input[name*="[tax_rate]"]').value)||0;
+    const amt=qty*unit;
+    const t=amt*(trate/100);
+    sub+=amt; tax+=t;
+    tr.querySelector('.qAmount').textContent='$'+(amt+t).toFixed(2);
+  });
+  document.getElementById('qSubtotal').textContent='$'+sub.toFixed(2);
+  document.getElementById('qTax').textContent='$'+tax.toFixed(2);
+  document.getElementById('qTotal').textContent='$'+(sub+tax).toFixed(2);
+}
+addQuoteItem();
+</script>
 </div>
 
 <div class="bg-white rounded-lg border border-gray-200">
