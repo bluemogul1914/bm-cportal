@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Update information
         if ($action === 'update_lead') {
+            try {
             $fields = ['full_name','pipeline_status','owner','phone','email','source','partner','location','city','street','zip_code','geo_data','custom_status','notes','linkedin_url'];
             $set = []; $vals = [];
             foreach ($fields as $f) {
@@ -47,6 +48,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $lead = $pdo->prepare("SELECT id, name, email, phone, company, source, status, notes, linkedin_url, linkedin_data, created_at, updated_at, company_id, company_name, lead_number, full_name, pipeline_status, owner, partner, location, city, street, zip_code, geo_data, custom_status, deal_value, last_contacted, last_comments, dealer_id, assigned_user_id, converted_order_id FROM leads WHERE id=?"); $lead->execute([$lead_id]); $lead = $lead->fetch(PDO::FETCH_ASSOC);
             $success_msg = 'Lead updated successfully.';
             $active_tab = 'information';
+            } catch (Exception $e) {
+                error_log("update_lead error: " . $e->getMessage());
+                $error_msg = 'Error: ' . $e->getMessage();
+            }
 
         // Update pipeline status
         } elseif ($action === 'set_pipeline') {
@@ -87,11 +92,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Add todo
         } elseif ($action === 'add_todo') {
+            try {
             $todo = trim($_POST['todo'] ?? '');
             $sched = trim($_POST['scheduled_at'] ?? '') ?: null;
             if ($todo) {
                 $pdo->prepare("INSERT INTO lead_todos (lead_id,todo,scheduled_at) VALUES (?,?,?)")->execute([$lead_id,$todo,$sched]);
                 $success_msg = 'To-do added.';
+            } else {
+                $error_msg = 'No todo text provided.';
+            }
+            } catch (Exception $e) {
+                error_log("add_todo error: " . $e->getMessage());
+                $error_msg = 'Error: ' . $e->getMessage();
             }
 
         // Add comment/message
