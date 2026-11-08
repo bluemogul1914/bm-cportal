@@ -137,6 +137,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $success_msg = 'Lead converted to client successfully.';
             $active_tab = 'information';
 
+        // Create ticket from lead
+        } elseif ($action === 'create_ticket') {
+            $title = trim($_POST['ticket_title'] ?? "Lead: {$lead['full_name']}");
+            $pdo->prepare("INSERT INTO tickets (client_id, subject, description, priority, status, created_at) VALUES (?,?,?,?,?,NOW())")
+                ->execute([0, $title, $lead['notes'] ?? '', 'medium', 'open']);
+            $pdo->prepare("INSERT INTO lead_activities (lead_id,action,actor) VALUES (?,?,?)")->execute([$lead_id,'Created ticket',$_SESSION['user_name']??'Admin']);
+            $success_msg = 'Ticket created from lead.';
+            $active_tab = 'information';
+
         // Upload document
         } elseif ($action === 'upload_document') {
             $title  = trim($_POST['doc_title']  ?? 'Untitled');
@@ -300,7 +309,7 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
         <div class="ml-auto flex items-center gap-2 px-4">
             <button class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Actions ▾</button>
             <button class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Tasks ▾</button>
-            <button class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Tickets ▾</button>
+            <button type="submit" form="lead-form" name="action" value="create_ticket" class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Tickets ▾</button>
             <button type="submit" form="lead-form" name="action" value="convert_to_client" class="px-3 py-1.5 bg-gray-600 text-sm text-white rounded hover:bg-gray-700">Convert</button>
             <button form="lead-form" type="submit" class="px-3 py-1.5 bg-blue-600 text-sm text-white rounded hover:bg-blue-700">Save</button>
         </div>
