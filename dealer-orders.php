@@ -186,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Lead -> won, linked to the order that came out of it. Scoped by dealer_id.
         if ($lead_id) {
             try {
-                $pdo->prepare("UPDATE leads SET status = 'won', pipeline_status = 'activation_won',
+                $pdo->prepare("UPDATE crm_leads SET status = 'won', pipeline_status = 'activation_won',
                                                  converted_order_id = ?, last_contacted = NOW(), updated_at = NOW()
                                 WHERE id = ? AND dealer_id = ?")->execute([$order_id, $lead_id, $dealer['id']]);
                 $pdo->prepare("INSERT INTO lead_activities (lead_id, action, actor) VALUES (?,?,?)")

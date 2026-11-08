@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'delete_company') {
             $id = (int)($_POST['id'] ?? 0);
             try {
-                $pdo->prepare("UPDATE leads SET company_id=NULL WHERE company_id=?")->execute([$id]);
+                $pdo->prepare("UPDATE crm_leads SET company_id=NULL WHERE company_id=?")->execute([$id]);
                 $pdo->prepare("DELETE FROM companies WHERE id=?")->execute([$id]);
                 $success_msg = 'Company deleted.';
             } catch (Exception $e) { $error_msg = $e->getMessage(); }

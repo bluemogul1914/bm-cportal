@@ -39,14 +39,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'lead_
                 foreach ($team as $tm) { if ((int)$tm['user_id'] === $assign) { $ok = true; break; } }
                 if (!$ok) $assign = null;   // not on this dealer's team — drop it
             }
-            $st = $pdo->prepare("INSERT INTO leads
+            $st = $pdo->prepare("INSERT INTO crm_leads
                 (name, full_name, email, phone, company, company_name, street, city, zip_code, source, status, pipeline_status, notes, dealer_id, assigned_user_id, created_at, updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?, 'new', 'new_enquiry', ?, ?, ?, NOW(), NOW()) RETURNING id");
             $st->execute([$name ?: null, $name ?: null, $email ?: null, $phone ?: null, $company ?: null, $company ?: null,
                           $street ?: null, $city ?: null, $zip ?: null, $source ?: null, $notes ?: null,
                           (int)$dealer['id'], $assign]);
             $new_id = (int)$st->fetchColumn();
-            try { $pdo->prepare("UPDATE leads SET lead_number = LPAD(id::text, 6, '0') WHERE id = ?")->execute([$new_id]); } catch (Throwable $e) {}
+            try { $pdo->prepare("UPDATE crm_leads SET lead_number = LPAD(id::text, 6, '0') WHERE id = ?")->execute([$new_id]); } catch (Throwable $e) {}
             try { $pdo->prepare("INSERT INTO lead_activities (lead_id, action, actor) VALUES (?,?,?)")
                        ->execute([$new_id, 'Lead created by dealer ' . $dealer['dealer_code'], $dealer['full_name']]); } catch (Throwable $e) {}
             $success = 'Lead added.';
@@ -58,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'lead_
     $lid    = (int)($_POST['lead_id'] ?? 0);
     $status = in_array(($_POST['status'] ?? ''), ['new', 'contacted', 'quoted', 'won', 'lost'], true) ? $_POST['status'] : 'new';
     try {
-        $pdo->prepare("UPDATE leads SET status = ?, last_contacted = NOW(), updated_at = NOW()
+        $pdo->prepare("UPDATE crm_leads SET status = ?, last_contacted = NOW(), updated_at = NOW()
                         WHERE id = ? AND dealer_id = ?")->execute([$status, $lid, (int)$dealer['id']]);
         $success = 'Lead updated.';
     } catch (Throwable $e) { $error = $e->getMessage(); }
@@ -74,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'lead_
             if (!$ok) $assign = null;
         }
         // Scoped to this dealer's own leads, so a rogue lead_id cannot touch another tenant.
-        $pdo->prepare("UPDATE leads SET assigned_user_id = ?, updated_at = NOW() WHERE id = ? AND dealer_id = ?")
+        $pdo->prepare("UPDATE crm_leads SET assigned_user_id = ?, updated_at = NOW() WHERE id = ? AND dealer_id = ?")
             ->execute([$assign, $lid, (int)$dealer['id']]);
         $success = 'Lead assignment updated.';
     } catch (Throwable $e) { $error = $e->getMessage(); }

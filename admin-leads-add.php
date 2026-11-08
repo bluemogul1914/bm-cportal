@@ -42,11 +42,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 require_once __DIR__ . '/includes/numbering.php';
                 $leadNum = generate_number('BML', $pdo);
-                $st = $pdo->prepare("INSERT INTO leads (full_name,pipeline_status,owner,phone,email,source,partner,location,city,street,zip_code,geo_data,custom_status,company_id,company_name,linkedin_url,number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id");
+                $st = $pdo->prepare("INSERT INTO crm_leads (full_name,pipeline_status,owner,phone,email,source,partner,location,city,street,zip_code,geo_data,custom_status,company_id,company_name,linkedin_url,number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id");
                 $st->execute([$full_name,$pipeline_status,$owner,$phone,$email,$source,$partner,$location,$city,$street,$zip_code,$geo_data,$custom_status,$company_id,$company_name,$linkedin_url ?: null,$leadNum]);
                 $lead_id = $st->fetchColumn();
                 // Keep legacy lead_number in sync
-                $pdo->prepare("UPDATE leads SET lead_number=LPAD(id::text,6,'0') WHERE id=?")->execute([$lead_id]);
+                $pdo->prepare("UPDATE crm_leads SET lead_number=LPAD(id::text,6,'0') WHERE id=?")->execute([$lead_id]);
                 // Log activity
                 $pdo->prepare("INSERT INTO lead_activities (lead_id,action,actor) VALUES (?,?,?)")->execute([$lead_id,"Create lead with name: $full_name",$_SESSION['user_name']??'Admin']);
                 portal_redirect("admin-leads-view.php?id=$lead_id&added=1");

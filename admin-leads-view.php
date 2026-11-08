@@ -42,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $vals[] = trim($_POST[$f] ?? '');
             }
             $vals[] = $lead_id;
-            $pdo->prepare("UPDATE leads SET ".implode(',',$set).", updated_at=NOW() WHERE id=?")->execute($vals);
+            $pdo->prepare("UPDATE crm_leads SET ".implode(',',$set).", updated_at=NOW() WHERE id=?")->execute($vals);
             $pdo->prepare("INSERT INTO lead_activities (lead_id,action,actor) VALUES (?,?,?)")->execute([$lead_id,'Update lead information',$_SESSION['user_name']??'Admin']);
             $lead = $pdo->prepare("SELECT id, name, email, phone, company, source, status, notes, linkedin_url, linkedin_data, created_at, updated_at, company_id, company_name, lead_number, full_name, pipeline_status, owner, partner, location, city, street, zip_code, geo_data, custom_status, deal_value, last_contacted, last_comments, dealer_id, assigned_user_id, converted_order_id FROM leads WHERE id=?"); $lead->execute([$lead_id]); $lead = $lead->fetch(PDO::FETCH_ASSOC);
             $success_msg = 'Lead updated successfully.';
@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'set_pipeline') {
             $stat = $_POST['pipeline_status'] ?? '';
             if ($stat) {
-                $pdo->prepare("UPDATE leads SET pipeline_status=?,updated_at=NOW() WHERE id=?")->execute([$stat,$lead_id]);
+                $pdo->prepare("UPDATE crm_leads SET pipeline_status=?,updated_at=NOW() WHERE id=?")->execute([$stat,$lead_id]);
                 $pdo->prepare("INSERT INTO lead_activities (lead_id,action,actor) VALUES (?,?,?)")->execute([$lead_id,"Pipeline changed to: $stat",$_SESSION['user_name']??'Admin']);
                 $lead['pipeline_status'] = $stat;
                 $success_msg = "Pipeline updated to ".ucwords(str_replace('_',' ',$stat)).".";
@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!$ck->fetchColumn()) $prep = null;   // that rep is not on that dealer's team
                 }
             }
-            $pdo->prepare("UPDATE leads SET dealer_id = ?, assigned_user_id = ?, updated_at = NOW() WHERE id = ?")
+            $pdo->prepare("UPDATE crm_leads SET dealer_id = ?, assigned_user_id = ?, updated_at = NOW() WHERE id = ?")
                 ->execute([$pdealer, $prep, $lead_id]);
             $lead['dealer_id'] = $pdealer;
             $lead['assigned_user_id'] = $prep;
@@ -81,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Update deal value
         } elseif ($action === 'update_deal') {
             $val = (float)($_POST['deal_value'] ?? 0);
-            $pdo->prepare("UPDATE leads SET deal_value=?,updated_at=NOW() WHERE id=?")->execute([$val,$lead_id]);
+            $pdo->prepare("UPDATE crm_leads SET deal_value=?,updated_at=NOW() WHERE id=?")->execute([$val,$lead_id]);
             $lead['deal_value'] = $val;
             $success_msg = 'Deal value updated.';
 
@@ -102,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($body) {
                 $pdo->prepare("INSERT INTO lead_messages (lead_id,direction,subject,body,is_internal,sender) VALUES (?,?,?,?,?,?)")
                     ->execute([$lead_id,'outbound',$subject,$body,$is_int,$_SESSION['user_name']??'Admin']);
-                $pdo->prepare("UPDATE leads SET last_contacts=NOW(),last_comments=? WHERE id=?")->execute([substr($body,0,200),$lead_id]);
+                $pdo->prepare("UPDATE crm_leads SET last_contacts=NOW(),last_comments=? WHERE id=?")->execute([substr($body,0,200),$lead_id]);
                 $pdo->prepare("INSERT INTO lead_activities (lead_id,action,actor) VALUES (?,?,?)")->execute([$lead_id,'Sent message',$_SESSION['user_name']??'Admin']);
                 $success_msg = 'Message sent.';
             }
