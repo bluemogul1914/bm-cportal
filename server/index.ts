@@ -926,6 +926,14 @@ app.post("/portal/api/admin/contabo/instances/create", async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+app.get("/portal/api/admin/contabo/products", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const { contaboListProducts } = await import("./contabo-api.js");
+    const products = await contaboListProducts(webhookPool);
+    res.json({ products, count: products.length });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
 app.get("/portal/api/admin/contabo/images", async (req, res) => {
   if (!requireXeroAdmin(req, res)) return;
   try {

@@ -78,12 +78,26 @@ export async function contaboGetInstance(pool: pg.Pool, instanceId: string): Pro
 export async function contaboListImages(pool: pg.Pool): Promise<any[]> {
   const token = await getToken(pool);
   if (!token) throw new Error("Not authenticated with Contabo");
-  const resp = await fetch(`${CONTABO_API_BASE}/compute/images`, {
+  const resp = await fetch(`${CONTABO_API_BASE}/compute/images?size=100`, {
     headers: { Authorization: `Bearer ${token}`, "x-request-id": crypto.randomUUID() },
   });
   if (!resp.ok) throw new Error(`Contabo API error: ${resp.status}`);
   const data = await resp.json();
   return data.data || [];
+}
+
+export async function contaboListProducts(pool: pg.Pool): Promise<any[]> {
+  const token = await getToken(pool);
+  if (!token) throw new Error("Not authenticated with Contabo");
+  const resp = await fetch(`${CONTABO_API_BASE}/products?size=200`, {
+    headers: { Authorization: `Bearer ${token}`, "x-request-id": crypto.randomUUID() },
+  });
+  if (!resp.ok) throw new Error(`Contabo API error: ${resp.status}`);
+  const data = await resp.json();
+  return (data.data || []).map((p: any) => ({
+    productId: p.priceItem?.itemId || p.productId || p.id,
+    name: p.priceItem?.name || p.name || p.productName,
+  })).filter((p: any) => p.productId && p.name);
 }
 
 export async function contaboCreateInstance(pool: pg.Pool, spec: {
