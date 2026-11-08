@@ -84,6 +84,7 @@ const PHP_SAFE_ENV_KEYS = [
   "PATH",              // System PATH (for PHP binary resolution)
   "TMPDIR", "TMP", "TEMPDIR", // Temp directories
   "ACTION1_CLIENT_ID", "ACTION1_API_KEY", "ACTION1_API_URL", // Action1 RMM
+  "JUMPCLOUD_API_KEY", "JUMPCLOUD_ORG_ID", // JumpCloud
 ];
 function phpEnv(): Record<string, string> {
   const env: Record<string, string> = {};
