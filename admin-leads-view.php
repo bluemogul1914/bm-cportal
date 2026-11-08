@@ -310,13 +310,13 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
             <details class="relative">
                 <summary class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50 cursor-pointer list-none">Actions ▾</summary>
                 <div class="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
-                    <form method="POST" class="block">
+                    <form method="POST" class="block" action="admin-leads-view.php?id=<?= $lead_id ?>">
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="set_pipeline">
                         <input type="hidden" name="pipeline_status" value="won">
                         <button type="submit" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Mark as Won</button>
                     </form>
-                    <form method="POST" class="block">
+                    <form method="POST" class="block" action="admin-leads-view.php?id=<?= $lead_id ?>">
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="set_pipeline">
                         <input type="hidden" name="pipeline_status" value="lost">
@@ -335,7 +335,7 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
                 <summary class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50 cursor-pointer list-none">Tasks ▾</summary>
                 <div class="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
                     <a href="#todos" class="block px-4 py-2 text-sm hover:bg-gray-100">View Tasks</a>
-                    <form method="POST" class="block">
+                    <form method="POST" class="block" action="admin-leads-view.php?id=<?= $lead_id ?>">
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="add_todo">
                         <input type="hidden" name="lead_id" value="<?= $lead_id ?>">
@@ -348,7 +348,7 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
                 <summary class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50 cursor-pointer list-none">Tickets ▾</summary>
                 <div class="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
                     <a href="admin-tickets.php" class="block px-4 py-2 text-sm hover:bg-gray-100">View Tickets</a>
-                    <form method="POST" class="block">
+                    <form method="POST" class="block" action="admin-leads-view.php?id=<?= $lead_id ?>">
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="create_ticket">
                         <input type="hidden" name="lead_id" value="<?= $lead_id ?>">
