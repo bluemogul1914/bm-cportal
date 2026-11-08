@@ -926,6 +926,13 @@ app.post("/portal/api/admin/contabo/instances/create", async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+app.get("/portal/api/admin/clients/list", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const { rows } = await webhookPool.query("SELECT id, name, email FROM clients ORDER BY name ASC");
+    res.json({ clients: rows, count: rows.length });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
 app.get("/portal/api/admin/contabo/products", async (req, res) => {
   if (!requireXeroAdmin(req, res)) return;
   try {
