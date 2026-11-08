@@ -174,7 +174,7 @@ async function loadImages() {
         const res = await fetch('/portal/api/admin/contabo/images');
         const data = await res.json();
         if (data.error) {
-            select.innerHTML = '<option value="">Error loading images</option>';
+            select.innerHTML = '<option value="">Error: ' + data.error + '</option>';
             return;
         }
         if (!data.images || data.images.length === 0) {
