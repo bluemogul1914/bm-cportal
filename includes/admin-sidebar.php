@@ -268,6 +268,10 @@
                     <span>Hostwinds Cloud</span>
                 </a>
 
+                <a href="admin-contabo.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-contabo.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-contabo">
+                    <i class="fas fa-cloud w-5 text-sky-400"></i>
+                    <span>Contabo Cloud</span>
+                </a>
                 <a href="admin-hetzner.php" class="flex items-center space-x-3 px-4 py-3 rounded-lg <?php echo ($current_page == 'admin-hetzner.php') ? 'bg-blue-600 text-white font-medium' : 'text-gray-300 hover:bg-gray-700 hover:text-white transition'; ?>" data-testid="link-hetzner">
                     <i class="fas fa-database w-5 text-orange-400"></i>
                     <span>Hetzner</span>
