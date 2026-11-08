@@ -30,7 +30,7 @@ include 'includes/admin-header.php';
                         <span class="text-gray-900 font-medium">Status: <span id="status-text">Checking...</span></span>
                     </div>
                     <?php if ($connected): ?>
-                        <p class="text-sm text-gray-600">Client ID: <?php echo htmlspecialchars($contabo_cred['username']); ?></p>
+                        <p class="text-sm text-gray-600">Client ID: INT-15467787</p>
                         <p class="text-sm text-gray-600">Credentials stored in vault (ID: <?php echo $contabo_cred['id']; ?>)</p>
                         <p class="text-sm text-gray-600 mt-2">API Docs: <a href="https://api.contabo.com/#section/Introduction/Getting-Started" class="text-blue-600 hover:underline" target="_blank">Contabo API</a></p>
                     <?php else: ?>
