@@ -60,8 +60,10 @@ include 'includes/admin-header.php';
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Product ID</label>
-                            <input type="text" id="instance-product" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="VPS product ID">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Product (VPS Plan)</label>
+                            <select id="instance-product" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                                <option value="">Loading products...</option>
+                            </select>
                         </div>
                     </div>
                     <div class="mt-4">
@@ -193,8 +195,28 @@ async function loadImages() {
     }
 }
 
+async function loadProducts() {
+    const select = document.getElementById('instance-product');
+    try {
+        const res = await fetch('/portal/api/admin/contabo/products');
+        const data = await res.json();
+        if (data.error || !data.products || data.products.length === 0) {
+            select.innerHTML = '<option value="">Error loading products</option>';
+            return;
+        }
+        let html = '<option value="">Select a VPS plan...</option>';
+        for (const p of data.products) {
+            html += '<option value="' + p.productId + '">' + p.productId + ' - ' + p.name + '</option>';
+        }
+        select.innerHTML = html;
+    } catch (e) {
+        select.innerHTML = '<option value="">Error: ' + e.message + '</option>';
+    }
+}
+
 checkStatus();
 loadInstances();
 loadImages();
+loadProducts();
 </script>
 <?php include 'includes/admin-footer.php'; ?>
