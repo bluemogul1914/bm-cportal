@@ -1,5 +1,4 @@
 import express, { type Request, Response, NextFunction } from "express";
-import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -184,10 +183,6 @@ app.use(express.urlencoded({ extended: false }));
 app.set("trust proxy", 1);
 
 // ── Security headers ────────────────────────────────────────────────────
-app.use(helmet({
-  contentSecurityPolicy: false, // CSP is handled by PHP set_security_headers()
-  crossOriginEmbedderPolicy: false,
-}));
 
 app.use(
   session({
