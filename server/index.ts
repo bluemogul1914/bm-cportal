@@ -828,6 +828,21 @@ app.get("/portal/api/admin/contabo/instance/:id", async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+app.post("/portal/api/admin/contabo/instances/create", async (req, res) => {
+  if (!requireXeroAdmin(req, res)) return;
+  try {
+    const { contaboCreateInstance } = await import("./contabo-api.js");
+    const b = req.body || {};
+    const instance = await contaboCreateInstance(webhookPool, {
+      region: String(b.region || "EU"),
+      imageId: String(b.imageId || ""),
+      productId: String(b.productId || ""),
+      displayName: b.displayName ? String(b.displayName) : undefined,
+    });
+    res.json({ success: true, instance });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Hostwinds white-label reseller: catalogue + provisioning ────────────────
 // Selling Hostwinds services from the portal. CreateAccount is a WRITE action
 // that creates a billable service, so the provision endpoint requires an
