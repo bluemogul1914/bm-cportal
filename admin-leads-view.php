@@ -5,7 +5,7 @@ $pdo = getDB();
 require_once 'includes/leads-db-bootstrap.php';
 try { leads_bootstrap($pdo); } catch (Exception $e) {}
 
-$lead_id = (int)($_GET['id'] ?? 0);
+$lead_id = (int)($_GET['id'] ?? $_POST['id'] ?? $_POST['lead_id'] ?? 0);
 if (!$lead_id) { portal_redirect("admin-leads-list.php"); }
 
 $lead = $pdo->prepare("SELECT id, name, email, phone, company, source, status, notes, linkedin_url, linkedin_data, created_at, updated_at, company_id, company_name, lead_number, full_name, pipeline_status, owner, partner, location, city, street, zip_code, geo_data, custom_status, deal_value, last_contacted, last_comments, dealer_id, assigned_user_id, converted_order_id FROM leads WHERE id=?");
@@ -375,6 +375,7 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
 <form method="POST" id="lead-form" name="lead-form">
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="update_lead">
+    <input type="hidden" name="id" value="<?= $lead_id ?>">
     <input type="hidden" name="pipeline_status" value="<?= htmlspecialchars($lead['pipeline_status'] ?? 'new_enquiry') ?>">
 <?php if ($active_tab === 'information'): ?>
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
