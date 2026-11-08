@@ -85,6 +85,7 @@ const PHP_SAFE_ENV_KEYS = [
   "TMPDIR", "TMP", "TEMPDIR", // Temp directories
   "ACTION1_CLIENT_ID", "ACTION1_API_KEY", "ACTION1_API_URL", // Action1 RMM
   "JUMPCLOUD_API_KEY", "JUMPCLOUD_ORG_ID", // JumpCloud
+  "NEXTCLOUD_URL", "NEXTCLOUD_USER", "NEXTCLOUD_PASSWORD", // Nextcloud
 ];
 function phpEnv(): Record<string, string> {
   const env: Record<string, string> = {};
