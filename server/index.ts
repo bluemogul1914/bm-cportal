@@ -83,6 +83,7 @@ const PHP_SAFE_ENV_KEYS = [
   "HOME",              // User home (for PHP temp)
   "PATH",              // System PATH (for PHP binary resolution)
   "TMPDIR", "TMP", "TEMPDIR", // Temp directories
+  "ACTION1_CLIENT_ID", "ACTION1_API_KEY", "ACTION1_API_URL", // Action1 RMM
 ];
 function phpEnv(): Record<string, string> {
   const env: Record<string, string> = {};
