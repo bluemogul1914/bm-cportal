@@ -40,6 +40,42 @@ include 'includes/admin-header.php';
 
                 <div class="bg-white rounded-lg border border-gray-200 p-6 mb-6 shadow-sm">
                     <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-gray-900">Create New Instance</h2>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Instance Name</label>
+                            <input type="text" id="instance-name" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="my-server">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Region</label>
+                            <select id="instance-region" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                                <option value="EU">EU (Europe)</option>
+                                <option value="US-central">US Central</option>
+                                <option value="US-east">US East</option>
+                                <option value="US-west">US West</option>
+                                <option value="SIN">Singapore</option>
+                                <option value="JPN">Japan</option>
+                                <option value="AUS">Australia</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Product ID</label>
+                            <input type="text" id="instance-product" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="VPS product ID">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Image ID</label>
+                        <input type="text" id="instance-image" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="ubuntu-22.04">
+                    </div>
+                    <div class="mt-4">
+                        <button onclick="createInstance()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition">Create Instance</button>
+                        <span id="create-status" class="ml-3 text-sm text-gray-500"></span>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg border border-gray-200 p-6 mb-6 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
                         <h2 class="text-lg font-semibold text-gray-900">VPS Instances</h2>
                         <button onclick="loadInstances()" class="text-sm text-blue-600 hover:text-blue-700 font-medium">Refresh</button>
                     </div>
@@ -100,7 +136,36 @@ async function loadInstances() {
     }
 }
 
-checkStatus();
-loadInstances();
-</script>
+async function createInstance() {
+    const status = document.getElementById('create-status');
+    status.textContent = 'Creating...';
+    status.className = 'ml-3 text-sm text-gray-500';
+    try {
+        const res = await fetch('/portal/api/admin/contabo/instances/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                displayName: document.getElementById('instance-name').value,
+                region: document.getElementById('instance-region').value,
+                productId: document.getElementById('instance-product').value,
+                imageId: document.getElementById('instance-image').value,
+            })
+        });
+        const data = await res.json();
+        if (data.error) {
+            status.textContent = 'Error: ' + data.error;
+            status.className = 'ml-3 text-sm text-red-600';
+        } else {
+            status.textContent = 'Instance created successfully!';
+            status.className = 'ml-3 text-sm text-green-600';
+            loadInstances();
+        }
+    } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.className = 'ml-3 text-sm text-red-600';
+    }
+
+    checkStatus();
+    loadInstances();
+    </script>
 <?php include 'includes/admin-footer.php'; ?>
