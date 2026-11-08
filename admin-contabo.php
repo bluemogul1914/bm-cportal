@@ -73,6 +73,12 @@ include 'includes/admin-header.php';
                         </select>
                     </div>
                     <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Assign to Client (optional)</label>
+                        <select id="instance-client" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                            <option value="">No client (unassigned)</option>
+                        </select>
+                    </div>
+                    <div class="mt-4">
                         <button onclick="createInstance()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition">Create Instance</button>
                         <span id="create-status" class="ml-3 text-sm text-gray-500"></span>
                     </div>
@@ -115,28 +121,85 @@ async function loadInstances() {
     const container = document.getElementById('instances-container');
     container.innerHTML = '<p class="text-sm text-blue-mogul-dim py-6 text-center">Loading...</p>';
     try {
-        const res = await fetch('/portal/api/admin/contabo/instances');
+        const res = await fetch('/portal/api/admin/contabo/instances/db');
         const data = await res.json();
         if (data.error) {
             container.innerHTML = '<p class="text-sm text-red-600 py-6 text-center">' + data.error + '</p>';
             return;
         }
         if (!data.instances || data.instances.length === 0) {
-            container.innerHTML = '<p class="text-sm text-blue-mogul-dim py-6 text-center">No instances found.</p>';
+            container.innerHTML = '<p class="text-sm text-blue-mogul-dim py-6 text-center">No instances tracked yet. Create one above or add manually.</p>';
             return;
         }
-        let html = '<div class="space-y-3">';
+        let html = '<div class="overflow-x-auto"><table class="min-w-full text-sm"><thead><tr class="border-b border-gray-200">';
+        html += '<th class="text-left py-2 px-3 font-medium text-gray-700">Name</th>';
+        html += '<th class="text-left py-2 px-3 font-medium text-gray-700">Status</th>';
+        html += '<th class="text-left py-2 px-3 font-medium text-gray-700">IP</th>';
+        html += '<th class="text-left py-2 px-3 font-medium text-gray-700">App</th>';
+        html += '<th class="text-left py-2 px-3 font-medium text-gray-700">Client</th>';
+        html += '<th class="text-left py-2 px-3 font-medium text-gray-700">Cost</th>';
+        html += '<th class="text-left py-2 px-3 font-medium text-gray-700">Actions</th>';
+        html += '</tr></thead><tbody>';
         for (const inst of data.instances) {
-            html += '<div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">';
-            html += '<div><p class="font-medium text-gray-900">' + (inst.displayName || inst.name || 'Instance ' + inst.instanceId) + '</p>';
-            html += '<p class="text-xs text-gray-500">ID: ' + (inst.instanceId || 'N/A') + ' | Status: ' + (inst.status || 'N/A') + '</p></div>';
-            html += '<span class="text-sm text-gray-500">' + (inst.ipConfig?.v4?.ip || '') + '</span>';
-            html += '</div>';
+            html += '<tr class="border-b border-gray-100 hover:bg-gray-50">';
+            html += '<td class="py-2 px-3 font-medium text-gray-900">' + (inst.name || 'Unnamed') + '</td>';
+            html += '<td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-xs ' + (inst.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700') + '">' + (inst.status || 'N/A') + '</span></td>';
+            html += '<td class="py-2 px-3 text-gray-600">' + (inst.ip_address || '-') + '</td>';
+            html += '<td class="py-2 px-3 text-gray-600">' + (inst.app_type || 'os') + '</td>';
+            html += '<td class="py-2 px-3 text-gray-600">' + (inst.client_name || 'Unassigned') + '</td>';
+            html += '<td class="py-2 px-3 text-gray-600">' + (inst.monthly_cost ? '$' + inst.monthly_cost + '/mo' : '-') + '</td>';
+            html += '<td class="py-2 px-3 space-x-1">';
+            html += '<button onclick="installApp(' + inst.id + ')" class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">Install</button>';
+            html += '<button onclick="assignClient(' + inst.id + ')" class="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700">Assign</button>';
+            html += '</td>';
+            html += '</tr>';
         }
-        html += '</div>';
+        html += '</tbody></table></div>';
         container.innerHTML = html;
     } catch (e) {
         container.innerHTML = '<p class="text-sm text-red-600 py-6 text-center">Error: ' + e.message + '</p>';
+    }
+}
+
+async function installApp(id) {
+    const appType = prompt('App to install: nextcloud, n8n, hermes, deepseek', 'nextcloud');
+    if (!appType) return;
+    const status = document.getElementById('create-status');
+    status.textContent = 'Installing ' + appType + '... (may take several minutes)';
+    status.className = 'ml-3 text-sm text-gray-500';
+    try {
+        const res = await fetch('/portal/api/admin/contabo/instances/' + id + '/install', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ appType: appType })
+        });
+        const data = await res.json();
+        if (data.error) {
+            status.textContent = 'Install error: ' + data.error;
+            status.className = 'ml-3 text-sm text-red-600';
+        } else {
+            status.textContent = appType + ' installed successfully!';
+            status.className = 'ml-3 text-sm text-green-600';
+            loadInstances();
+        }
+    } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.className = 'ml-3 text-sm text-red-600';
+    }
+}
+
+async function assignClient(id) {
+    const clientId = prompt('Enter client ID to assign (or empty to unassign):');
+    if (clientId === null) return;
+    try {
+        await fetch('/portal/api/admin/contabo/instances/' + id + '/assign', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId: clientId || null })
+        });
+        loadInstances();
+    } catch (e) {
+        alert('Error: ' + e.message);
     }
 }
 
@@ -153,6 +216,7 @@ async function createInstance() {
                 region: document.getElementById('instance-region').value,
                 productId: document.getElementById('instance-product').value,
                 imageId: document.getElementById('instance-image').value,
+                clientId: document.getElementById('instance-client').value || null,
             })
         });
         const data = await res.json();
@@ -160,7 +224,25 @@ async function createInstance() {
             status.textContent = 'Error: ' + data.error;
             status.className = 'ml-3 text-sm text-red-600';
         } else {
-            status.textContent = 'Instance created successfully!';
+            // Save to portal DB
+            const inst = data.instance || data;
+            await fetch('/portal/api/admin/contabo/instances/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contaboInstanceId: inst.instanceId || inst.id || '',
+                    name: inst.displayName || document.getElementById('instance-name').value,
+                    region: document.getElementById('instance-region').value,
+                    productId: document.getElementById('instance-product').value,
+                    imageId: document.getElementById('instance-image').value,
+                    imageName: document.getElementById('instance-image').selectedOptions[0]?.text || '',
+                    appType: 'os',
+                    status: 'provisioning',
+                    clientId: document.getElementById('instance-client').value || null,
+                    monthlyCost: null,
+                })
+            });
+            status.textContent = 'Instance created & saved!';
             status.className = 'ml-3 text-sm text-green-600';
             loadInstances();
         }
@@ -168,6 +250,20 @@ async function createInstance() {
         status.textContent = 'Error: ' + e.message;
         status.className = 'ml-3 text-sm text-red-600';
     }
+}
+
+async function loadClients() {
+    const select = document.getElementById('instance-client');
+    try {
+        const res = await fetch('/portal/api/admin/clients/list');
+        const data = await res.json();
+        if (data.error || !data.clients) return;
+        let html = '<option value="">No client (unassigned)</option>';
+        for (const c of data.clients) {
+            html += '<option value="' + c.id + '">' + c.name + ' (' + (c.email || '') + ')</option>';
+        }
+        select.innerHTML = html;
+    } catch (e) {}
 }
 
 async function loadImages() {
@@ -219,5 +315,6 @@ checkStatus();
 loadInstances();
 loadImages();
 loadProducts();
+loadClients();
 </script>
 <?php include 'includes/admin-footer.php'; ?>
