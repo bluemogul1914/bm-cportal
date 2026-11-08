@@ -206,7 +206,8 @@ async function loadProducts() {
         }
         let html = '<option value="">Select a VPS plan...</option>';
         for (const p of data.products) {
-            html += '<option value="' + p.productId + '">' + p.productId + ' - ' + p.name + '</option>';
+            const price = p.priceUsd ? ' - $' + p.priceUsd + '/mo' : '';
+            html += '<option value="' + p.productId + '">' + p.productId + ' - ' + p.name + price + '</option>';
         }
         select.innerHTML = html;
     } catch (e) {

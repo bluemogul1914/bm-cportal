@@ -89,15 +89,23 @@ export async function contaboListImages(pool: pg.Pool): Promise<any[]> {
 export async function contaboListProducts(pool: pg.Pool): Promise<any[]> {
   const token = await getToken(pool);
   if (!token) throw new Error("Not authenticated with Contabo");
+
   const resp = await fetch(`${CONTABO_API_BASE}/products?size=200`, {
     headers: { Authorization: `Bearer ${token}`, "x-request-id": crypto.randomUUID() },
   });
   if (!resp.ok) throw new Error(`Contabo API error: ${resp.status}`);
   const data = await resp.json();
-  return (data.data || []).map((p: any) => ({
-    productId: p.priceItem?.itemId || p.productId || p.id,
-    name: p.priceItem?.name || p.name || p.productName,
-  })).filter((p: any) => p.productId && p.name);
+  return (data.data || []).map((p: any) => {
+    const pi = p.priceItem || {};
+    const prices = pi.price || [];
+    const usdPrice = prices.find((pr: any) => pr.currency === "USD")?.amount;
+    return {
+      productId: pi.itemId || p.productId || p.id,
+      name: pi.name || p.name || p.productName,
+      priceUsd: usdPrice || null,
+      outOfStock: pi.outOfStock?.isOutOfStock || false,
+    };
+  }).filter((p: any) => p.productId && p.name && !p.outOfStock && /VPS/i.test(p.name));
 }
 
 export async function contaboCreateInstance(pool: pg.Pool, spec: {
