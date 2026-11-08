@@ -164,8 +164,9 @@ async function createInstance() {
         status.textContent = 'Error: ' + e.message;
         status.className = 'ml-3 text-sm text-red-600';
     }
+}
 
-    checkStatus();
-    loadInstances();
-    </script>
+checkStatus();
+loadInstances();
+</script>
 <?php include 'includes/admin-footer.php'; ?>
