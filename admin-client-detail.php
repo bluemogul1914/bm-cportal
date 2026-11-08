@@ -1292,7 +1292,7 @@ $show_map = $has_location || $has_address;
                                             default => 'fa-hdd text-gray-400',
                                         };
                                     ?> mr-2"></i>
-                                    <a href="admin-network.php?client_id=<?php echo (int)$client_id; ?>" class="text-blue-600 hover:underline font-medium"><?php echo htmlspecialchars($dev['hostname'] ?? '—'); ?></a>
+                                    <a href="admin-device-detail.php?source=network&id=<?php echo (int)$dev['id']; ?>" class="text-blue-600 hover:underline font-medium"><?php echo htmlspecialchars($dev['hostname'] ?? '—'); ?></a>
                                 </td>
                                 <td class="px-5 py-3 text-sm text-gray-600 font-mono"><?php echo htmlspecialchars($dev['ip_address'] ?? '—'); ?></td>
                                 <td class="px-5 py-3 text-sm text-gray-600"><?php echo ucfirst(str_replace('_', ' ', $dev['device_type'] ?? '—')); ?></td>
