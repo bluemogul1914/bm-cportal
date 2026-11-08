@@ -341,6 +341,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $active_tab = 'systems';
     }
 
+    // ── Assign system to client
+    if ($action === 'assign_system_client') {
+        $sys_id = (int)($_POST['system_db_id'] ?? 0);
+        $client_id = (int)($_POST['client_id'] ?? 0) ?: null;
+        if ($sys_id > 0) {
+            $pdo->prepare("UPDATE jc_systems SET client_id = ? WHERE id = ?")->execute([$client_id, $sys_id]);
+            $success_msg = 'System client assignment updated.';
+        }
+        $active_tab = 'systems';
+    }
+
     // ── Sync Users
     if ($action === 'sync_users') {
         if (!$jc_connected) { $error_msg = 'JUMPCLOUD_API_KEY not set.'; }
@@ -658,8 +669,14 @@ try {
         $db_systems = $pdo->query("SELECT * FROM jc_systems ORDER BY display_name")->fetchAll(PDO::FETCH_ASSOC);
         $db_users   = $pdo->query("SELECT * FROM jc_users ORDER BY username")->fetchAll(PDO::FETCH_ASSOC);
         $db_events  = $pdo->query("SELECT * FROM jc_events ORDER BY event_time DESC LIMIT 100")->fetchAll(PDO::FETCH_ASSOC);
+        $jc_clients = $pdo->query("SELECT id, name, company FROM clients ORDER BY company, name")->fetchAll(PDO::FETCH_ASSOC);
     }
-} catch(Exception $e) {}
+} catch(Exception $e) { $jc_clients = []; }
+
+// Ensure clients list is loaded
+if (empty($jc_clients)) {
+    try { $jc_clients = $pdo->query("SELECT id, name, company FROM clients ORDER BY company, name")->fetchAll(PDO::FETCH_ASSOC); } catch(Exception $e) { $jc_clients = []; }
+}
 
 // Stat counts
 $sys_total  = count($db_systems);
@@ -1097,6 +1114,7 @@ function jc_bool_icon(mixed $val): string {
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Agent</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Remote IP</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Last Contact</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Client</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500">Actions</th>
             </tr></thead>
             <tbody class="divide-y divide-gray-100">
@@ -1122,6 +1140,19 @@ function jc_bool_icon(mixed $val): string {
                 <td class="px-4 py-3 text-xs font-mono text-gray-400"><?= htmlspecialchars($s['agent_version']) ?></td>
                 <td class="px-4 py-3 text-xs font-mono text-gray-400"><?= htmlspecialchars($s['remote_ip']) ?></td>
                 <td class="px-4 py-3 text-xs text-gray-400"><?= $s['last_contact'] ? fmt_date($s['last_contact'] ?? null, 'Y-m-d H:i') : '—' ?></td>
+                <td class="px-4 py-3">
+                    <form method="POST" class="inline">
+                        <input type="hidden" name="_csrf_token" value="<?= $_SESSION['csrf_token'] ?? '' ?>">
+                        <input type="hidden" name="action" value="assign_system_client">
+                        <input type="hidden" name="system_db_id" value="<?= (int)$s['id'] ?>">
+                        <select name="client_id" onchange="this.form.submit()" class="text-xs border border-gray-300 rounded px-2 py-1">
+                            <option value="">Unassigned</option>
+                            <?php foreach ($jc_clients as $cl): ?>
+                            <option value="<?= (int)$cl['id'] ?>" <?= ((int)($s['client_id'] ?? 0) === (int)$cl['id']) ? 'selected' : '' ?>><?= htmlspecialchars($cl['company'] ?: $cl['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </form>
+                </td>
                 <td class="px-4 py-3">
                     <div class="flex gap-1">
                     <button onclick='openEditSystem(<?= json_encode(['id'=>$s['jc_id'],'name'=>$s['display_name'],'mfa'=>(!empty($s['allow_multi_factor'])&&$s['allow_multi_factor']!=='false'),'ssh'=>(!empty($s['allow_ssh'])&&$s['allow_ssh']!=='false')]) ?>)'
