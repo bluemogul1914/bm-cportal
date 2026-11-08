@@ -308,7 +308,7 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
         <!-- Action buttons -->
         <div class="ml-auto flex items-center gap-2 px-4">
             <button class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Actions ▾</button>
-            <button class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Tasks ▾</button>
+            <button type="submit" form="lead-form" name="action" value="add_todo" class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Tasks ▾</button>
             <button type="submit" form="lead-form" name="action" value="create_ticket" class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Tickets ▾</button>
             <button type="submit" form="lead-form" name="action" value="convert_to_client" class="px-3 py-1.5 bg-gray-600 text-sm text-white rounded hover:bg-gray-700">Convert</button>
             <button form="lead-form" type="submit" class="px-3 py-1.5 bg-blue-600 text-sm text-white rounded hover:bg-blue-700">Save</button>
