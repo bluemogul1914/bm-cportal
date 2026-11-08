@@ -307,7 +307,7 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
         <?php endforeach; ?>
         <!-- Action buttons -->
         <div class="ml-auto flex items-center gap-2 px-4">
-            <button class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Actions ▾</button>
+            <button type="submit" form="lead-form" name="action" value="set_pipeline" class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Actions ▾</button>
             <button type="submit" form="lead-form" name="action" value="add_todo" class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Tasks ▾</button>
             <button type="submit" form="lead-form" name="action" value="create_ticket" class="px-3 py-1.5 border border-gray-300 text-sm text-gray-700 rounded hover:bg-gray-50">Tickets ▾</button>
             <button type="submit" form="lead-form" name="action" value="convert_to_client" class="px-3 py-1.5 bg-gray-600 text-sm text-white rounded hover:bg-gray-700">Convert</button>
@@ -325,6 +325,7 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
 <form method="POST" id="lead-form">
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="update_lead">
+    <input type="hidden" name="pipeline_status" value="<?= htmlspecialchars($lead['pipeline_status'] ?? 'new_enquiry') ?>">
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Main fields -->
         <div class="lg:col-span-2 space-y-5">
