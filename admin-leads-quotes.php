@@ -5,6 +5,8 @@ $pdo = getDB();
 require_once 'includes/leads-db-bootstrap.php';
 try { leads_bootstrap($pdo); } catch (Exception $e) {}
 
+$leads_for_form = $pdo->query("SELECT id, full_name, email FROM crm_leads ORDER BY full_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+
 $create_msg = '';
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     require_csrf();
