@@ -362,7 +362,7 @@ $q_status_colors = ['new'=>'bg-blue-500','sent'=>'bg-indigo-500','on_review'=>'b
                 <input type="hidden" name="lead_id" value="<?= $lead_id ?>">
                 <button type="submit" class="px-3 py-1.5 bg-gray-600 text-sm text-white rounded hover:bg-gray-700">Convert</button>
             </form>
-            <button type="button" onclick="var f=document.getElementById('lead-form'); if(f){f.submit();}" class="px-3 py-1.5 bg-blue-600 text-sm text-white rounded hover:bg-blue-700">Save</button>
+            <button type="button" onclick="document.forms['lead-form'].submit();" class="px-3 py-1.5 bg-blue-600 text-sm text-white rounded hover:bg-blue-700">Save</button>
         </div>
     </div>
 </header>
