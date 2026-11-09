@@ -3019,60 +3019,6 @@ app.post("/api/webhook/create-invoice", express.json(), async (req, res) => {
 });
 
 // ── n8n: Create Lead ───────────────────────────────────────────
-// ── TwentyCRM: mirror a portal lead into a Twenty opportunity (Company → Person → Opportunity) ──
-// Post-match to crm_leads insert. Safe: never throws into the webhook path (logged only).
-async function syncLeadToTwenty(lead: {
-  name: string; email?: string|null; phone?: string|null; company?: string|null;
-  source?: string|null; status?: string|null; industry?: string|null; service_interest?: string|null; notes?: string|null;
-}): Promise<void> {
-  const key = process.env.TWENTY_CRM_API_KEY;
-  const url = process.env.TWENTY_API_URL || "https://twenty.bluemogul.us/mcp";
-  if (!key) return; // Twenty sync not configured — skip silently
-  try {
-    // Twenty's public MCP exposes CRUD indirectly via "execute_tool" (toolName + arguments).
-    const execTool = async (toolName: string, args: any): Promise<any> => {
-      const body = JSON.stringify({
-        jsonrpc: "2.0", id: 1, method: "tools/call",
-        params: { name: "execute_tool", arguments: { toolName, arguments: args } },
-      });
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "Authorization": `Bearer ${key}` },
-        body,
-      });
-      const text = await resp.text();
-      // SSE: skip progress notifications; take the data: line carrying a result with content.
-      for (const line of text.split('\n')) {
-        if (!line.startsWith('data: ')) continue;
-        const envelope = JSON.parse(line.slice(6));
-        const result = envelope?.result;
-        if (result && (result as any).content) {
-          const inner = (result as any).content?.[0]?.text || "";
-          try { return JSON.parse(inner); } catch { return { raw: inner }; }
-        }
-      }
-      return { raw: text.slice(0, 200) };
-    };
-
-    // 1. Company
-    const companyRes: any = await execTool("create_one_company", { name: lead.company || lead.name, position: "first" });
-    const companyId = companyRes?.result?.id;
-    // 2. Person
-    const personArgs: any = { name: { firstName: lead.name, lastName: "" }, companyId, position: "first" };
-    if (lead.email) personArgs.emails = { primaryEmail: lead.email };
-    if (lead.phone) personArgs.phones = { primaryPhoneNumber: lead.phone };
-    const personRes: any = await execTool("create_one_person", personArgs);
-    const personId = personRes?.result?.id;
-    // 3. Opportunity (stage NEW)
-    const oppName = (lead.company ? `${lead.company} — ${lead.name}` : lead.name) + (lead.service_interest ? ` · ${lead.service_interest}` : "");
-    const oppRes: any = await execTool("create_one_opportunity", { name: oppName, stage: "NEW", companyId, pointOfContactId: personId, position: "first" });
-    console.log(`[twenty-sync] lead "${lead.name}" -> opportunity (company=${companyId}, person=${personId}, opp=${oppRes?.result?.id})`);
-  } catch (e: any) {
-    console.error("[twenty-sync] failed for lead:", lead.name, e.message);
-  }
-}
-
-// ── n8n: Create Lead (syncs to TwentyCRM) ─────────────────
 app.post("/api/webhook/create-lead", express.json(), async (req, res) => {
   if (!validateWebhookAuth(req, res)) return;
   try {
@@ -3083,8 +3029,6 @@ app.post("/api/webhook/create-lead", express.json(), async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW()) RETURNING id`,
       [name, email||null, phone||null, company||null, source||'n8n', status||'new', notes||null, industry||null, employee_count||null, service_interest||null, geography||null, lead_score||0, next_action_date||null]
     );
-    // Fire-and-forget Twenty sync (does not block the webhook response)
-    void syncLeadToTwenty({ name, email, phone, company, source, status, notes, industry, service_interest });
     res.json({ success: true, lead_id: r.rows[0].id });
   } catch (err: any) {
     console.error("Webhook create-lead error:", err);
