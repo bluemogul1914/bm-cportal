@@ -200,10 +200,13 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
     <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"><?= htmlspecialchars($create_msg) ?></div>
 <?php endif; ?>
 
-<div class="bg-white rounded-lg border border-gray-200">
-    <div class="px-5 py-3 border-b border-gray-100">
-        <h2 class="text-sm font-semibold text-gray-800 flex items-center gap-2"><i class="fas fa-plus text-blue-500 text-xs"></i> New Quote</h2>
-    </div>
+<div class="mb-4">
+    <button type="button" onclick="document.getElementById('createQuoteModal').classList.remove('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">+ Create Quote</button>
+</div>
+<div id="createQuoteModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+  <div class="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+    <div class="flex justify-between items-center mb-4"><h2 class="text-lg font-semibold">New Quote</h2><button type="button" onclick="document.getElementById('createQuoteModal').classList.add('hidden')" class="text-gray-500">&times;</button></div>
+
     <form method="POST" class="px-5 py-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
         <input type="hidden" name="action" value="create_quote">
         <?= csrf_field() ?>
@@ -239,6 +242,8 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
         </div>
         <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Create Quote</button>
     </form>
+  </div>
+</div>
 <script>
 let qi=0;
 function addQuoteItem(){
