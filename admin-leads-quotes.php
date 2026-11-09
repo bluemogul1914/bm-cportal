@@ -201,11 +201,8 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
 <?php endif; ?>
 
 <div class="mb-4">
-    <button type="button" onclick="document.getElementById('createQuoteModal').classList.remove('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">+ Create Quote</button>
+    <button type="button" onclick="location.href='admin-quote-add.php'" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">+ Create Quote</button>
 </div>
-<div id="createQuoteModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-  <div class="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-    <div class="flex justify-between items-center mb-4"><h2 class="text-lg font-semibold">New Quote</h2><button type="button" onclick="document.getElementById('createQuoteModal').classList.add('hidden')" class="text-gray-500">&times;</button></div>
 
     <form method="POST" class="px-5 py-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
         <input type="hidden" name="action" value="create_quote">
@@ -242,8 +239,6 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
         </div>
         <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Create Quote</button>
     </form>
-  </div>
-</div>
 <script>
 let qi=0;
 function addQuoteItem(){
