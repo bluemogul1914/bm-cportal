@@ -109,6 +109,9 @@ $where = ["q.document_date BETWEEN ? AND ?"]; $params = [$from, $to];
 if ($stat_filter) { $where[] = "q.status=?"; $params[] = $stat_filter; }
 $where_sql = 'WHERE '.implode(' AND ',$where);
 
+$stats_row = $pdo->query("SELECT COUNT(*) AS total, COALESCE(SUM(total),0) AS revenue, SUM(CASE WHEN status IN ('new','sent','on_review') THEN 1 ELSE 0 END) AS open_count, SUM(CASE WHEN status IN ('accepted','invoiced','closed') THEN 1 ELSE 0 END) AS closed_count FROM lead_quotes")->fetch(PDO::FETCH_ASSOC);
+$quote_stats = ['total'=>(int)($stats_row['total']??0),'revenue'=>(float)($stats_row['revenue']??0),'open'=>(int)($stats_row['open_count']??0),'closed'=>(int)($stats_row['closed_count']??0)];
+
 $quotes = $pdo->prepare("SELECT q.*, l.full_name as lead_name FROM lead_quotes q LEFT JOIN leads l ON q.lead_id=l.id $where_sql ORDER BY q.created_at DESC");
 $quotes->execute($params);
 $quotes = $quotes->fetchAll(PDO::FETCH_ASSOC);
@@ -170,6 +173,25 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
 </header>
 
 <div class="p-6 space-y-6">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        <div class="bg-white rounded-lg border border-gray-200 p-6">
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Total Quote Revenue</p>
+            <p class="text-3xl font-bold text-green-600">$<?= number_format($quote_stats['revenue'], 2) ?></p>
+        </div>
+        <div class="bg-white rounded-lg border border-gray-200 p-6">
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Open Quotes</p>
+            <p class="text-3xl font-bold text-yellow-600"><?= $quote_stats['open'] ?></p>
+        </div>
+        <div class="bg-white rounded-lg border border-gray-200 p-6">
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Closed</p>
+            <p class="text-3xl font-bold text-gray-900"><?= $quote_stats['closed'] ?></p>
+        </div>
+        <div class="bg-white rounded-lg border border-gray-200 p-6">
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Total Quotes</p>
+            <p class="text-3xl font-bold text-gray-900"><?= $quote_stats['total'] ?></p>
+        </div>
+    </div>
+
 
 <?php if (isset($_GET['created'])): ?>
     <div class="p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">Quote created.</div>
