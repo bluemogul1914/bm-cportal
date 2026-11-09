@@ -136,6 +136,18 @@ $grand_sum   = array_sum(array_map(fn($t)=>$t['sum'],$totals));
     <link rel="stylesheet" href="/assets/css/style.css">
 <script src="/assets/js/tailwind-shared.js"></script>
 <script>tailwind.config = window.bmTailwindConfig;</script>
+<style>
+:root{--black:#000000;--panel:#141824;--border:#1E2436;--brand-blue:#3B5BFD;--brand-blue-dim:rgba(59,91,253,0.15);--dim:#8C8C8C;--grey:#3A3A3A;}
+body{background:var(--black);color:#fff;font-family:Inter,sans-serif;}
+.bg-white{background:var(--panel)!important;}
+.border-gray-200,.border-gray-100,.border-gray-300{border-color:var(--border)!important;}
+.text-gray-900,.text-gray-800,.text-gray-700{color:#fff!important;}
+.text-gray-600,.text-gray-500,.text-gray-400{color:var(--dim)!important;}
+.bg-gray-50{background:var(--border)!important;}
+.hover\:bg-gray-50:hover{background:rgba(255,255,255,0.02)!important;}
+input,select,textarea{background:var(--black)!important;color:#fff!important;border-color:var(--border)!important;}
+input:focus,select:focus,textarea:focus{border-color:var(--brand-blue)!important;box-shadow:0 0 0 2px var(--brand-blue-dim)!important;}
+</style>
 </head>
 <body class="bg-gray-50 font-sans">
 <div class="flex h-screen overflow-hidden">
